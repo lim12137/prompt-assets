@@ -10,7 +10,7 @@
     "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
     "db:test:up": "node ./scripts/test-db-up.mjs",
     "db:test:migrate": "node ./scripts/test-db-migrate.mjs",
-    "db:test": "node --test --experimental-strip-types ../../tests/integration/db/schema.test.ts",
+    "db:test": "node --test --experimental-strip-types ../../tests/integration/db/schema.test.ts ../../tests/integration/db/seed.test.ts",
     "db:test:down": "node ./scripts/test-db-down.mjs"
   },
   "dependencies": {
