@@ -3,7 +3,10 @@ import {
   isPgReachable,
   withPgClient,
 } from "../../../../packages/db/src/client.ts";
-import { nextVersionNo } from "../../../../packages/domain/src/versioning.ts";
+import {
+  canTransitionReviewStatus,
+  nextVersionNo,
+} from "../../../../packages/domain/src/index.ts";
 import {
   baseCategories,
   pendingSubmissionFixture,
@@ -67,6 +70,43 @@ export type PromptSubmissionMutationResult = {
     versionNo: string;
   };
 };
+
+export type PromptSubmissionReviewAction = "approve" | "reject";
+
+export type PromptSubmissionReviewInput = {
+  reviewerEmail: string;
+  reviewerRole: "user" | "admin";
+  reviewComment?: string;
+};
+
+export type PromptSubmissionReviewSuccess = {
+  submission: {
+    id: number;
+    status: SubmissionStatus;
+    reviewComment?: string;
+    reviewedByEmail: string;
+  };
+  prompt: {
+    slug: string;
+    currentVersion: {
+      versionNo: string;
+    };
+  };
+  candidateVersion: {
+    versionNo: string;
+  };
+};
+
+export type PromptSubmissionReviewResult =
+  | {
+      ok: true;
+      value: PromptSubmissionReviewSuccess;
+    }
+  | {
+      ok: false;
+      code: "forbidden" | "not_found" | "conflict";
+      message: string;
+    };
 
 type DbPromptListRow = {
   slug: string;
@@ -135,8 +175,20 @@ type DbSubmissionInsertRow = {
   status: SubmissionStatus;
 };
 
+type DbSubmissionReviewRow = {
+  id: number | string;
+  status: SubmissionStatus;
+  prompt_id: number | string;
+  prompt_slug: string;
+  current_version_id: number | string | null;
+  current_version_no: string | null;
+  candidate_version_id: number | string;
+  candidate_version_no: string;
+};
+
 type FixtureSubmissionRecord = SubmissionFixture & {
   id: number;
+  reviewedByEmail?: string;
 };
 
 const CATEGORY_MAP = new Map(baseCategories.map((item) => [item.slug, item]));
@@ -222,6 +274,10 @@ function asNumber(value: number | string | null | undefined): number {
 
 function normalizeUserEmail(input: string): string {
   return input.trim().toLowerCase();
+}
+
+function toReviewStatus(action: PromptSubmissionReviewAction): SubmissionStatus {
+  return action === "approve" ? "approved" : "rejected";
 }
 
 function getFixturePromptLikes(slug: string): Set<string> | null {
@@ -624,6 +680,24 @@ async function upsertUserId(client: SqlClient, email: string): Promise<number> {
   return asNumber(result.rows[0]?.id);
 }
 
+async function upsertAdminReviewerId(
+  client: SqlClient,
+  email: string,
+): Promise<number> {
+  const result = await client.query<DbUserRow>(
+    `
+      INSERT INTO users (email, role)
+      VALUES ($1, 'admin')
+      ON CONFLICT (email)
+      DO UPDATE SET email = EXCLUDED.email
+      RETURNING id;
+    `,
+    [email],
+  );
+
+  return asNumber(result.rows[0]?.id);
+}
+
 async function readPromptLikesCount(client: SqlClient, promptId: number): Promise<number> {
   const result = await client.query<DbPromptLikesCountRow>(
     `
@@ -829,6 +903,145 @@ async function createPromptSubmissionInDb(
   });
 }
 
+async function reviewPromptSubmissionInDb(
+  submissionId: number,
+  action: PromptSubmissionReviewAction,
+  input: PromptSubmissionReviewInput,
+): Promise<PromptSubmissionReviewResult> {
+  if (input.reviewerRole !== "admin") {
+    return {
+      ok: false,
+      code: "forbidden",
+      message: "admin role is required",
+    };
+  }
+
+  const targetStatus = toReviewStatus(action);
+
+  return withPgClient(databaseUrl, async (client) => {
+    await client.query("BEGIN;");
+
+    try {
+      const submissionResult = await client.query<DbSubmissionReviewRow>(
+        `
+          SELECT
+            s.id,
+            s.status,
+            s.prompt_id,
+            p.slug AS prompt_slug,
+            p.current_version_id,
+            current_v.version_no AS current_version_no,
+            s.candidate_version_id,
+            cv.version_no AS candidate_version_no
+          FROM submissions s
+          INNER JOIN prompts p ON p.id = s.prompt_id
+          INNER JOIN prompt_versions cv ON cv.id = s.candidate_version_id
+          LEFT JOIN prompt_versions current_v ON current_v.id = p.current_version_id
+          WHERE s.id = $1
+          FOR UPDATE OF s;
+        `,
+        [submissionId],
+      );
+
+      const submission = submissionResult.rows[0];
+      if (!submission) {
+        await client.query("ROLLBACK;");
+        return {
+          ok: false,
+          code: "not_found",
+          message: "submission not found",
+        };
+      }
+
+      if (!canTransitionReviewStatus(submission.status, targetStatus)) {
+        await client.query("ROLLBACK;");
+        return {
+          ok: false,
+          code: "conflict",
+          message: "submission is not pending",
+        };
+      }
+
+      const reviewerId = await upsertAdminReviewerId(client, input.reviewerEmail);
+      await client.query(
+        `
+          UPDATE submissions
+          SET
+            status = $2,
+            reviewed_by = $3,
+            review_comment = $4,
+            reviewed_at = NOW(),
+            updated_at = NOW()
+          WHERE id = $1;
+        `,
+        [
+          submissionId,
+          targetStatus,
+          reviewerId,
+          input.reviewComment ?? null,
+        ],
+      );
+
+      if (targetStatus === "approved") {
+        await client.query(
+          `
+            UPDATE prompts
+            SET current_version_id = $2, updated_at = NOW()
+            WHERE id = $1;
+          `,
+          [asNumber(submission.prompt_id), asNumber(submission.candidate_version_id)],
+        );
+      }
+
+      await client.query(
+        `
+          INSERT INTO audit_logs
+            (actor_id, action, target_type, target_id, payload_json)
+          VALUES ($1, $2, 'submission', $3, $4::jsonb);
+        `,
+        [
+          reviewerId,
+          `submission.${targetStatus}`,
+          submissionId,
+          JSON.stringify({
+            promptSlug: submission.prompt_slug,
+            candidateVersionNo: submission.candidate_version_no,
+            reviewComment: input.reviewComment ?? null,
+          }),
+        ],
+      );
+
+      await client.query("COMMIT;");
+      return {
+        ok: true,
+        value: {
+          submission: {
+            id: submissionId,
+            status: targetStatus,
+            reviewComment: input.reviewComment,
+            reviewedByEmail: input.reviewerEmail,
+          },
+          prompt: {
+            slug: submission.prompt_slug,
+            currentVersion: {
+              versionNo:
+                targetStatus === "approved"
+                  ? submission.candidate_version_no
+                  : submission.current_version_no ?? submission.candidate_version_no,
+            },
+          },
+          candidateVersion: {
+            versionNo: submission.candidate_version_no,
+          },
+        },
+      };
+    } catch (error) {
+      await client.query("ROLLBACK;");
+      throw error;
+    }
+  });
+}
+
 function createPromptSubmissionInFixtures(
   slug: string,
   input: PromptSubmissionMutationInput,
@@ -887,6 +1100,74 @@ function createPromptSubmissionInFixtures(
     },
     currentVersion: {
       versionNo: currentVersionNo,
+    },
+  };
+}
+
+function reviewPromptSubmissionInFixtures(
+  submissionId: number,
+  action: PromptSubmissionReviewAction,
+  input: PromptSubmissionReviewInput,
+): PromptSubmissionReviewResult {
+  if (input.reviewerRole !== "admin") {
+    return {
+      ok: false,
+      code: "forbidden",
+      message: "admin role is required",
+    };
+  }
+
+  const submission = fixtureSubmissions.find((item) => item.id === submissionId);
+  if (!submission) {
+    return {
+      ok: false,
+      code: "not_found",
+      message: "submission not found",
+    };
+  }
+
+  const targetStatus = toReviewStatus(action);
+  if (!canTransitionReviewStatus(submission.status, targetStatus)) {
+    return {
+      ok: false,
+      code: "conflict",
+      message: "submission is not pending",
+    };
+  }
+
+  submission.status = targetStatus;
+  submission.reviewComment = input.reviewComment;
+  submission.reviewedByEmail = input.reviewerEmail;
+
+  if (targetStatus === "approved") {
+    fixtureCurrentVersionNoBySlug.set(
+      submission.promptSlug,
+      submission.candidateVersionNo,
+    );
+  }
+
+  const currentVersionNo =
+    getFixtureCurrentVersionNo(submission.promptSlug) ??
+    submission.baseVersionNo;
+
+  return {
+    ok: true,
+    value: {
+      submission: {
+        id: submission.id,
+        status: submission.status,
+        reviewComment: submission.reviewComment,
+        reviewedByEmail: input.reviewerEmail,
+      },
+      prompt: {
+        slug: submission.promptSlug,
+        currentVersion: {
+          versionNo: currentVersionNo,
+        },
+      },
+      candidateVersion: {
+        versionNo: submission.candidateVersionNo,
+      },
     },
   };
 }
@@ -997,6 +1278,32 @@ export async function createPromptSubmission(
     return createPromptSubmissionInDb(slug, normalizedInput);
   }
   return createPromptSubmissionInFixtures(slug, normalizedInput);
+}
+
+export async function reviewPromptSubmission(
+  submissionId: number,
+  action: PromptSubmissionReviewAction,
+  input: PromptSubmissionReviewInput,
+): Promise<PromptSubmissionReviewResult> {
+  const normalizedEmail = normalizeUserEmail(input.reviewerEmail);
+  if (!normalizedEmail) {
+    return {
+      ok: false,
+      code: "forbidden",
+      message: "reviewer email is required",
+    };
+  }
+
+  const normalizedInput: PromptSubmissionReviewInput = {
+    reviewerEmail: normalizedEmail,
+    reviewerRole: input.reviewerRole,
+    reviewComment: input.reviewComment,
+  };
+
+  if (await canReadFromDatabase()) {
+    return reviewPromptSubmissionInDb(submissionId, action, normalizedInput);
+  }
+  return reviewPromptSubmissionInFixtures(submissionId, action, normalizedInput);
 }
 
 export async function listPrompts(
