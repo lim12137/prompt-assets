@@ -10,10 +10,10 @@ node --test --experimental-strip-types tests/unit/env/env.test.ts tests/integrat
 
 ## 首次执行（预期失败）
 
-- 结果：失败（0 通过，2 失败）
+- 结果：失败（2 通过，1 失败）
 - 失败摘要：
-  - `ERR_MODULE_NOT_FOUND`：`apps/web/lib/env.ts` 不存在
-  - `ERR_MODULE_NOT_FOUND`：`apps/web/app/api/health/route.ts` 不存在
+  - 用例：`APP_BASE_URL 应可被正确解析`
+  - 断言失败：`databaseUrl` 未去除前后空白，实际值为 `  postgres://...  `，预期为 `postgres://...`
 
 ## 最小实现后再次执行
 

@@ -1,4 +1,8 @@
-type AppEnvInput = Partial<Record<"DATABASE_URL" | "APP_BASE_URL", string>>;
+type AppEnvInput = {
+  DATABASE_URL?: string;
+  APP_BASE_URL?: string;
+  [key: string]: string | undefined;
+};
 
 export type AppEnv = {
   databaseUrl: string;
@@ -6,9 +10,9 @@ export type AppEnv = {
 };
 
 export function parseAppEnv(input: AppEnvInput = process.env): AppEnv {
-  const databaseUrl = input.DATABASE_URL;
+  const databaseUrl = input.DATABASE_URL?.trim();
 
-  if (!databaseUrl || databaseUrl.trim() === "") {
+  if (!databaseUrl) {
     throw new Error("DATABASE_URL is required");
   }
 

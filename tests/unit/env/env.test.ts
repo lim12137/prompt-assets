@@ -15,9 +15,10 @@ test("缺失 DATABASE_URL 时应抛出错误", () => {
 
 test("APP_BASE_URL 应可被正确解析", () => {
   const env = parseAppEnv({
-    DATABASE_URL: "postgres://user:pass@localhost:5432/prompt_db",
+    DATABASE_URL: "  postgres://user:pass@localhost:5432/prompt_db  ",
     APP_BASE_URL: "https://example.com",
   });
 
+  assert.equal(env.databaseUrl, "postgres://user:pass@localhost:5432/prompt_db");
   assert.equal(env.appBaseUrl.href, "https://example.com/");
 });
