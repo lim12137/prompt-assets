@@ -15,13 +15,7 @@ WORKDIR /app
 
 RUN corepack enable
 
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/package.json ./package.json
-COPY --from=deps /app/pnpm-lock.yaml ./pnpm-lock.yaml
-COPY --from=deps /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=deps /app/apps/web/package.json ./apps/web/package.json
-COPY --from=deps /app/packages/db/package.json ./packages/db/package.json
-COPY --from=deps /app/packages/domain/package.json ./packages/domain/package.json
+COPY --from=deps /app ./
 
 COPY apps/web ./apps/web
 COPY packages ./packages
@@ -39,13 +33,7 @@ ENV PORT=3000
 RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
 RUN corepack enable
 
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/pnpm-lock.yaml ./pnpm-lock.yaml
-COPY --from=builder /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=builder /app/apps ./apps
-COPY --from=builder /app/packages ./packages
-COPY --from=builder /app/tests/fixtures ./tests/fixtures
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app ./
 
 EXPOSE 3000
 USER nextjs
