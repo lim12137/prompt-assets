@@ -3,10 +3,13 @@ import {
   isPgReachable,
   withPgClient,
 } from "../../../../packages/db/src/client.ts";
+import { nextVersionNo } from "../../../../packages/domain/src/versioning.ts";
 import {
   baseCategories,
   pendingSubmissionFixture,
   promptCatalog,
+  type PromptVersionFixture,
+  type SubmissionFixture,
 } from "../../../../tests/fixtures/prompts.ts";
 import {
   mapPromptDetail,
@@ -37,6 +40,32 @@ export type PromptLikeMutationResult = {
   slug: string;
   likesCount: number;
   liked: boolean;
+};
+
+export type PromptSubmissionMutationInput = {
+  userEmail: string;
+  content: string;
+  changeNote?: string;
+};
+
+type SubmissionStatus = "pending" | "approved" | "rejected";
+
+export type PromptSubmissionMutationResult = {
+  promptSlug: string;
+  baseVersion: {
+    versionNo: string;
+  };
+  candidateVersion: {
+    versionNo: string;
+    sourceType: "submission";
+  };
+  submission: {
+    id: number;
+    status: SubmissionStatus;
+  };
+  currentVersion: {
+    versionNo: string;
+  };
 };
 
 type DbPromptListRow = {
@@ -86,6 +115,30 @@ type DbPromptLikesCountRow = {
   likes_count: number | string;
 };
 
+type DbPromptSubmissionHeadRow = {
+  id: number | string;
+  current_version_id: number | string | null;
+  current_version_no: string | null;
+};
+
+type DbPromptVersionNoRow = {
+  version_no: string;
+};
+
+type DbPromptVersionInsertRow = {
+  id: number | string;
+  version_no: string;
+};
+
+type DbSubmissionInsertRow = {
+  id: number | string;
+  status: SubmissionStatus;
+};
+
+type FixtureSubmissionRecord = SubmissionFixture & {
+  id: number;
+};
+
 const CATEGORY_MAP = new Map(baseCategories.map((item) => [item.slug, item]));
 const REQUIRED_TABLES = [
   "users",
@@ -94,6 +147,7 @@ const REQUIRED_TABLES = [
   "prompt_versions",
   "submissions",
   "prompt_likes",
+  "audit_logs",
 ];
 let cachedDbReadable:
   | {
@@ -102,6 +156,10 @@ let cachedDbReadable:
     }
   | undefined;
 let fixturePromptLikes = createFixtureLikeState();
+let fixturePromptVersions = createFixturePromptVersionState();
+let fixtureCurrentVersionNoBySlug = createFixtureCurrentVersionState();
+let fixtureSubmissions = createFixtureSubmissionState();
+let fixtureSubmissionIdSeed = fixtureSubmissions.length;
 
 function createFixtureLikeState(): Map<string, Set<string>> {
   return new Map(
@@ -109,6 +167,40 @@ function createFixtureLikeState(): Map<string, Set<string>> {
       .filter((prompt) => prompt.status !== "archived")
       .map((prompt) => [prompt.slug, new Set(prompt.likesByEmails ?? [])]),
   );
+}
+
+function createFixturePromptVersionState(): Map<string, PromptVersionFixture[]> {
+  return new Map(
+    promptCatalog
+      .filter((prompt) => prompt.status !== "archived")
+      .map((prompt) => [
+        prompt.slug,
+        prompt.versions.map((version) => ({ ...version })),
+      ]),
+  );
+}
+
+function createFixtureCurrentVersionState(): Map<string, string> {
+  return new Map(
+    promptCatalog
+      .filter((prompt) => prompt.status !== "archived")
+      .map((prompt) => [prompt.slug, prompt.currentVersionNo]),
+  );
+}
+
+function createFixtureSubmissionState(): FixtureSubmissionRecord[] {
+  return pendingSubmissionFixture.map((item, index) => ({
+    ...item,
+    id: index + 1,
+  }));
+}
+
+function getRepositoryDataSourceMode(): "auto" | "fixture" {
+  const raw = process.env.PROMPT_REPOSITORY_DATA_SOURCE?.trim().toLowerCase();
+  if (raw === "fixture") {
+    return "fixture";
+  }
+  return "auto";
 }
 
 function normalizeSort(sort?: string): PromptSort {
@@ -141,6 +233,31 @@ function getFixtureLikesCount(slug: string): number {
   return getFixturePromptLikes(slug)?.size ?? 0;
 }
 
+function getFixturePromptVersions(slug: string): PromptVersionFixture[] | null {
+  const versions = fixturePromptVersions.get(slug);
+  return versions ?? null;
+}
+
+function getFixtureCurrentVersionNo(slug: string): string | null {
+  const currentVersionNo = fixtureCurrentVersionNoBySlug.get(slug);
+  return currentVersionNo ?? null;
+}
+
+function toVersionNoNumber(versionNo: string): number {
+  const matched = /^v(\d+)$/i.exec(versionNo.trim());
+  if (!matched) {
+    return -1;
+  }
+  return Number(matched[1]);
+}
+
+function getLatestVersionNoFromFixtures(versions: PromptVersionFixture[]): string {
+  const sorted = [...versions].sort((left, right) =>
+    compareVersionNoDesc(left.versionNo, right.versionNo),
+  );
+  return sorted[0]?.versionNo ?? "v0000";
+}
+
 function buildFixtureTimestamp(index: number): string {
   const base = Date.UTC(2026, 0, 1, 0, 0, 0);
   return new Date(base + index * 86_400_000).toISOString();
@@ -166,6 +283,10 @@ async function hasPromptTables(client: SqlClient): Promise<boolean> {
 }
 
 async function canReadFromDatabase(): Promise<boolean> {
+  if (getRepositoryDataSourceMode() === "fixture") {
+    return false;
+  }
+
   const now = Date.now();
   if (cachedDbReadable && now - cachedDbReadable.at < 5000) {
     return cachedDbReadable.value;
@@ -298,7 +419,7 @@ function getFixtureVersionStatus(
     return "approved";
   }
 
-  const linkedSubmission = pendingSubmissionFixture.find(
+  const linkedSubmission = fixtureSubmissions.find(
     (item) =>
       item.promptSlug === promptSlug && item.candidateVersionNo === versionNo,
   );
@@ -324,14 +445,20 @@ function getPromptDetailFromFixtures(slug: string): PromptDetailDto | null {
     return null;
   }
 
-  const currentVersion = prompt.versions.find(
-    (version) => version.versionNo === prompt.currentVersionNo,
+  const versionsInState = getFixturePromptVersions(prompt.slug);
+  const currentVersionNo = getFixtureCurrentVersionNo(prompt.slug);
+  if (!versionsInState || !currentVersionNo) {
+    return null;
+  }
+
+  const currentVersion = versionsInState.find(
+    (version) => version.versionNo === currentVersionNo,
   );
   if (!currentVersion) {
     return null;
   }
 
-  const versions: PromptVersionRaw[] = [...prompt.versions]
+  const versions: PromptVersionRaw[] = [...versionsInState]
     .sort((left, right) => compareVersionNoDesc(left.versionNo, right.versionNo))
     .map((version, index) => ({
       versionNo: version.versionNo,
@@ -339,7 +466,7 @@ function getPromptDetailFromFixtures(slug: string): PromptDetailDto | null {
       status: getFixtureVersionStatus(
         prompt.slug,
         version.versionNo,
-        prompt.currentVersionNo,
+        currentVersionNo,
       ),
       submittedAt: buildFixtureTimestamp(index),
       content: version.content,
@@ -591,6 +718,179 @@ async function unlikePromptInDb(
   });
 }
 
+async function createPromptSubmissionInDb(
+  slug: string,
+  input: PromptSubmissionMutationInput,
+): Promise<PromptSubmissionMutationResult | null> {
+  return withPgClient(databaseUrl, async (client) => {
+    await client.query("BEGIN;");
+
+    try {
+      const headResult = await client.query<DbPromptSubmissionHeadRow>(
+        `
+          SELECT
+            p.id,
+            p.current_version_id,
+            cv.version_no AS current_version_no
+          FROM prompts p
+          LEFT JOIN prompt_versions cv ON cv.id = p.current_version_id
+          WHERE p.slug = $1 AND p.status = 'published'
+          LIMIT 1;
+        `,
+        [slug],
+      );
+
+      const head = headResult.rows[0];
+      if (!head || !head.current_version_id || !head.current_version_no) {
+        await client.query("ROLLBACK;");
+        return null;
+      }
+
+      const promptId = asNumber(head.id);
+      const baseVersionId = asNumber(head.current_version_id);
+      const baseVersionNo = head.current_version_no;
+
+      const latestVersionResult = await client.query<DbPromptVersionNoRow>(
+        `
+          SELECT version_no
+          FROM prompt_versions
+          WHERE prompt_id = $1
+          ORDER BY CAST(REGEXP_REPLACE(version_no, '^v', '') AS integer) DESC, id DESC
+          LIMIT 1;
+        `,
+        [promptId],
+      );
+      const latestVersionNo = latestVersionResult.rows[0]?.version_no ?? baseVersionNo;
+      const candidateVersionNo = nextVersionNo(latestVersionNo);
+      const userId = await upsertUserId(client, input.userEmail);
+
+      const insertedVersion = await client.query<DbPromptVersionInsertRow>(
+        `
+          INSERT INTO prompt_versions
+            (prompt_id, version_no, content, change_note, source_type, submitted_by)
+          VALUES ($1, $2, $3, $4, 'submission', $5)
+          RETURNING id, version_no;
+        `,
+        [promptId, candidateVersionNo, input.content, input.changeNote ?? null, userId],
+      );
+      const candidateVersionId = asNumber(insertedVersion.rows[0]?.id);
+
+      const insertedSubmission = await client.query<DbSubmissionInsertRow>(
+        `
+          INSERT INTO submissions
+            (prompt_id, base_version_id, candidate_version_id, submitter_id, status)
+          VALUES ($1, $2, $3, $4, 'pending')
+          RETURNING id, status;
+        `,
+        [promptId, baseVersionId, candidateVersionId, userId],
+      );
+      const submissionId = asNumber(insertedSubmission.rows[0]?.id);
+      const submissionStatus = insertedSubmission.rows[0]?.status ?? "pending";
+
+      await client.query(
+        `
+          INSERT INTO audit_logs
+            (actor_id, action, target_type, target_id, payload_json)
+          VALUES ($1, 'submission.created', 'submission', $2, $3::jsonb);
+        `,
+        [
+          userId,
+          submissionId,
+          JSON.stringify({
+            promptSlug: slug,
+            baseVersionNo,
+            candidateVersionNo,
+          }),
+        ],
+      );
+
+      await client.query("COMMIT;");
+      return {
+        promptSlug: slug,
+        baseVersion: {
+          versionNo: baseVersionNo,
+        },
+        candidateVersion: {
+          versionNo: candidateVersionNo,
+          sourceType: "submission",
+        },
+        submission: {
+          id: submissionId,
+          status: submissionStatus,
+        },
+        currentVersion: {
+          versionNo: baseVersionNo,
+        },
+      };
+    } catch (error) {
+      await client.query("ROLLBACK;");
+      throw error;
+    }
+  });
+}
+
+function createPromptSubmissionInFixtures(
+  slug: string,
+  input: PromptSubmissionMutationInput,
+): PromptSubmissionMutationResult | null {
+  const prompt = promptCatalog.find(
+    (item) => item.slug === slug && item.status === "published",
+  );
+  if (!prompt) {
+    return null;
+  }
+
+  const versions = getFixturePromptVersions(slug);
+  const currentVersionNo = getFixtureCurrentVersionNo(slug);
+  if (!versions || !currentVersionNo) {
+    return null;
+  }
+
+  const latestVersionNo = getLatestVersionNoFromFixtures(versions);
+  if (toVersionNoNumber(latestVersionNo) < 0) {
+    return null;
+  }
+
+  const candidateVersionNo = nextVersionNo(latestVersionNo);
+  versions.push({
+    versionNo: candidateVersionNo,
+    content: input.content,
+    changeNote: input.changeNote,
+    sourceType: "submission",
+    submittedByEmail: input.userEmail,
+  });
+  fixturePromptVersions.set(slug, versions);
+
+  fixtureSubmissionIdSeed += 1;
+  fixtureSubmissions.push({
+    id: fixtureSubmissionIdSeed,
+    promptSlug: slug,
+    baseVersionNo: currentVersionNo,
+    candidateVersionNo,
+    submitterEmail: input.userEmail,
+    status: "pending",
+    reviewComment: undefined,
+  });
+
+  return {
+    promptSlug: slug,
+    baseVersion: {
+      versionNo: currentVersionNo,
+    },
+    candidateVersion: {
+      versionNo: candidateVersionNo,
+      sourceType: "submission",
+    },
+    submission: {
+      id: fixtureSubmissionIdSeed,
+      status: "pending",
+    },
+    currentVersion: {
+      versionNo: currentVersionNo,
+    },
+  };
+}
+
 function likePromptInFixtures(
   slug: string,
   userEmail: string,
@@ -639,6 +939,10 @@ function unlikePromptInFixtures(
 
 export function __resetPromptLikeFixtureStateForTests(): void {
   fixturePromptLikes = createFixtureLikeState();
+  fixturePromptVersions = createFixturePromptVersionState();
+  fixtureCurrentVersionNoBySlug = createFixtureCurrentVersionState();
+  fixtureSubmissions = createFixtureSubmissionState();
+  fixtureSubmissionIdSeed = fixtureSubmissions.length;
   cachedDbReadable = undefined;
 }
 
@@ -672,6 +976,27 @@ export async function unlikePrompt(
   }
 
   return unlikePromptInFixtures(slug, normalizedEmail);
+}
+
+export async function createPromptSubmission(
+  slug: string,
+  input: PromptSubmissionMutationInput,
+): Promise<PromptSubmissionMutationResult | null> {
+  const normalizedEmail = normalizeUserEmail(input.userEmail);
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  const normalizedInput: PromptSubmissionMutationInput = {
+    userEmail: normalizedEmail,
+    content: input.content,
+    changeNote: input.changeNote,
+  };
+
+  if (await canReadFromDatabase()) {
+    return createPromptSubmissionInDb(slug, normalizedInput);
+  }
+  return createPromptSubmissionInFixtures(slug, normalizedInput);
 }
 
 export async function listPrompts(
