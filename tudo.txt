@@ -1,0 +1,253 @@
+要求：想要像 Cherry Studio 那样简洁的提示词管理：分类列表、复制、查看版本、点赞、用户提交更新并进入版本历史。我需要先了解 Cherry Studio 的界面和功能结构，以及是否有开源项目或模板，再结合更轻量的开源 Prompt 管理项目（如 PromptLibrary 等），给出一个精简、可自建的内网 Docker 方案。
+
+**结论：**  
+用 **PromptLibrary（MIT 协议）做“分类列表 + 复制 + 评分（点赞）+ 管理后台”**，再叠加一个 **极简版本引擎（借 yinpu/prompt_manager 的 Project>Prompt>Version 概念）**，就能实现你说的 Cherry Studio 风格，内网 Docker 部署，协议完全 OK。
+
+---
+
+## 一、整体架构（像 Cherry Studio 那样简洁）
+
+核心思路：  
+- **PromptLibrary** 负责：分类浏览、搜索、评分、复制、提交新 Prompt【turn3fetch0】【turn10fetch0】  
+- **Prompt Manager 后台**：在 PromptLibrary 基础上，把“一个提示词”拆成“多个版本”，记录谁提交了更新  
+- **版本引擎**：用 Python 库 `prompt_manager` 的 Project>Prompt>Version 概念【turn9fetch0】，在后端自动管理版本号和快照
+
+用一个架构图概括一下：
+
+```mermaid
+flowchart LR
+  U[内网用户] --> PL[Prompt Library<br/>分类列表 + 点赞 + 复制]
+  U --> PM[Prompt Manager 后台<br/>版本 + 提交记录]
+
+  PL -->|新增/编辑| PM
+  PM -->|版本列表 + 当前内容| PL
+
+  PM --> PE[版本引擎<br/>prompt_manager<br/>Project>Prompt>Version]
+
+  subgraph 内网存储
+    FS[(共享存储 / NAS)]
+  end
+
+  PL -->|读取| FS
+  PE -->|写入版本| FS
+```
+
+---
+
+## 二、为什么选 PromptLibrary + prompt_manager
+
+### 1. PromptLibrary：已经很像“Cherry Studio 那个列表”
+
+PromptLibrary 本身就是一个开源提示词库，功能非常接近你想要的：
+
+- **分类列表**：按内容创作、编程、设计等分类浏览提示词【turn3fetch0】  
+- **评分系统**：每个提示词有 `rating`（1–10 分），相当于“点赞/评分”【turn3fetch0】  
+- **搜索 + 复制**：前端列表支持搜索、筛选，点进去可以复制内容【turn3fetch0】  
+- **管理后台 Prompt Manager**：Web UI 做 Dashboard / Browse / Create / Edit / Categories / Preview【turn3fetch0】  
+- **MIT 协议**：公司内网可以随便用、改，不用开源自己的代码【turn10fetch0】
+
+它目前没有“版本历史”和“用户提交更新并进入版本列表”，但这个可以叠加一个版本层来实现。
+
+### 2. prompt_manager：一个现成的“Project>Prompt>Version”引擎
+
+`yinpu/prompt_manager` 这个 Python 库专门做提示词版本管理，概念很简单【turn9fetch0】：
+
+- **Project>Prompt>Version** 三层结构【turn9fetch0】  
+- 每个版本存：`content`（提示词内容）、`model_outputs`（可选，模型输出）、`meta`（自定义元数据）【turn9fetch0】  
+- 自动维护版本号，支持自定义版本号（如 `english-v1`）【turn9fetch0】  
+- 可以导入/导出整个提示词（含所有版本）【turn9fetch0】
+
+你完全可以把这套概念搬到 Web 后端，作为 **版本引擎**，而不是直接用它的命令行/库形态。
+
+---
+
+## 三、具体功能怎么实现（对照你提的需求）
+
+### 1. 像 Cherry Studio 那样：分类列表 + 复制
+
+**直接用 PromptLibrary 前端 + 后台即可**：
+
+- 前端：  
+  - 分类导航（内容创作 / 编程 / 设计 …）【turn3fetch0】  
+  - 列表页：搜索 + 过滤 + 排序（按 rating / 新增时间等）【turn3fetch0】  
+  - 详情页：展示提示词内容 + 一键复制按钮（自己加一个“复制”按钮即可）
+
+- 后台（Prompt Manager）：  
+  - 管理分类、新增/编辑提示词【turn3fetch0】  
+  - 给非技术同事用，类似 Cherry Studio 的“助手管理后台”
+
+### 2. 评分 / 点赞
+
+PromptLibrary 已经有 `rating` 字段（1–10 分）【turn3fetch0】：
+
+- 前端：  
+  - 在列表页显示 ⭐ 评分（类似 Cherry Studio 的点赞）  
+  - 详情页加一个“评分”组件（1–5 星或点赞），提交到后端更新 `rating`  
+- 后端：  
+  - `rating` 仍用 1–10 浮点数存储，前端做显示转换即可  
+  - 可以加一个 `likes` 整数字段，单纯记录点赞数，用于排序
+
+### 3. 版本 + 更新记录
+
+**核心改动：把 PromptLibrary 的“一个文件=一个提示词”扩展成“一个 Prompt = 多个 Version”。**
+
+数据结构可以这样设计（JSON/数据库都可以）：
+
+```json
+{
+  "slug": "email-reply-helper",
+  "title": "邮件回复助手",
+  "category": "内容创作",
+  "rating": 9.2,
+  "likes": 23,
+  "versions": [
+    {
+      "version": "v1",
+      "content": "你是一个专业的邮件回复助手...",
+      "created_at": "2026-04-22T10:00:00Z",
+      "updated_by": "zhangsan",
+      "change_note": "初始版本",
+      "meta": { "lang": "zh", "scene": "工作邮件" }
+    },
+    {
+      "version": "v2",
+      "content": "你是一个专业的邮件回复助手，优先用正式语气...",
+      "created_at": "2026-04-23T14:00:00Z",
+      "updated_by": "lisi",
+      "change_note": "增加正式语气要求",
+      "meta": { "lang": "zh", "scene": "工作邮件" }
+    }
+  ]
+}
+```
+
+在交互上：
+
+- 详情页增加一个 **“版本历史”标签页**：  
+  - 左侧：版本列表（v1 / v2 …）  
+  - 右侧：该版本的内容 + 变更说明 + 提交人 + 时间  
+- 当前版本用 `versions[-1]` 表示，列表页展示和复制的是当前版本内容。
+
+**后端实现版本引擎**可以参考 `prompt_manager` 的做法【turn9fetch0】：
+
+- 为每个提示词维护一个目录：  
+  - `/data/prompts/email-reply-helper/v1/prompt.txt`  
+  - `/data/prompts/email-reply-helper/v2/prompt.txt`  
+- 每次新增版本，自动生成 `vN` 目录，保存内容 + `meta.json`（含 updated_by / change_note 等）
+
+### 4. 用户提交更新，并直接在版本里看到
+
+流程可以设计成这样：
+
+1. 用户在提示词详情页点击 **“提交改进版”**  
+2. 打开一个编辑表单，当前版本内容作为模板  
+3. 用户修改后填写变更说明（change_note）  
+4. 提交后：  
+   - 后端新增一个版本 `vN+1`，保存内容、提交人、时间、change_note  
+   - 前端自动刷新“版本历史”，新版本出现在列表中
+
+**权限控制：**
+
+- 普通用户：只能提交“待审核版本”（状态 `pending`）  
+- 管理员：审核后，将 `pending` 改为 `approved`，才在前台版本历史中显示  
+- 这样可以避免乱提交，又满足“用户提交更新 → 版本里可见”的需求
+
+---
+
+## 四、内网 Docker 部署方案（协议友好）
+
+### 1. 使用的开源项目 & 协议
+
+- **PromptLibrary**：MIT 协议，公司内网可自由使用、修改【turn10fetch0】  
+- **prompt_manager（仅用概念）**：你只用它 Project>Prompt>Version 的设计思路，实际代码自己写，不会引入额外协议约束【turn9fetch0】  
+- 其它基础组件：  
+  - Nginx：做反向代理  
+  - PostgreSQL / SQLite：存提示词元数据 + 版本索引  
+  - 可选：MinIO / NAS 做文件存储（挂载 URL 用）
+
+所有组件都可以离线 Docker 部署，无外网依赖。
+
+### 2. 简化版 docker-compose.yml 示例
+
+```yaml
+version: '3.8'
+
+services:
+  # 1. Prompt Library 前端 + API
+  prompt-library:
+    build: ./prompt-library       # 你自己 fork 并改过版本的 PromptLibrary
+    container_name: prompt_library
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data/prompts:/app/prompts
+    environment:
+      - NEXT_PUBLIC_API_URL=http://prompt-api:4000
+
+  # 2. 自定义 Prompt API（版本引擎 + 权限）
+  prompt-api:
+    build: ./prompt-api           # 自己写的小后端，用 Node/Python 都行
+    container_name: prompt_api
+    restart: always
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./data/prompts:/data/prompts
+    environment:
+      - DB_URL=postgres://user:pass@db:5432/prompts
+
+  # 3. 数据库（存元数据 + 版本索引）
+  db:
+    image: postgres:15-alpine
+    container_name: prompt_db
+    restart: always
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_DB=prompts
+
+  # 4. Nginx 反向代理（统一入口）
+  nginx:
+    image: nginx:alpine
+    container_name: prompt_nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+```
+
+---
+
+## 五、落地步骤建议（先做 MVP，再慢慢加功能）
+
+1. **Fork PromptLibrary，先跑起来**  
+   - 按官方说明本地跑 `prompt-library` + `prompt-manager`【turn3fetch0】  
+   - 熟悉分类、评分、管理后台的交互
+
+2. **加上“版本历史”接口**  
+   - 在 `prompt-api` 中，为每个提示词增加 `/api/prompts/:slug/versions` 接口  
+   - 参考_prompt_manager_ 的 Project>Prompt>Version 设计【turn9fetch0】，用文件系统或数据库存储版本
+
+3. **前端增加“版本历史 + 提交改进版”**  
+   - 提示词详情页加一个“版本”标签页  
+   - 增加“提交改进版”表单，调用 `/api/prompts/:slug/versions` 创建新版本
+
+4. **加入简单权限和登录**  
+   - 先用 NocoDB 或简单 JWT 登录，预留 SSO 接口  
+   - 区分普通用户（提交待审核版本）和管理员（审核/发布版本）
+
+5. **后续再加：A/B 评选 / URL 挂载**  
+   - 版本引擎已经支持多版本，A/B 评选只是加一个“投票”字段  
+   - URL 挂载可以用脚本定期从内网 HTTP 拉取内容，调用版本 API 创建新版本
+
+---
+
+如果你愿意，我下一步可以帮你：
+
+- 把 **PromptLibrary 的数据结构** 扩展成“多版本版本”的 JSON Schema  
+- 给一个 **极简版本 API 设计（REST）**，你直接照着写后端就行  
+- 或者直接给一份 **最小可用前端组件代码（版本历史 + 提交改进版）**，你粘到 PromptLibrary 项目里就能跑
