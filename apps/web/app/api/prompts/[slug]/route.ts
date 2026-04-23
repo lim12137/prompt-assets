@@ -7,11 +7,11 @@ type RouteParams = {
 };
 
 type RouteContext = {
-  params: RouteParams | Promise<RouteParams>;
+  params: Promise<RouteParams>;
 };
 
 export async function GET(_request: Request, context: RouteContext) {
-  const params = await Promise.resolve(context.params);
+  const params = await context.params;
   const slug = decodeURIComponent(params.slug ?? "").trim();
 
   if (!slug) {

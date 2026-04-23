@@ -48,7 +48,7 @@ export async function POST(request: Request, context: RouteContext) {
     reviewComment: await parseReviewComment(request),
   });
 
-  if (!result.ok) {
+  if ("code" in result) {
     const status =
       result.code === "forbidden" ? 403 : result.code === "conflict" ? 409 : 404;
     return NextResponse.json({ error: result.message }, { status });

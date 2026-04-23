@@ -7,7 +7,7 @@ type RouteParams = {
 };
 
 type RouteContext = {
-  params: RouteParams | Promise<RouteParams>;
+  params: Promise<RouteParams>;
 };
 
 type SubmissionBody = {
@@ -30,7 +30,7 @@ function isValidEmail(value: string): boolean {
 }
 
 export async function POST(request: Request, context: RouteContext) {
-  const params = await Promise.resolve(context.params);
+  const params = await context.params;
   const slug = decodeURIComponent(params.slug ?? "").trim();
   if (!slug) {
     return NextResponse.json({ error: "invalid slug" }, { status: 400 });

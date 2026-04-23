@@ -10,7 +10,7 @@ type RouteParams = {
 };
 
 type RouteContext = {
-  params: RouteParams | Promise<RouteParams>;
+  params: Promise<RouteParams>;
 };
 
 const DEFAULT_USER_EMAIL = "alice@example.com";
@@ -28,7 +28,7 @@ function isValidEmail(value: string): boolean {
 }
 
 export async function POST(request: Request, context: RouteContext) {
-  const params = await Promise.resolve(context.params);
+  const params = await context.params;
   const slug = decodeURIComponent(params.slug ?? "").trim();
 
   if (!slug) {
@@ -49,7 +49,7 @@ export async function POST(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(request: Request, context: RouteContext) {
-  const params = await Promise.resolve(context.params);
+  const params = await context.params;
   const slug = decodeURIComponent(params.slug ?? "").trim();
 
   if (!slug) {
