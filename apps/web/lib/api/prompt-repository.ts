@@ -33,6 +33,12 @@ type ListPromptsQuery = {
 
 type PromptSort = "latest" | "popular" | "liked";
 
+export type PromptLikeMutationResult = {
+  slug: string;
+  likesCount: number;
+  liked: boolean;
+};
+
 type DbPromptListRow = {
   slug: string;
   title: string;
@@ -68,14 +74,42 @@ type DbPromptDetailVersionRow = {
   submission_status: PromptVersionStatus | null;
 };
 
+type DbPromptLookupRow = {
+  id: number | string;
+};
+
+type DbUserRow = {
+  id: number | string;
+};
+
+type DbPromptLikesCountRow = {
+  likes_count: number | string;
+};
+
 const CATEGORY_MAP = new Map(baseCategories.map((item) => [item.slug, item]));
-const REQUIRED_TABLES = ["categories", "prompts", "prompt_versions", "submissions"];
+const REQUIRED_TABLES = [
+  "users",
+  "categories",
+  "prompts",
+  "prompt_versions",
+  "submissions",
+  "prompt_likes",
+];
 let cachedDbReadable:
   | {
       at: number;
       value: boolean;
     }
   | undefined;
+let fixturePromptLikes = createFixtureLikeState();
+
+function createFixtureLikeState(): Map<string, Set<string>> {
+  return new Map(
+    promptCatalog
+      .filter((prompt) => prompt.status !== "archived")
+      .map((prompt) => [prompt.slug, new Set(prompt.likesByEmails ?? [])]),
+  );
+}
 
 function normalizeSort(sort?: string): PromptSort {
   if (sort === "popular" || sort === "liked") {
@@ -92,6 +126,19 @@ function asNumber(value: number | string | null | undefined): number {
     return Number(value);
   }
   return 0;
+}
+
+function normalizeUserEmail(input: string): string {
+  return input.trim().toLowerCase();
+}
+
+function getFixturePromptLikes(slug: string): Set<string> | null {
+  const likes = fixturePromptLikes.get(slug);
+  return likes ?? null;
+}
+
+function getFixtureLikesCount(slug: string): number {
+  return getFixturePromptLikes(slug)?.size ?? 0;
 }
 
 function buildFixtureTimestamp(index: number): string {
@@ -209,7 +256,7 @@ function listPromptsFromFixtures(query: ListPromptsQuery): PromptListItemDto[] {
         slug: prompt.slug,
         title: prompt.title,
         summary: prompt.summary,
-        likesCount: prompt.likesByEmails?.length ?? 0,
+        likesCount: getFixtureLikesCount(prompt.slug),
         updatedAt: buildFixtureTimestamp(index),
         categorySlug: prompt.categorySlug,
         categoryName: CATEGORY_MAP.get(prompt.categorySlug)?.name ?? "",
@@ -302,7 +349,7 @@ function getPromptDetailFromFixtures(slug: string): PromptDetailDto | null {
     slug: prompt.slug,
     title: prompt.title,
     summary: prompt.summary,
-    likesCount: prompt.likesByEmails?.length ?? 0,
+    likesCount: getFixtureLikesCount(prompt.slug),
     updatedAt: buildFixtureTimestamp(promptCatalog.indexOf(prompt)),
     categorySlug: prompt.categorySlug,
     categoryName: CATEGORY_MAP.get(prompt.categorySlug)?.name ?? "",
@@ -412,6 +459,219 @@ async function getPromptDetailFromDb(slug: string): Promise<PromptDetailDto | nu
       versions,
     });
   });
+}
+
+async function findPublishedPromptId(
+  client: SqlClient,
+  slug: string,
+): Promise<number | null> {
+  const result = await client.query<DbPromptLookupRow>(
+    `
+      SELECT id
+      FROM prompts
+      WHERE slug = $1 AND status = 'published'
+      LIMIT 1;
+    `,
+    [slug],
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+  return asNumber(row.id);
+}
+
+async function upsertUserId(client: SqlClient, email: string): Promise<number> {
+  const result = await client.query<DbUserRow>(
+    `
+      INSERT INTO users (email, role)
+      VALUES ($1, 'user')
+      ON CONFLICT (email)
+      DO UPDATE SET email = EXCLUDED.email
+      RETURNING id;
+    `,
+    [email],
+  );
+
+  return asNumber(result.rows[0]?.id);
+}
+
+async function readPromptLikesCount(client: SqlClient, promptId: number): Promise<number> {
+  const result = await client.query<DbPromptLikesCountRow>(
+    `
+      SELECT likes_count
+      FROM prompts
+      WHERE id = $1
+      LIMIT 1;
+    `,
+    [promptId],
+  );
+  return asNumber(result.rows[0]?.likes_count);
+}
+
+async function likePromptInDb(
+  slug: string,
+  userEmail: string,
+): Promise<PromptLikeMutationResult | null> {
+  return withPgClient(databaseUrl, async (client) => {
+    const promptId = await findPublishedPromptId(client, slug);
+    if (!promptId) {
+      return null;
+    }
+    const userId = await upsertUserId(client, userEmail);
+
+    const inserted = await client.query<DbPromptLookupRow>(
+      `
+        INSERT INTO prompt_likes (prompt_id, user_id)
+        VALUES ($1, $2)
+        ON CONFLICT (prompt_id, user_id) DO NOTHING
+        RETURNING id;
+      `,
+      [promptId, userId],
+    );
+
+    if (inserted.rows.length > 0) {
+      await client.query(
+        `
+          UPDATE prompts
+          SET likes_count = likes_count + 1, updated_at = NOW()
+          WHERE id = $1;
+        `,
+        [promptId],
+      );
+    }
+
+    const likesCount = await readPromptLikesCount(client, promptId);
+    return {
+      slug,
+      likesCount,
+      liked: true,
+    };
+  });
+}
+
+async function unlikePromptInDb(
+  slug: string,
+  userEmail: string,
+): Promise<PromptLikeMutationResult | null> {
+  return withPgClient(databaseUrl, async (client) => {
+    const promptId = await findPublishedPromptId(client, slug);
+    if (!promptId) {
+      return null;
+    }
+    const userId = await upsertUserId(client, userEmail);
+
+    const deleted = await client.query<DbPromptLookupRow>(
+      `
+        DELETE FROM prompt_likes
+        WHERE prompt_id = $1 AND user_id = $2
+        RETURNING id;
+      `,
+      [promptId, userId],
+    );
+
+    if (deleted.rows.length > 0) {
+      await client.query(
+        `
+          UPDATE prompts
+          SET likes_count = GREATEST(likes_count - 1, 0), updated_at = NOW()
+          WHERE id = $1;
+        `,
+        [promptId],
+      );
+    }
+
+    const likesCount = await readPromptLikesCount(client, promptId);
+    return {
+      slug,
+      likesCount,
+      liked: false,
+    };
+  });
+}
+
+function likePromptInFixtures(
+  slug: string,
+  userEmail: string,
+): PromptLikeMutationResult | null {
+  const prompt = promptCatalog.find(
+    (item) => item.slug === slug && item.status !== "archived",
+  );
+  if (!prompt) {
+    return null;
+  }
+
+  const normalizedEmail = normalizeUserEmail(userEmail);
+  const likes = getFixturePromptLikes(slug) ?? new Set<string>();
+  likes.add(normalizedEmail);
+  fixturePromptLikes.set(slug, likes);
+
+  return {
+    slug,
+    likesCount: likes.size,
+    liked: true,
+  };
+}
+
+function unlikePromptInFixtures(
+  slug: string,
+  userEmail: string,
+): PromptLikeMutationResult | null {
+  const prompt = promptCatalog.find(
+    (item) => item.slug === slug && item.status !== "archived",
+  );
+  if (!prompt) {
+    return null;
+  }
+
+  const normalizedEmail = normalizeUserEmail(userEmail);
+  const likes = getFixturePromptLikes(slug) ?? new Set<string>();
+  likes.delete(normalizedEmail);
+  fixturePromptLikes.set(slug, likes);
+
+  return {
+    slug,
+    likesCount: likes.size,
+    liked: false,
+  };
+}
+
+export function __resetPromptLikeFixtureStateForTests(): void {
+  fixturePromptLikes = createFixtureLikeState();
+  cachedDbReadable = undefined;
+}
+
+export async function likePrompt(
+  slug: string,
+  userEmail: string,
+): Promise<PromptLikeMutationResult | null> {
+  const normalizedEmail = normalizeUserEmail(userEmail);
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  if (await canReadFromDatabase()) {
+    return likePromptInDb(slug, normalizedEmail);
+  }
+
+  return likePromptInFixtures(slug, normalizedEmail);
+}
+
+export async function unlikePrompt(
+  slug: string,
+  userEmail: string,
+): Promise<PromptLikeMutationResult | null> {
+  const normalizedEmail = normalizeUserEmail(userEmail);
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  if (await canReadFromDatabase()) {
+    return unlikePromptInDb(slug, normalizedEmail);
+  }
+
+  return unlikePromptInFixtures(slug, normalizedEmail);
 }
 
 export async function listPrompts(

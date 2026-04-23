@@ -1,4 +1,5 @@
 import { createElement } from "react";
+import { PromptActions } from "./_prompt-actions.js";
 
 /**
  * @typedef {"approved" | "pending" | "rejected"} PromptVersionStatus
@@ -56,6 +57,10 @@ export function PromptDetailContent({ detail }) {
     createElement("h1", null, detail.title),
     createElement("p", null, `分类：${detail.category.name}`),
     createElement("p", null, detail.summary),
+    createElement(PromptActions, {
+      slug: detail.slug,
+      initialLikesCount: detail.likesCount,
+    }),
     createElement(
       "section",
       { "aria-label": "当前版本" },
