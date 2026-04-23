@@ -60,6 +60,7 @@ export function PromptDetailContent({ detail }) {
     createElement(PromptActions, {
       slug: detail.slug,
       initialLikesCount: detail.likesCount,
+      currentVersionContent: detail.currentVersion.content,
     }),
     createElement(
       "section",
