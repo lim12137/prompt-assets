@@ -4,6 +4,8 @@ import {
   withPgClient,
 } from "../../../../packages/db/src/client.ts";
 import {
+  buildAuditLogEntry,
+  type AuditLogEntry,
   canTransitionReviewStatus,
   nextVersionNo,
 } from "../../../../packages/domain/src/index.ts";
@@ -14,6 +16,7 @@ import {
   type PromptVersionFixture,
   type SubmissionFixture,
 } from "../../../../tests/fixtures/prompts.ts";
+import { writeAuditLog } from "../audit/write-audit-log.ts";
 import {
   mapPromptDetail,
   mapPromptListItem,
@@ -212,6 +215,7 @@ let fixturePromptVersions = createFixturePromptVersionState();
 let fixtureCurrentVersionNoBySlug = createFixtureCurrentVersionState();
 let fixtureSubmissions = createFixtureSubmissionState();
 let fixtureSubmissionIdSeed = fixtureSubmissions.length;
+let fixtureAuditLogs: AuditLogEntry[] = [];
 
 function createFixtureLikeState(): Map<string, Set<string>> {
   return new Map(
@@ -274,6 +278,31 @@ function asNumber(value: number | string | null | undefined): number {
 
 function normalizeUserEmail(input: string): string {
   return input.trim().toLowerCase();
+}
+
+function fixtureActorId(email: string): number {
+  const normalizedEmail = normalizeUserEmail(email);
+  const knownEmails = [
+    "admin@example.com",
+    "alice@example.com",
+    "bob@example.com",
+    "carol@example.com",
+  ];
+  const existingIndex = knownEmails.indexOf(normalizedEmail);
+  if (existingIndex >= 0) {
+    return existingIndex + 1;
+  }
+
+  let hash = 0;
+  for (const char of normalizedEmail) {
+    hash = (hash * 31 + char.charCodeAt(0)) % 100000;
+  }
+  return hash + knownEmails.length + 1;
+}
+
+function fixturePromptId(slug: string): number {
+  const index = promptCatalog.findIndex((item) => item.slug === slug);
+  return index >= 0 ? index + 1 : 0;
 }
 
 function toReviewStatus(action: PromptSubmissionReviewAction): SubmissionStatus {
@@ -744,6 +773,18 @@ async function likePromptInDb(
     }
 
     const likesCount = await readPromptLikesCount(client, promptId);
+    await writeAuditLog(client, {
+      actorId: userId,
+      action: "prompt.liked",
+      targetType: "prompt",
+      targetId: promptId,
+      payload: {
+        promptSlug: slug,
+        liked: true,
+        likesCount,
+      },
+    });
+
     return {
       slug,
       likesCount,
@@ -784,6 +825,18 @@ async function unlikePromptInDb(
     }
 
     const likesCount = await readPromptLikesCount(client, promptId);
+    await writeAuditLog(client, {
+      actorId: userId,
+      action: "prompt.unliked",
+      targetType: "prompt",
+      targetId: promptId,
+      payload: {
+        promptSlug: slug,
+        liked: false,
+        likesCount,
+      },
+    });
+
     return {
       slug,
       likesCount,
@@ -861,22 +914,17 @@ async function createPromptSubmissionInDb(
       const submissionId = asNumber(insertedSubmission.rows[0]?.id);
       const submissionStatus = insertedSubmission.rows[0]?.status ?? "pending";
 
-      await client.query(
-        `
-          INSERT INTO audit_logs
-            (actor_id, action, target_type, target_id, payload_json)
-          VALUES ($1, 'submission.created', 'submission', $2, $3::jsonb);
-        `,
-        [
-          userId,
-          submissionId,
-          JSON.stringify({
-            promptSlug: slug,
-            baseVersionNo,
-            candidateVersionNo,
-          }),
-        ],
-      );
+      await writeAuditLog(client, {
+        actorId: userId,
+        action: "submission.created",
+        targetType: "submission",
+        targetId: submissionId,
+        payload: {
+          promptSlug: slug,
+          baseVersionNo,
+          candidateVersionNo,
+        },
+      });
 
       await client.query("COMMIT;");
       return {
@@ -993,23 +1041,20 @@ async function reviewPromptSubmissionInDb(
         );
       }
 
-      await client.query(
-        `
-          INSERT INTO audit_logs
-            (actor_id, action, target_type, target_id, payload_json)
-          VALUES ($1, $2, 'submission', $3, $4::jsonb);
-        `,
-        [
-          reviewerId,
-          `submission.${targetStatus}`,
-          submissionId,
-          JSON.stringify({
-            promptSlug: submission.prompt_slug,
-            candidateVersionNo: submission.candidate_version_no,
-            reviewComment: input.reviewComment ?? null,
-          }),
-        ],
-      );
+      await writeAuditLog(client, {
+        actorId: reviewerId,
+        action:
+          targetStatus === "approved"
+            ? "submission.approved"
+            : "submission.rejected",
+        targetType: "submission",
+        targetId: submissionId,
+        payload: {
+          promptSlug: submission.prompt_slug,
+          candidateVersionNo: submission.candidate_version_no,
+          reviewComment: input.reviewComment ?? null,
+        },
+      });
 
       await client.query("COMMIT;");
       return {
@@ -1085,6 +1130,20 @@ function createPromptSubmissionInFixtures(
     reviewComment: undefined,
   });
 
+  fixtureAuditLogs.push(
+    buildAuditLogEntry({
+      actorId: fixtureActorId(input.userEmail),
+      action: "submission.created",
+      targetType: "submission",
+      targetId: fixtureSubmissionIdSeed,
+      payload: {
+        promptSlug: slug,
+        baseVersionNo: currentVersionNo,
+        candidateVersionNo,
+      },
+    }),
+  );
+
   return {
     promptSlug: slug,
     baseVersion: {
@@ -1146,6 +1205,23 @@ function reviewPromptSubmissionInFixtures(
     );
   }
 
+  fixtureAuditLogs.push(
+    buildAuditLogEntry({
+      actorId: fixtureActorId(input.reviewerEmail),
+      action:
+        targetStatus === "approved"
+          ? "submission.approved"
+          : "submission.rejected",
+      targetType: "submission",
+      targetId: submission.id,
+      payload: {
+        promptSlug: submission.promptSlug,
+        candidateVersionNo: submission.candidateVersionNo,
+        reviewComment: input.reviewComment ?? null,
+      },
+    }),
+  );
+
   const currentVersionNo =
     getFixtureCurrentVersionNo(submission.promptSlug) ??
     submission.baseVersionNo;
@@ -1188,6 +1264,20 @@ function likePromptInFixtures(
   likes.add(normalizedEmail);
   fixturePromptLikes.set(slug, likes);
 
+  fixtureAuditLogs.push(
+    buildAuditLogEntry({
+      actorId: fixtureActorId(normalizedEmail),
+      action: "prompt.liked",
+      targetType: "prompt",
+      targetId: fixturePromptId(slug),
+      payload: {
+        promptSlug: slug,
+        liked: true,
+        likesCount: likes.size,
+      },
+    }),
+  );
+
   return {
     slug,
     likesCount: likes.size,
@@ -1211,6 +1301,20 @@ function unlikePromptInFixtures(
   likes.delete(normalizedEmail);
   fixturePromptLikes.set(slug, likes);
 
+  fixtureAuditLogs.push(
+    buildAuditLogEntry({
+      actorId: fixtureActorId(normalizedEmail),
+      action: "prompt.unliked",
+      targetType: "prompt",
+      targetId: fixturePromptId(slug),
+      payload: {
+        promptSlug: slug,
+        liked: false,
+        likesCount: likes.size,
+      },
+    }),
+  );
+
   return {
     slug,
     likesCount: likes.size,
@@ -1224,7 +1328,15 @@ export function __resetPromptLikeFixtureStateForTests(): void {
   fixtureCurrentVersionNoBySlug = createFixtureCurrentVersionState();
   fixtureSubmissions = createFixtureSubmissionState();
   fixtureSubmissionIdSeed = fixtureSubmissions.length;
+  fixtureAuditLogs = [];
   cachedDbReadable = undefined;
+}
+
+export function __getAuditLogFixtureStateForTests(): AuditLogEntry[] {
+  return fixtureAuditLogs.map((entry) => ({
+    ...entry,
+    payloadJson: { ...entry.payloadJson },
+  }));
 }
 
 export async function likePrompt(
