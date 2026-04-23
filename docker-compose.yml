@@ -1,0 +1,44 @@
+name: prompt-assets
+
+services:
+  postgres:
+    image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER}/prompt-assets-postgres:${POSTGRES_IMAGE_TAG:-16-alpine}
+    pull_policy: always
+    container_name: prompt-assets-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-prompt_assets}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - prompt_assets_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-prompt_assets}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    image: ghcr.io/${GHCR_OWNER:?Set GHCR_OWNER}/prompt-assets-web:${WEB_IMAGE_TAG:-latest}
+    pull_policy: always
+    container_name: prompt-assets-web
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-prompt_assets}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+volumes:
+  prompt_assets_postgres_data:
+    name: prompt_assets_postgres_data
