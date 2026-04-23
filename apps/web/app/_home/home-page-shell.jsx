@@ -27,7 +27,9 @@ function ActionButtons() {
     >
       <button type="button">导入</button>
       <button type="button">管理</button>
-      <button type="button">创建</button>
+      <button className="pm-primary-button" type="button">
+        创建
+      </button>
     </div>
   );
 }
@@ -37,10 +39,10 @@ function PromptCard({ prompt }) {
     <article
       data-testid="prompt-card"
       style={{
-        border: "1px solid #d0d7de",
+        border: "1px solid #314362",
         borderRadius: "8px",
         padding: "12px",
-        backgroundColor: "#ffffff",
+        backgroundColor: "#121b2f",
       }}
     >
       <h3 style={{ margin: "0 0 6px 0" }}>{prompt.title}</h3>
@@ -82,7 +84,9 @@ export function HomePageShell({ prompts }) {
         }}
       >
         <div>
-          <h1 style={{ margin: 0 }}>Prompt Library</h1>
+          <h1 className="pm-page-title" style={{ margin: 0 }}>
+            Prompt Library
+          </h1>
           <p style={{ margin: "6px 0 0 0", color: "#57606a" }}>
             首页最小骨架（Task 8）
           </p>

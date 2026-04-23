@@ -54,7 +54,7 @@ export function PromptDetailContent({ detail }) {
   return createElement(
     "main",
     { className: "prompt-detail-page" },
-    createElement("h1", null, detail.title),
+    createElement("h1", { className: "pm-page-title" }, detail.title),
     createElement("p", null, `分类：${detail.category.name}`),
     createElement("p", null, detail.summary),
     createElement(PromptActions, {
@@ -64,13 +64,13 @@ export function PromptDetailContent({ detail }) {
     }),
     createElement(
       "section",
-      { "aria-label": "当前版本" },
+      { "aria-label": "当前版本", className: "prompt-detail-panel" },
       createElement("h2", null, `当前版本 ${detail.currentVersion.versionNo}`),
       createElement("pre", null, detail.currentVersion.content),
     ),
     createElement(
       "section",
-      { "aria-label": "历史版本" },
+      { "aria-label": "历史版本", className: "prompt-detail-panel" },
       createElement("h2", null, "历史版本"),
       createElement(
         "ol",

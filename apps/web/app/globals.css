@@ -1,0 +1,45 @@
+:root {
+  --pm-bg: #0a0f1c;
+  --pm-text: #d8e1f2;
+  --pm-title: #ecf2ff;
+  --pm-card-bg: #121b2f;
+  --pm-border: #314362;
+  --pm-accent: #3d7bff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background-color: var(--pm-bg);
+  color: var(--pm-text);
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.pm-page-title {
+  color: var(--pm-title);
+  letter-spacing: 0.6px;
+}
+
+.pm-primary-button {
+  border: 1px solid var(--pm-accent);
+  border-radius: 8px;
+  background-color: var(--pm-accent);
+  color: #ffffff;
+  padding: 6px 12px;
+}
+
+.prompt-detail-page {
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+}
+
+.prompt-detail-panel {
+  border: 1px solid var(--pm-border);
+  border-radius: 10px;
+  background-color: var(--pm-card-bg);
+  padding: 14px;
+}

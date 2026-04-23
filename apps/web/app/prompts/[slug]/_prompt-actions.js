@@ -89,6 +89,7 @@ export function PromptActions({ slug, initialLikesCount, currentVersionContent }
         {
           type: "button",
           onClick: copyCurrentVersion,
+          className: "pm-primary-button",
         },
         "复制当前版本",
       ),
