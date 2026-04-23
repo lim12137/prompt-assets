@@ -1,0 +1,23 @@
+{
+  "name": "@prompt-management/db",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
+    "db:migrate": "node ./scripts/migrate.mjs",
+    "db:push": "drizzle-kit push --config=drizzle.config.ts",
+    "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
+    "db:test:up": "node ./scripts/test-db-up.mjs",
+    "db:test:migrate": "node ./scripts/test-db-migrate.mjs",
+    "db:test": "node --test --experimental-strip-types ../../tests/integration/db/schema.test.ts",
+    "db:test:down": "node ./scripts/test-db-down.mjs"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.44.0",
+    "pg": "^8.16.3"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.7"
+  }
+}
