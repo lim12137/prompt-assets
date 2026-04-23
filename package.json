@@ -1,0 +1,24 @@
+{
+  "name": "prompt-management",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "test:runtime": "node --test --experimental-strip-types tests/unit/smoke/runtime.test.ts",
+    "dev:web": "pnpm --filter @prompt-management/web dev --hostname 127.0.0.1 --port 3000",
+    "build:web": "pnpm --filter @prompt-management/web build",
+    "start:web": "pnpm --filter @prompt-management/web start --hostname 127.0.0.1 --port 3000",
+    "test:e2e": "playwright test tests/e2e/smoke/home.spec.ts",
+    "db:generate": "pnpm --filter @prompt-management/db db:generate",
+    "db:migrate": "pnpm --filter @prompt-management/db db:migrate",
+    "db:push": "pnpm --filter @prompt-management/db db:push",
+    "db:studio": "pnpm --filter @prompt-management/db db:studio",
+    "db:test:up": "pnpm --filter @prompt-management/db db:test:up",
+    "db:test:migrate": "pnpm --filter @prompt-management/db db:test:migrate",
+    "db:test": "pnpm --filter @prompt-management/db db:test",
+    "db:test:down": "pnpm --filter @prompt-management/db db:test:down"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1"
+  }
+}
