@@ -38,4 +38,4 @@ COPY --from=builder /app ./
 EXPOSE 3000
 USER nextjs
 
-CMD ["pnpm", "--filter", "@prompt-management/web", "start", "--", "--hostname", "0.0.0.0", "--port", "3000"]
+CMD ["pnpm", "--filter", "@prompt-management/web", "exec", "next", "start", "--hostname", "0.0.0.0", "--port", "3000"]
