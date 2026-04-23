@@ -1,3 +1,24 @@
+"use client";
+
+import { useState } from "react";
+
+function collectCategories(prompts) {
+  const seen = new Set();
+  const categories = [];
+
+  for (const prompt of prompts) {
+    if (!seen.has(prompt.categorySlug)) {
+      seen.add(prompt.categorySlug);
+      categories.push({
+        slug: prompt.categorySlug,
+        name: prompt.categoryName,
+      });
+    }
+  }
+
+  return categories;
+}
+
 function ActionButtons() {
   return (
     <div
@@ -30,6 +51,26 @@ function PromptCard({ prompt }) {
 }
 
 export function HomePageShell({ prompts }) {
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [keyword, setKeyword] = useState("");
+  const categories = collectCategories(prompts);
+  const normalizedKeyword = keyword.trim().toLowerCase();
+
+  const filteredPrompts = prompts.filter((prompt) => {
+    if (selectedCategory !== "all" && prompt.categorySlug !== selectedCategory) {
+      return false;
+    }
+
+    if (!normalizedKeyword) {
+      return true;
+    }
+
+    return (
+      prompt.title.toLowerCase().includes(normalizedKeyword) ||
+      prompt.summary.toLowerCase().includes(normalizedKeyword)
+    );
+  });
+
   return (
     <main style={{ padding: "20px", display: "grid", gap: "16px" }}>
       <header
@@ -80,7 +121,31 @@ export function HomePageShell({ prompts }) {
           }}
         >
           <h2 style={{ marginTop: 0 }}>分类区</h2>
-          <p style={{ marginBottom: 0, color: "#57606a" }}>筛选入口占位。</p>
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "8px",
+            }}
+          >
+            <button
+              type="button"
+              aria-pressed={selectedCategory === "all"}
+              onClick={() => setSelectedCategory("all")}
+            >
+              全部
+            </button>
+            {categories.map((category) => (
+              <button
+                key={category.slug}
+                type="button"
+                aria-pressed={selectedCategory === category.slug}
+                onClick={() => setSelectedCategory(category.slug)}
+              >
+                {category.name}
+              </button>
+            ))}
+          </div>
         </section>
 
         <section
@@ -95,9 +160,35 @@ export function HomePageShell({ prompts }) {
           }}
         >
           <h2 style={{ marginTop: 0, marginBottom: "4px" }}>列表区</h2>
-          {prompts.map((prompt) => (
-            <PromptCard key={prompt.slug} prompt={prompt} />
-          ))}
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <label htmlFor="home-keyword-input">关键词搜索</label>
+            <input
+              id="home-keyword-input"
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              placeholder="输入标题或摘要关键词"
+            />
+            <button type="button" onClick={() => setKeyword("")}>
+              清空搜索
+            </button>
+          </div>
+          {filteredPrompts.length === 0 ? (
+            <div
+              data-testid="home-empty-state"
+              style={{
+                border: "1px dashed #d0d7de",
+                borderRadius: "8px",
+                padding: "14px",
+                color: "#57606a",
+              }}
+            >
+              未找到匹配的提示词
+            </div>
+          ) : (
+            filteredPrompts.map((prompt) => (
+              <PromptCard key={prompt.slug} prompt={prompt} />
+            ))
+          )}
         </section>
 
         <section
