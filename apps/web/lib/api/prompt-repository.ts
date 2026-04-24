@@ -111,6 +111,21 @@ export type PromptSubmissionReviewResult =
       message: string;
     };
 
+export type AdminSubmissionListItem = {
+  id: number;
+  promptSlug: string;
+  promptTitle: string;
+  baseVersionNo: string;
+  candidateVersionNo: string;
+  submitterEmail: string;
+  status: SubmissionStatus;
+  createdAt: string;
+};
+
+type AdminSubmissionListQuery = {
+  status?: SubmissionStatus;
+};
+
 type DbPromptListRow = {
   slug: string;
   title: string;
@@ -187,6 +202,17 @@ type DbSubmissionReviewRow = {
   current_version_no: string | null;
   candidate_version_id: number | string;
   candidate_version_no: string;
+};
+
+type DbAdminSubmissionListRow = {
+  id: number | string;
+  status: SubmissionStatus;
+  prompt_slug: string;
+  prompt_title: string;
+  base_version_no: string;
+  candidate_version_no: string;
+  submitter_email: string;
+  created_at: string | Date;
 };
 
 type FixtureSubmissionRecord = SubmissionFixture & {
@@ -1248,6 +1274,78 @@ function reviewPromptSubmissionInFixtures(
   };
 }
 
+async function listAdminSubmissionsFromDb(
+  query: AdminSubmissionListQuery,
+): Promise<AdminSubmissionListItem[]> {
+  return withPgClient(databaseUrl, async (client) => {
+    const params: unknown[] = [];
+    const conditions: string[] = [];
+    if (query.status) {
+      params.push(query.status);
+      conditions.push(`s.status = $${params.length}`);
+    }
+
+    const whereClause =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const result = await client.query<DbAdminSubmissionListRow>(
+      `
+        SELECT
+          s.id,
+          s.status,
+          p.slug AS prompt_slug,
+          p.title AS prompt_title,
+          base_v.version_no AS base_version_no,
+          candidate_v.version_no AS candidate_version_no,
+          submitter.email AS submitter_email,
+          s.created_at
+        FROM submissions s
+        INNER JOIN prompts p ON p.id = s.prompt_id
+        INNER JOIN prompt_versions base_v ON base_v.id = s.base_version_id
+        INNER JOIN prompt_versions candidate_v ON candidate_v.id = s.candidate_version_id
+        INNER JOIN users submitter ON submitter.id = s.submitter_id
+        ${whereClause}
+        ORDER BY s.created_at ASC, s.id ASC;
+      `,
+      params,
+    );
+
+    return result.rows.map((row) => ({
+      id: asNumber(row.id),
+      status: row.status,
+      promptSlug: row.prompt_slug,
+      promptTitle: row.prompt_title,
+      baseVersionNo: row.base_version_no,
+      candidateVersionNo: row.candidate_version_no,
+      submitterEmail: row.submitter_email,
+      createdAt: new Date(row.created_at).toISOString(),
+    }));
+  });
+}
+
+function listAdminSubmissionsFromFixtures(
+  query: AdminSubmissionListQuery,
+): AdminSubmissionListItem[] {
+  const status = query.status;
+
+  return fixtureSubmissions
+    .filter((item) => (status ? item.status === status : true))
+    .sort((left, right) => left.id - right.id)
+    .map((item, index) => {
+      const prompt = promptCatalog.find((promptItem) => promptItem.slug === item.promptSlug);
+      return {
+        id: item.id,
+        status: item.status,
+        promptSlug: item.promptSlug,
+        promptTitle: prompt?.title ?? item.promptSlug,
+        baseVersionNo: item.baseVersionNo,
+        candidateVersionNo: item.candidateVersionNo,
+        submitterEmail: item.submitterEmail,
+        createdAt: buildFixtureTimestamp(index),
+      };
+    });
+}
+
 function likePromptInFixtures(
   slug: string,
   userEmail: string,
@@ -1425,6 +1523,15 @@ export async function listPrompts(
     return listPromptsFromDb(query);
   }
   return listPromptsFromFixtures(query);
+}
+
+export async function listAdminSubmissions(
+  query: AdminSubmissionListQuery = {},
+): Promise<AdminSubmissionListItem[]> {
+  if (await canReadFromDatabase()) {
+    return listAdminSubmissionsFromDb(query);
+  }
+  return listAdminSubmissionsFromFixtures(query);
 }
 
 export async function getPromptDetail(slug: string): Promise<PromptDetailDto | null> {

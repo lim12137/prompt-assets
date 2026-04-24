@@ -142,10 +142,11 @@ test("POST /api/admin/submissions/[id]/approve 对非 pending submission 返回 
     }),
     { params: { id: "1" } },
   );
-  const payload = (await response.json()) as { error: string };
+  const payload = (await response.json()) as { error: string; code: string };
 
   assert.equal(response.status, 409);
   assert.equal(typeof payload.error, "string");
+  assert.equal(payload.code, "submission_not_pending");
 });
 
 test("POST /api/admin/submissions/[id]/reject 禁止非 admin 审核", async () => {
@@ -155,14 +156,29 @@ test("POST /api/admin/submissions/[id]/reject 禁止非 admin 审核", async () 
     userRequest("http://localhost:3000/api/admin/submissions/2/reject"),
     { params: { id: "2" } },
   );
-  const payload = (await response.json()) as { error: string };
+  const payload = (await response.json()) as { error: string; code: string };
   const after = await readPromptDetail("landing-copy-framework");
 
   assert.equal(response.status, 403);
   assert.equal(typeof payload.error, "string");
+  assert.equal(payload.code, "admin_role_required");
   assert.equal(after.currentVersion.versionNo, before.currentVersion.versionNo);
   assert.equal(
     after.versions.find((version) => version.versionNo === "v0002")?.status,
     "pending",
   );
+});
+
+test("POST /api/admin/submissions/[id]/approve submission 不存在时返回 404 且带错误码", async () => {
+  const response = await approveSubmission(
+    adminRequest("http://localhost:3000/api/admin/submissions/999/approve", {
+      reviewComment: "不存在的提审单",
+    }),
+    { params: { id: "999" } },
+  );
+  const payload = (await response.json()) as { error: string; code: string };
+
+  assert.equal(response.status, 404);
+  assert.equal(typeof payload.error, "string");
+  assert.equal(payload.code, "submission_not_found");
 });

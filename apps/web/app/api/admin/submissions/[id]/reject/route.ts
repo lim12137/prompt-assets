@@ -14,6 +14,18 @@ type ReviewBody = {
   reviewComment?: unknown;
 };
 
+function mapReviewErrorCode(
+  code: "forbidden" | "not_found" | "conflict",
+): "admin_role_required" | "submission_not_found" | "submission_not_pending" {
+  if (code === "forbidden") {
+    return "admin_role_required";
+  }
+  if (code === "not_found") {
+    return "submission_not_found";
+  }
+  return "submission_not_pending";
+}
+
 function resolveReviewerEmail(request: Request): string {
   return request.headers.get("x-user-email")?.trim() ?? "";
 }
@@ -51,7 +63,13 @@ export async function POST(request: Request, context: RouteContext) {
   if ("code" in result) {
     const status =
       result.code === "forbidden" ? 403 : result.code === "conflict" ? 409 : 404;
-    return NextResponse.json({ error: result.message }, { status });
+    return NextResponse.json(
+      {
+        error: result.message,
+        code: mapReviewErrorCode(result.code),
+      },
+      { status },
+    );
   }
 
   return NextResponse.json(result.value, { status: 200 });
