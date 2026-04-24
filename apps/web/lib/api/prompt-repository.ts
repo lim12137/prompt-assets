@@ -577,6 +577,32 @@ async function hasPromptTables(client: SqlClient): Promise<boolean> {
   return result.rows.length === 0;
 }
 
+async function hasMinimumPromptData(client: SqlClient): Promise<boolean> {
+  const result = await client.query<{
+    has_category: boolean;
+    has_published_prompt: boolean;
+    has_prompt_version: boolean;
+  }>(
+    `
+      SELECT
+        EXISTS (SELECT 1 FROM categories) AS has_category,
+        EXISTS (SELECT 1 FROM prompts WHERE status = 'published') AS has_published_prompt,
+        EXISTS (SELECT 1 FROM prompt_versions) AS has_prompt_version;
+    `,
+  );
+
+  const row = result.rows[0];
+  if (!row) {
+    return false;
+  }
+
+  return Boolean(
+    row.has_category &&
+      row.has_published_prompt &&
+      row.has_prompt_version,
+  );
+}
+
 async function canReadFromDatabase(): Promise<boolean> {
   if (getRepositoryDataSourceMode() === "fixture") {
     return false;
@@ -593,11 +619,17 @@ async function canReadFromDatabase(): Promise<boolean> {
   }
 
   try {
-    const hasTables = await withPgClient(databaseUrl, async (client) =>
-      hasPromptTables(client),
-    );
-    cachedDbReadable = { at: now, value: hasTables };
-    return hasTables;
+    const hasReadableDataSource = await withPgClient(databaseUrl, async (client) => {
+      if (!(await hasPromptTables(client))) {
+        return false;
+      }
+      return hasMinimumPromptData(client);
+    });
+    cachedDbReadable = {
+      at: now,
+      value: hasReadableDataSource,
+    };
+    return hasReadableDataSource;
   } catch {
     cachedDbReadable = { at: now, value: false };
     return false;
@@ -2299,14 +2331,7 @@ export async function createPromptSubmission(
   };
 
   if (await canReadFromDatabase()) {
-    const fromDb = await createPromptSubmissionInDb(slug, normalizedInput);
-    if (fromDb) {
-      return fromDb;
-    }
-    if (getRepositoryDataSourceMode() === "auto") {
-      return createPromptSubmissionInFixtures(slug, normalizedInput);
-    }
-    return null;
+    return createPromptSubmissionInDb(slug, normalizedInput);
   }
   return createPromptSubmissionInFixtures(slug, normalizedInput);
 }
@@ -2414,14 +2439,7 @@ export async function listAdminSubmissions(
 
 export async function getPromptDetail(slug: string): Promise<PromptDetailDto | null> {
   if (await canReadFromDatabase()) {
-    const fromDb = await getPromptDetailFromDb(slug);
-    if (fromDb) {
-      return fromDb;
-    }
-    if (getRepositoryDataSourceMode() === "auto") {
-      return getPromptDetailFromFixtures(slug);
-    }
-    return null;
+    return getPromptDetailFromDb(slug);
   }
   return getPromptDetailFromFixtures(slug);
 }
