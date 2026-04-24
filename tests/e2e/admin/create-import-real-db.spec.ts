@@ -55,7 +55,10 @@ test("真实 DB: 管理创建与批量导入链路可用", async ({ page }) => {
     null,
     2,
   );
-  await page.getByLabel("JSON 内容").fill(importPayload);
+  const jsonInput = page.getByLabel("JSON 内容");
+  await expect(jsonInput).toContainText("categorySlugs");
+  await jsonInput.fill(importPayload);
+  await expect(jsonInput).toHaveValue(importPayload);
   await page.getByRole("button", { name: "提交导入" }).click();
   await expect(page.getByRole("status")).toContainText("导入请求提交中");
   await expect(page.getByRole("status")).toContainText("导入成功");
