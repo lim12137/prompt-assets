@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   databaseUrl,
   isPgReachable,
@@ -219,6 +220,83 @@ type AdminSubmissionListQuery = {
   status?: SubmissionStatus;
 };
 
+export type AdminCategoryListItem = {
+  slug: string;
+  name: string;
+  isSystem: boolean;
+  isSelectable: boolean;
+  isCollapsedByDefault: boolean;
+  promptCount: number;
+};
+
+export type AdminCategoryCreateInput = {
+  creatorEmail: string;
+  creatorRole: "user" | "admin";
+  name: string;
+  slug: string;
+};
+
+export type AdminCategoryCreateResult =
+  | {
+      ok: true;
+      value: {
+        category: AdminCategoryListItem;
+      };
+    }
+  | {
+      ok: false;
+      code: "forbidden" | "conflict" | "bad_request";
+      reason:
+        | "admin_role_required"
+        | "category_slug_conflict"
+        | "invalid_request";
+      message: string;
+    };
+
+export type AdminCategoryDeleteInput = {
+  reviewerEmail: string;
+  reviewerRole: "user" | "admin";
+  slug: string;
+  confirm: boolean;
+  confirmationToken?: string;
+};
+
+export type AdminCategoryDeletePreview = {
+  dryRun: true;
+  slug: string;
+  impactedPromptCount: number;
+  willBeUncategorizedCount: number;
+  autoAssignedUncategorizedCount: number;
+  confirmationToken: string;
+  confirmationExpiresAt: string;
+};
+
+export type AdminCategoryDeleteConfirmed = {
+  deleted: true;
+  slug: string;
+  impactedPromptCount: number;
+  willBeUncategorizedCount: number;
+  autoAssignedUncategorizedCount: number;
+};
+
+export type AdminCategoryDeleteResult =
+  | {
+      ok: true;
+      value: AdminCategoryDeletePreview | AdminCategoryDeleteConfirmed;
+    }
+  | {
+      ok: false;
+      code: "forbidden" | "not_found" | "bad_request" | "conflict";
+      reason:
+        | "admin_role_required"
+        | "system_category_forbidden"
+        | "category_not_found"
+        | "category_delete_confirmation_required"
+        | "invalid_confirmation_token"
+        | "category_delete_conflict";
+      message: string;
+    };
+
 type DbPromptListRow = {
   slug: string;
   title: string;
@@ -263,6 +341,29 @@ type DbPromptLookupRow = {
 
 type DbCategoryLookupRow = {
   id: number | string;
+};
+
+type DbCategoryDetailLookupRow = {
+  id: number | string;
+  slug: string;
+  name: string;
+  is_system: boolean;
+  is_selectable: boolean;
+  is_collapsed_by_default: boolean;
+};
+
+type DbCategoryListRow = {
+  slug: string;
+  name: string;
+  is_system: boolean;
+  is_selectable: boolean;
+  is_collapsed_by_default: boolean;
+  prompt_count: number | string;
+};
+
+type DbCategoryDeleteStatsRow = {
+  impacted_prompt_count: number | string;
+  will_be_uncategorized_count: number | string;
 };
 
 type DbUserRow = {
@@ -345,7 +446,19 @@ type FixturePromptRecord = {
   createdByEmail: string;
 };
 
+type CategoryDeleteTokenPayload = {
+  slug: string;
+  impactedPromptCount: number;
+  willBeUncategorizedCount: number;
+  autoAssignedUncategorizedCount: number;
+  exp: number;
+};
+
 const CATEGORY_MAP = new Map(baseCategories.map((item) => [item.slug, item]));
+const CATEGORY_DELETE_TOKEN_SECRET =
+  process.env.CATEGORY_DELETE_TOKEN_SECRET ??
+  "prompt-management-admin-category-delete-secret";
+const CATEGORY_DELETE_TOKEN_TTL_MS = 10 * 60 * 1000;
 const REQUIRED_TABLES = [
   "users",
   "categories",
@@ -460,6 +573,92 @@ function asNumber(value: number | string | null | undefined): number {
     return Number(value);
   }
   return 0;
+}
+
+function signCategoryDeleteToken(encodedPayload: string): string {
+  return createHmac("sha256", CATEGORY_DELETE_TOKEN_SECRET)
+    .update(encodedPayload)
+    .digest("base64url");
+}
+
+function createCategoryDeleteConfirmationToken(input: {
+  slug: string;
+  impactedPromptCount: number;
+  willBeUncategorizedCount: number;
+  autoAssignedUncategorizedCount: number;
+}): {
+  token: string;
+  expiresAt: string;
+} {
+  const exp = Date.now() + CATEGORY_DELETE_TOKEN_TTL_MS;
+  const payload: CategoryDeleteTokenPayload = {
+    slug: input.slug,
+    impactedPromptCount: input.impactedPromptCount,
+    willBeUncategorizedCount: input.willBeUncategorizedCount,
+    autoAssignedUncategorizedCount: input.autoAssignedUncategorizedCount,
+    exp,
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payload), "utf-8").toString(
+    "base64url",
+  );
+  const signature = signCategoryDeleteToken(encodedPayload);
+  return {
+    token: `${encodedPayload}.${signature}`,
+    expiresAt: new Date(exp).toISOString(),
+  };
+}
+
+function verifyCategoryDeleteConfirmationToken(
+  token: string,
+): CategoryDeleteTokenPayload | null {
+  const parts = token.split(".");
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const encodedPayload = parts[0] ?? "";
+  const providedSignature = parts[1] ?? "";
+  if (!encodedPayload || !providedSignature) {
+    return null;
+  }
+
+  const expectedSignature = signCategoryDeleteToken(encodedPayload);
+  const providedBuffer = Buffer.from(providedSignature, "utf-8");
+  const expectedBuffer = Buffer.from(expectedSignature, "utf-8");
+  if (providedBuffer.length !== expectedBuffer.length) {
+    return null;
+  }
+  if (!timingSafeEqual(providedBuffer, expectedBuffer)) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload, "base64url").toString("utf-8"),
+    ) as Partial<CategoryDeleteTokenPayload>;
+    if (
+      typeof payload.slug !== "string" ||
+      typeof payload.impactedPromptCount !== "number" ||
+      typeof payload.willBeUncategorizedCount !== "number" ||
+      typeof payload.autoAssignedUncategorizedCount !== "number" ||
+      typeof payload.exp !== "number"
+    ) {
+      return null;
+    }
+    if (payload.exp < Date.now()) {
+      return null;
+    }
+
+    return {
+      slug: payload.slug,
+      impactedPromptCount: payload.impactedPromptCount,
+      willBeUncategorizedCount: payload.willBeUncategorizedCount,
+      autoAssignedUncategorizedCount: payload.autoAssignedUncategorizedCount,
+      exp: payload.exp,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function normalizePromptCategories(
@@ -1167,6 +1366,449 @@ async function insertPromptCategoryRelation(
     `,
     [promptId, categoryId],
   );
+}
+
+function mapAdminCategoryListItem(row: DbCategoryListRow): AdminCategoryListItem {
+  return {
+    slug: row.slug,
+    name: row.name,
+    isSystem: Boolean(row.is_system),
+    isSelectable: Boolean(row.is_selectable),
+    isCollapsedByDefault: Boolean(row.is_collapsed_by_default),
+    promptCount: asNumber(row.prompt_count),
+  };
+}
+
+async function findCategoryDetailBySlug(
+  client: SqlClient,
+  slug: string,
+  options: { forUpdate?: boolean } = {},
+): Promise<DbCategoryDetailLookupRow | null> {
+  const lockClause = options.forUpdate ? "FOR UPDATE" : "";
+  const result = await client.query<DbCategoryDetailLookupRow>(
+    `
+      SELECT
+        id,
+        slug,
+        name,
+        is_system,
+        is_selectable,
+        is_collapsed_by_default
+      FROM categories
+      WHERE slug = $1
+      LIMIT 1
+      ${lockClause};
+    `,
+    [slug],
+  );
+  return result.rows[0] ?? null;
+}
+
+async function findUncategorizedCategoryId(client: SqlClient): Promise<number | null> {
+  const row = await findCategoryDetailBySlug(client, "uncategorized", {
+    forUpdate: true,
+  });
+  if (!row) {
+    return null;
+  }
+  return asNumber(row.id);
+}
+
+async function readCategoryDeleteStats(
+  client: SqlClient,
+  categoryId: number,
+): Promise<{
+  impactedPromptCount: number;
+  willBeUncategorizedCount: number;
+  autoAssignedUncategorizedCount: number;
+}> {
+  const result = await client.query<DbCategoryDeleteStatsRow>(
+    `
+      WITH impacted AS (
+        SELECT id AS prompt_id
+        FROM prompts
+        WHERE category_id = $1
+        UNION
+        SELECT prompt_id
+        FROM prompt_categories
+        WHERE category_id = $1
+      ),
+      will_be AS (
+        SELECT i.prompt_id
+        FROM impacted i
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM prompt_categories pc
+          WHERE pc.prompt_id = i.prompt_id
+            AND pc.category_id <> $1
+        )
+      )
+      SELECT
+        (SELECT COUNT(*)::text FROM impacted) AS impacted_prompt_count,
+        (SELECT COUNT(*)::text FROM will_be) AS will_be_uncategorized_count;
+    `,
+    [categoryId],
+  );
+
+  const row = result.rows[0];
+  const impactedPromptCount = asNumber(row?.impacted_prompt_count);
+  const willBeUncategorizedCount = asNumber(row?.will_be_uncategorized_count);
+  return {
+    impactedPromptCount,
+    willBeUncategorizedCount,
+    autoAssignedUncategorizedCount: willBeUncategorizedCount,
+  };
+}
+
+function isCategoryDeleteTokenValid(input: {
+  token: string;
+  slug: string;
+  impactedPromptCount: number;
+  willBeUncategorizedCount: number;
+  autoAssignedUncategorizedCount: number;
+}): boolean {
+  const payload = verifyCategoryDeleteConfirmationToken(input.token);
+  if (!payload) {
+    return false;
+  }
+  return (
+    payload.slug === input.slug &&
+    payload.impactedPromptCount === input.impactedPromptCount &&
+    payload.willBeUncategorizedCount === input.willBeUncategorizedCount &&
+    payload.autoAssignedUncategorizedCount === input.autoAssignedUncategorizedCount
+  );
+}
+
+async function listAdminCategoriesFromDb(): Promise<AdminCategoryListItem[]> {
+  return withPgClient(databaseUrl, async (client) => {
+    const result = await client.query<DbCategoryListRow>(
+      `
+        SELECT
+          c.slug,
+          c.name,
+          c.is_system,
+          c.is_selectable,
+          c.is_collapsed_by_default,
+          COUNT(DISTINCT pc.prompt_id)::text AS prompt_count
+        FROM categories c
+        LEFT JOIN prompt_categories pc ON pc.category_id = c.id
+        GROUP BY
+          c.id,
+          c.slug,
+          c.name,
+          c.is_system,
+          c.is_selectable,
+          c.is_collapsed_by_default,
+          c.sort_order
+        ORDER BY c.is_system ASC, c.sort_order ASC, c.id ASC;
+      `,
+    );
+
+    return result.rows.map(mapAdminCategoryListItem);
+  });
+}
+
+async function createAdminCategoryInDb(
+  input: AdminCategoryCreateInput,
+): Promise<AdminCategoryCreateResult> {
+  if (input.creatorRole !== "admin") {
+    return {
+      ok: false,
+      code: "forbidden",
+      reason: "admin_role_required",
+      message: "admin role is required",
+    };
+  }
+
+  const name = input.name.trim();
+  const slug = input.slug.trim();
+  if (!name || !slug) {
+    return {
+      ok: false,
+      code: "bad_request",
+      reason: "invalid_request",
+      message: "name and slug are required",
+    };
+  }
+
+  return withPgClient(databaseUrl, async (client) => {
+    await client.query("BEGIN;");
+    try {
+      const existed = await findCategoryId(client, slug);
+      if (existed) {
+        await client.query("ROLLBACK;");
+        return {
+          ok: false,
+          code: "conflict",
+          reason: "category_slug_conflict",
+          message: "category slug already exists",
+        };
+      }
+
+      const sortOrderResult = await client.query<{ next_sort_order: number | string }>(
+        `
+          SELECT COALESCE(MAX(sort_order), 0) + 10 AS next_sort_order
+          FROM categories;
+        `,
+      );
+      const nextSortOrder = asNumber(sortOrderResult.rows[0]?.next_sort_order);
+
+      const inserted = await client.query<DbCategoryListRow>(
+        `
+          INSERT INTO categories (
+            name,
+            slug,
+            sort_order,
+            status,
+            is_system,
+            is_selectable,
+            is_collapsed_by_default,
+            updated_at
+          )
+          VALUES ($1, $2, $3, 'active', false, true, false, NOW())
+          RETURNING
+            slug,
+            name,
+            is_system,
+            is_selectable,
+            is_collapsed_by_default,
+            0::text AS prompt_count;
+        `,
+        [name, slug, nextSortOrder],
+      );
+
+      await client.query("COMMIT;");
+      return {
+        ok: true,
+        value: {
+          category: mapAdminCategoryListItem(inserted.rows[0] as DbCategoryListRow),
+        },
+      };
+    } catch (error) {
+      await client.query("ROLLBACK;");
+      throw error;
+    }
+  });
+}
+
+async function deleteAdminCategoryInDb(
+  input: AdminCategoryDeleteInput,
+): Promise<AdminCategoryDeleteResult> {
+  if (input.reviewerRole !== "admin") {
+    return {
+      ok: false,
+      code: "forbidden",
+      reason: "admin_role_required",
+      message: "admin role is required",
+    };
+  }
+
+  const slug = input.slug.trim();
+  if (!slug) {
+    return {
+      ok: false,
+      code: "bad_request",
+      reason: "invalid_confirmation_token",
+      message: "category slug is required",
+    };
+  }
+
+  return withPgClient(databaseUrl, async (client) => {
+    if (!input.confirm) {
+      const targetCategory = await findCategoryDetailBySlug(client, slug);
+      if (!targetCategory) {
+        return {
+          ok: false,
+          code: "not_found",
+          reason: "category_not_found",
+          message: "category not found",
+        };
+      }
+      if (targetCategory.is_system) {
+        return {
+          ok: false,
+          code: "forbidden",
+          reason: "system_category_forbidden",
+          message: "system category cannot be deleted",
+        };
+      }
+
+      const stats = await readCategoryDeleteStats(client, asNumber(targetCategory.id));
+      const token = createCategoryDeleteConfirmationToken({
+        slug,
+        impactedPromptCount: stats.impactedPromptCount,
+        willBeUncategorizedCount: stats.willBeUncategorizedCount,
+        autoAssignedUncategorizedCount: stats.autoAssignedUncategorizedCount,
+      });
+
+      return {
+        ok: true,
+        value: {
+          dryRun: true,
+          slug,
+          impactedPromptCount: stats.impactedPromptCount,
+          willBeUncategorizedCount: stats.willBeUncategorizedCount,
+          autoAssignedUncategorizedCount: stats.autoAssignedUncategorizedCount,
+          confirmationToken: token.token,
+          confirmationExpiresAt: token.expiresAt,
+        },
+      };
+    }
+
+    const confirmationToken = input.confirmationToken?.trim() ?? "";
+    if (!confirmationToken) {
+      return {
+        ok: false,
+        code: "bad_request",
+        reason: "category_delete_confirmation_required",
+        message: "confirmation token is required",
+      };
+    }
+
+    await client.query("BEGIN;");
+    try {
+      const targetCategory = await findCategoryDetailBySlug(client, slug, {
+        forUpdate: true,
+      });
+      if (!targetCategory) {
+        await client.query("ROLLBACK;");
+        return {
+          ok: false,
+          code: "not_found",
+          reason: "category_not_found",
+          message: "category not found",
+        };
+      }
+      if (targetCategory.is_system) {
+        await client.query("ROLLBACK;");
+        return {
+          ok: false,
+          code: "forbidden",
+          reason: "system_category_forbidden",
+          message: "system category cannot be deleted",
+        };
+      }
+
+      const targetCategoryId = asNumber(targetCategory.id);
+      const uncategorizedId = await findUncategorizedCategoryId(client);
+      if (!uncategorizedId) {
+        await client.query("ROLLBACK;");
+        return {
+          ok: false,
+          code: "conflict",
+          reason: "category_delete_conflict",
+          message: "uncategorized category is missing",
+        };
+      }
+
+      const stats = await readCategoryDeleteStats(client, targetCategoryId);
+      if (
+        !isCategoryDeleteTokenValid({
+          token: confirmationToken,
+          slug,
+          impactedPromptCount: stats.impactedPromptCount,
+          willBeUncategorizedCount: stats.willBeUncategorizedCount,
+          autoAssignedUncategorizedCount: stats.autoAssignedUncategorizedCount,
+        })
+      ) {
+        await client.query("ROLLBACK;");
+        return {
+          ok: false,
+          code: "bad_request",
+          reason: "invalid_confirmation_token",
+          message: "invalid confirmation token",
+        };
+      }
+
+      await client.query(
+        `
+          DELETE FROM prompt_categories
+          WHERE category_id = $1;
+        `,
+        [targetCategoryId],
+      );
+
+      const autoAssignedResult = await client.query<{ prompt_id: number | string }>(
+        `
+          WITH impacted AS (
+            SELECT id AS prompt_id
+            FROM prompts
+            WHERE category_id = $1
+            UNION
+            SELECT prompt_id
+            FROM prompt_categories
+            WHERE category_id = $1
+          )
+          INSERT INTO prompt_categories (prompt_id, category_id)
+          SELECT i.prompt_id, $2
+          FROM impacted i
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM prompt_categories pc
+            WHERE pc.prompt_id = i.prompt_id
+          )
+          ON CONFLICT (prompt_id, category_id) DO NOTHING
+          RETURNING prompt_id;
+        `,
+        [targetCategoryId, uncategorizedId],
+      );
+      const autoAssignedUncategorizedCount = autoAssignedResult.rows.length;
+
+      await client.query(
+        `
+          UPDATE prompts p
+          SET
+            category_id = COALESCE(
+              (
+                SELECT c2.id
+                FROM prompt_categories pc2
+                INNER JOIN categories c2 ON c2.id = pc2.category_id
+                WHERE pc2.prompt_id = p.id
+                ORDER BY c2.is_system ASC, c2.sort_order ASC, c2.id ASC
+                LIMIT 1
+              ),
+              $2
+            ),
+            updated_at = NOW()
+          WHERE p.category_id = $1;
+        `,
+        [targetCategoryId, uncategorizedId],
+      );
+
+      const deletedCategoryResult = await client.query<DbCategoryLookupRow>(
+        `
+          DELETE FROM categories
+          WHERE id = $1
+          RETURNING id;
+        `,
+        [targetCategoryId],
+      );
+      if (deletedCategoryResult.rows.length === 0) {
+        await client.query("ROLLBACK;");
+        return {
+          ok: false,
+          code: "conflict",
+          reason: "category_delete_conflict",
+          message: "category delete conflict",
+        };
+      }
+
+      await client.query("COMMIT;");
+      return {
+        ok: true,
+        value: {
+          deleted: true,
+          slug,
+          impactedPromptCount: stats.impactedPromptCount,
+          willBeUncategorizedCount: stats.willBeUncategorizedCount,
+          autoAssignedUncategorizedCount,
+        },
+      };
+    } catch (error) {
+      await client.query("ROLLBACK;");
+      throw error;
+    }
+  });
 }
 
 async function upsertUserId(client: SqlClient, email: string): Promise<number> {
@@ -2507,6 +3149,37 @@ export async function importPrompts(
     return importPromptsInDb(normalizedInput);
   }
   return importPromptsInFixtures(normalizedInput);
+}
+
+export async function listAdminCategories(): Promise<AdminCategoryListItem[]> {
+  return listAdminCategoriesFromDb();
+}
+
+export async function createAdminCategory(
+  input: AdminCategoryCreateInput,
+): Promise<AdminCategoryCreateResult> {
+  const normalizedEmail = normalizeUserEmail(input.creatorEmail);
+  const normalizedInput: AdminCategoryCreateInput = {
+    creatorEmail: normalizedEmail,
+    creatorRole: input.creatorRole,
+    name: input.name.trim(),
+    slug: input.slug.trim(),
+  };
+  return createAdminCategoryInDb(normalizedInput);
+}
+
+export async function deleteAdminCategory(
+  input: AdminCategoryDeleteInput,
+): Promise<AdminCategoryDeleteResult> {
+  const normalizedEmail = normalizeUserEmail(input.reviewerEmail);
+  const normalizedInput: AdminCategoryDeleteInput = {
+    reviewerEmail: normalizedEmail,
+    reviewerRole: input.reviewerRole,
+    slug: input.slug.trim(),
+    confirm: input.confirm,
+    confirmationToken: input.confirmationToken?.trim(),
+  };
+  return deleteAdminCategoryInDb(normalizedInput);
 }
 
 export async function reviewPromptSubmission(
