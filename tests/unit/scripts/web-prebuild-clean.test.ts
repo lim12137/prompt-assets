@@ -22,14 +22,17 @@ test("prebuild-clean 会删除 .next 与 tsconfig.tsbuildinfo", () => {
     "page.ts",
   );
   const nextCacheTsbuildinfo = path.join(root, ".next", "cache", ".tsbuildinfo");
+  const buildDistMarker = path.join(root, ".next-build", "build-manifest.json");
   const devDistMarker = path.join(root, ".next-dev", "server", "middleware-manifest.json");
   const tsbuildinfo = path.join(root, "tsconfig.tsbuildinfo");
 
   mkdirSync(path.dirname(nextTypesPage), { recursive: true });
   mkdirSync(path.dirname(nextCacheTsbuildinfo), { recursive: true });
+  mkdirSync(path.dirname(buildDistMarker), { recursive: true });
   mkdirSync(path.dirname(devDistMarker), { recursive: true });
   writeFileSync(nextTypesPage, "stale page type file\n", "utf-8");
   writeFileSync(nextCacheTsbuildinfo, "stale cache\n", "utf-8");
+  writeFileSync(buildDistMarker, "{\"buildId\":\"old\"}\n", "utf-8");
   writeFileSync(devDistMarker, "{\"version\":1}\n", "utf-8");
   writeFileSync(tsbuildinfo, "stale tsc\n", "utf-8");
 
@@ -43,6 +46,7 @@ test("prebuild-clean 会删除 .next 与 tsconfig.tsbuildinfo", () => {
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.equal(existsSync(path.join(root, ".next")), false);
+  assert.equal(existsSync(path.join(root, ".next-build")), false);
   assert.equal(existsSync(path.join(root, ".next-dev")), false);
   assert.equal(existsSync(tsbuildinfo), false);
 });

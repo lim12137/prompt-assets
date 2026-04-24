@@ -7,6 +7,7 @@ const root = process.env.PREBUILD_CLEAN_ROOT
 
 const targets = [
   path.join(root, ".next"),
+  path.join(root, ".next-build"),
   path.join(root, ".next-dev"),
   path.join(root, ".next-e2e"),
   path.join(root, "tsconfig.tsbuildinfo"),

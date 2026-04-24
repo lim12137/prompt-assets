@@ -3,9 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "scripts": {
-    "dev": "node ./scripts/prebuild-clean.mjs && next dev",
-    "build": "node ./scripts/prebuild-clean.mjs && next build",
-    "start": "next start"
+    "dev": "node ./scripts/prebuild-clean.mjs && node ./scripts/run-next.mjs dev",
+    "build": "node ./scripts/prebuild-clean.mjs && node ./scripts/run-next.mjs build",
+    "start": "node ./scripts/run-next.mjs start"
   },
   "dependencies": {
     "next": "^15.0.0",
