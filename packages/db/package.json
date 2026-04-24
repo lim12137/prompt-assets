@@ -6,10 +6,12 @@
   "scripts": {
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
     "db:migrate": "node ./scripts/migrate.mjs",
+    "db:seed": "node --experimental-strip-types ./scripts/seed.mjs",
     "db:push": "drizzle-kit push --config=drizzle.config.ts",
     "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
     "db:test:up": "node ./scripts/test-db-up.mjs",
     "db:test:migrate": "node ./scripts/test-db-migrate.mjs",
+    "db:test:seed": "node --experimental-strip-types ./scripts/test-db-seed.mjs",
     "db:test": "node --test --experimental-strip-types ../../tests/integration/db/schema.test.ts ../../tests/integration/db/seed.test.ts",
     "db:test:down": "node ./scripts/test-db-down.mjs"
   },

@@ -11,12 +11,16 @@
     "test:e2e": "playwright test tests/e2e/smoke/home.spec.ts",
     "db:generate": "pnpm --filter @prompt-management/db db:generate",
     "db:migrate": "pnpm --filter @prompt-management/db db:migrate",
+    "db:seed": "pnpm --filter @prompt-management/db db:seed",
     "db:push": "pnpm --filter @prompt-management/db db:push",
     "db:studio": "pnpm --filter @prompt-management/db db:studio",
     "db:test:up": "pnpm --filter @prompt-management/db db:test:up",
     "db:test:migrate": "pnpm --filter @prompt-management/db db:test:migrate",
+    "db:test:seed": "pnpm --filter @prompt-management/db db:test:seed",
+    "db:test:prepare": "node ./scripts/prepare-test-db.mjs",
     "db:test": "pnpm --filter @prompt-management/db db:test",
-    "db:test:down": "pnpm --filter @prompt-management/db db:test:down"
+    "db:test:down": "pnpm --filter @prompt-management/db db:test:down",
+    "test:e2e:admin:db": "node ./scripts/run-admin-real-db-e2e.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1"

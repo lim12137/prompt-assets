@@ -7,7 +7,7 @@ services:
     container_name: prompt-assets-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-prompt_assets}
+      POSTGRES_DB: ${POSTGRES_DB:-prompt_management}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
@@ -18,7 +18,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-prompt_assets}",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-prompt_management}",
         ]
       interval: 5s
       timeout: 5s
@@ -35,7 +35,7 @@ services:
     environment:
       NODE_ENV: production
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:13000}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-prompt_assets}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-prompt_management}
     ports:
       - "${WEB_PORT:-13000}:3000"
 
