@@ -11,7 +11,7 @@ export default defineConfig({
   },
   webServer: {
     command:
-      `pnpm --filter @prompt-management/web exec node ./scripts/run-next.mjs dev --dist .next-e2e --hostname ${host} --port ${port}`,
+      `pnpm --filter @prompt-management/web exec node ./scripts/prebuild-clean.mjs --target .next-e2e && pnpm --filter @prompt-management/web exec node ./scripts/run-next.mjs dev --dist .next-e2e --hostname ${host} --port ${port}`,
     port,
     reuseExistingServer: false,
     timeout: 120_000,

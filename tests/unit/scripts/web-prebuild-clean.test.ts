@@ -50,3 +50,35 @@ test("prebuild-clean 会删除 .next 与 tsconfig.tsbuildinfo", () => {
   assert.equal(existsSync(path.join(root, ".next-dev")), false);
   assert.equal(existsSync(tsbuildinfo), false);
 });
+
+test("prebuild-clean 指定 target 时仅清理对应目录", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "web-prebuild-clean-targets-"));
+  const e2eDistMarker = path.join(root, ".next-e2e", "build-manifest.json");
+  const buildDistMarker = path.join(root, ".next-build", "build-manifest.json");
+  const devDistMarker = path.join(root, ".next-dev", "server", "middleware-manifest.json");
+
+  mkdirSync(path.dirname(e2eDistMarker), { recursive: true });
+  mkdirSync(path.dirname(buildDistMarker), { recursive: true });
+  mkdirSync(path.dirname(devDistMarker), { recursive: true });
+
+  writeFileSync(e2eDistMarker, "{\"buildId\":\"e2e\"}\n", "utf-8");
+  writeFileSync(buildDistMarker, "{\"buildId\":\"build\"}\n", "utf-8");
+  writeFileSync(devDistMarker, "{\"version\":1}\n", "utf-8");
+
+  const result = spawnSync(
+    process.execPath,
+    [scriptPath, "--target", ".next-e2e"],
+    {
+      env: {
+        ...process.env,
+        PREBUILD_CLEAN_ROOT: root,
+      },
+      encoding: "utf-8",
+    },
+  );
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(existsSync(path.join(root, ".next-e2e")), false);
+  assert.equal(existsSync(path.join(root, ".next-build")), true);
+  assert.equal(existsSync(path.join(root, ".next-dev")), true);
+});
