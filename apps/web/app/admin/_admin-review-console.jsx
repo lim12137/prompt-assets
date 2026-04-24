@@ -96,9 +96,17 @@ export function AdminReviewConsole({ initialSubmissions }) {
               待处理投稿：{submissions.length}
             </p>
           </div>
-          <a className="pm-secondary-button pm-button-link" href="/">
-            返回首页
-          </a>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <a className="pm-primary-button pm-button-link" href="/admin/create">
+              创建提示词
+            </a>
+            <a className="pm-secondary-button pm-button-link" href="/admin/import">
+              批量导入
+            </a>
+            <a className="pm-secondary-button pm-button-link" href="/">
+              返回首页
+            </a>
+          </div>
         </div>
         <p
           role="status"
