@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { withTestDbLock } from "./with-test-db-lock.mjs";
 
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const testDatabaseUrl =
@@ -25,17 +26,19 @@ function runStep(args, label, env = process.env, allowFailure = false) {
   }
 }
 
-try {
-  runStep(["db:test:prepare"], "准备真实测试数据库");
-  runStep(
-    ["exec", "playwright", "test", testSpecPath],
-    `执行详情真实 DB E2E (${testSpecPath})`,
-    {
-      ...process.env,
-      DATABASE_URL: testDatabaseUrl,
-      PROMPT_REPOSITORY_DATA_SOURCE: "auto",
-    },
-  );
-} finally {
-  runStep(["db:test:down"], "清理测试数据库容器", process.env, true);
-}
+await withTestDbLock(async () => {
+  try {
+    runStep(["db:test:prepare"], "准备真实测试数据库");
+    runStep(
+      ["exec", "playwright", "test", testSpecPath],
+      `执行详情真实 DB E2E (${testSpecPath})`,
+      {
+        ...process.env,
+        DATABASE_URL: testDatabaseUrl,
+        PROMPT_REPOSITORY_DATA_SOURCE: "auto",
+      },
+    );
+  } finally {
+    runStep(["db:test:down"], "清理测试数据库容器", process.env, true);
+  }
+});
