@@ -40,26 +40,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function runStepWithRetry(args, label, retries = 3) {
-  let attempt = 0;
-
-  while (attempt < retries) {
-    attempt += 1;
-
-    try {
-      runStep(args, `${label}（第 ${attempt} 次）`);
-      return;
-    } catch (error) {
-      runStepAllowFailure(["db:test:down"], "失败后清理测试数据库容器", { timeout: 30000 });
-      if (attempt >= retries) {
-        throw error;
-      }
-      await sleep(1000);
-    }
-  }
-}
-
-async function waitForHostDatabase() {
+async function waitForHostDatabase(label = "测试数据库主机端口") {
   const host = process.env.TEST_DB_HOST ?? "127.0.0.1";
   const port = Number(process.env.TEST_DB_PORT ?? "55432");
 
@@ -89,10 +70,27 @@ async function waitForHostDatabase() {
     }
   }
 
-  throw new Error(`测试数据库主机端口未就绪: ${host}:${port}`);
+  throw new Error(`${label}未就绪: ${host}:${port}`);
 }
 
-await runStepWithRetry(["db:test:up"], "启动 Docker 测试数据库", retryCount);
-await waitForHostDatabase();
-await runStepWithRetry(["db:test:migrate"], "执行测试库迁移", retryCount);
-await runStepWithRetry(["db:test:seed"], "写入测试库 seed", retryCount);
+let attempt = 0;
+while (attempt < retryCount) {
+  attempt += 1;
+
+  try {
+    runStep(["db:test:up"], `启动 Docker 测试数据库（第 ${attempt} 次）`);
+    await waitForHostDatabase("启动后测试数据库主机端口");
+
+    runStep(["db:test:migrate"], `执行测试库迁移（第 ${attempt} 次）`);
+    await waitForHostDatabase("迁移后测试数据库主机端口");
+
+    runStep(["db:test:seed"], `写入测试库 seed（第 ${attempt} 次）`);
+    break;
+  } catch (error) {
+    runStepAllowFailure(["db:test:down"], "失败后清理测试数据库容器", { timeout: 30000 });
+    if (attempt >= retryCount) {
+      throw error;
+    }
+    await sleep(1000);
+  }
+}
