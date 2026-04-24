@@ -58,6 +58,54 @@ test("GET /api/prompts 支持按分类过滤", async () => {
   );
 });
 
+test("GET /api/prompts 支持多分类 OR 过滤", async () => {
+  const request = new Request(
+    "http://localhost:3000/api/prompts?categories=programming,design",
+  );
+  const response = await GET(request);
+  const payload = (await response.json()) as PromptListItem[];
+
+  assert.equal(response.status, 200);
+  assert.ok(payload.length > 0, "多分类 OR 过滤结果不应为空");
+  assert.equal(
+    payload.every(
+      (item) =>
+        item.categorySlugs.includes("programming") ||
+        item.categorySlugs.includes("design"),
+    ),
+    true,
+    "OR 过滤后每条数据至少命中一个分类",
+  );
+  assert.equal(
+    payload.some((item) => item.categorySlugs.includes("programming")),
+    true,
+    "OR 结果应包含 programming 项",
+  );
+  assert.equal(
+    payload.some((item) => item.categorySlugs.includes("design")),
+    true,
+    "OR 结果应包含 design 项",
+  );
+});
+
+test("GET /api/prompts 多分类筛选传空数组时按不过滤处理", async () => {
+  const allResponse = await GET(new Request("http://localhost:3000/api/prompts"));
+  const allPayload = (await allResponse.json()) as PromptListItem[];
+
+  const emptyFilterResponse = await GET(
+    new Request("http://localhost:3000/api/prompts?categories="),
+  );
+  const emptyFilterPayload = (await emptyFilterResponse.json()) as PromptListItem[];
+
+  assert.equal(allResponse.status, 200);
+  assert.equal(emptyFilterResponse.status, 200);
+  assert.equal(
+    emptyFilterPayload.length,
+    allPayload.length,
+    "categories 为空时应与不传分类过滤等价",
+  );
+});
+
 test("GET /api/prompts 支持基础关键词过滤", async () => {
   const keyword = "索引";
   const request = new Request(

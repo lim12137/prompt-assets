@@ -39,6 +39,7 @@ type SqlClient = {
 
 type ListPromptsQuery = {
   category?: string;
+  categories?: string[];
   keyword?: string;
   sort?: string;
 };
@@ -584,6 +585,26 @@ function normalizeSort(sort?: string): PromptSort {
   return "latest";
 }
 
+function normalizePromptFilterCategories(query: ListPromptsQuery): string[] {
+  const deduped = new Set<string>();
+
+  if (Array.isArray(query.categories)) {
+    for (const category of query.categories) {
+      const normalized = typeof category === "string" ? category.trim() : "";
+      if (normalized) {
+        deduped.add(normalized);
+      }
+    }
+  }
+
+  const singleCategory = typeof query.category === "string" ? query.category.trim() : "";
+  if (singleCategory) {
+    deduped.add(singleCategory);
+  }
+
+  return [...deduped];
+}
+
 function asNumber(value: number | string | null | undefined): number {
   if (typeof value === "number") {
     return value;
@@ -951,9 +972,10 @@ async function listPromptsFromDb(
   const conditions = [`p.status = 'published'`];
   const params: unknown[] = [];
   const sort = normalizeSort(query.sort);
+  const filterCategories = normalizePromptFilterCategories(query);
 
-  if (query.category) {
-    params.push(query.category);
+  if (filterCategories.length > 0) {
+    params.push(filterCategories);
     conditions.push(`
       (
         EXISTS (
@@ -961,7 +983,7 @@ async function listPromptsFromDb(
           FROM prompt_categories pc_filter
           INNER JOIN categories c_filter ON c_filter.id = pc_filter.category_id
           WHERE pc_filter.prompt_id = p.id
-            AND c_filter.slug = $${params.length}
+            AND c_filter.slug = ANY($${params.length}::text[])
         )
         OR (
           NOT EXISTS (
@@ -969,7 +991,7 @@ async function listPromptsFromDb(
             FROM prompt_categories pc_any
             WHERE pc_any.prompt_id = p.id
           )
-          AND c.slug = $${params.length}
+          AND c.slug = ANY($${params.length}::text[])
         )
       )
     `);
@@ -1042,6 +1064,7 @@ async function listPromptsFromDb(
 function listPromptsFromFixtures(query: ListPromptsQuery): PromptListItemDto[] {
   const sort = normalizeSort(query.sort);
   const keyword = query.keyword?.trim().toLowerCase();
+  const filterCategories = normalizePromptFilterCategories(query);
 
   const seededRows = promptCatalog
     .filter((prompt) => prompt.status !== "archived")
@@ -1074,7 +1097,10 @@ function listPromptsFromFixtures(query: ListPromptsQuery): PromptListItemDto[] {
   );
   const rows = [...seededRows, ...createdRows]
     .filter((item) => {
-      if (query.category && !item.categorySlugs.includes(query.category)) {
+      if (
+        filterCategories.length > 0 &&
+        !filterCategories.some((category) => item.categorySlugs.includes(category))
+      ) {
         return false;
       }
       if (!keyword) {

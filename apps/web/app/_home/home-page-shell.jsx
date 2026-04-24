@@ -2,21 +2,57 @@
 
 import { useState } from "react";
 
+function getPromptCategories(prompt) {
+  if (Array.isArray(prompt.categories) && prompt.categories.length > 0) {
+    return prompt.categories.filter(
+      (item) => item && typeof item.slug === "string" && typeof item.name === "string",
+    );
+  }
+  if (typeof prompt.categorySlug === "string" && prompt.categorySlug) {
+    return [
+      {
+        slug: prompt.categorySlug,
+        name: typeof prompt.categoryName === "string" && prompt.categoryName
+          ? prompt.categoryName
+          : prompt.categorySlug,
+      },
+    ];
+  }
+  return [];
+}
+
 function collectCategories(prompts) {
   const seen = new Set();
   const categories = [];
 
   for (const prompt of prompts) {
-    if (!seen.has(prompt.categorySlug)) {
-      seen.add(prompt.categorySlug);
-      categories.push({
-        slug: prompt.categorySlug,
-        name: prompt.categoryName,
-      });
+    for (const category of getPromptCategories(prompt)) {
+      if (!seen.has(category.slug)) {
+        seen.add(category.slug);
+        categories.push(category);
+      }
     }
   }
 
   return categories;
+}
+
+function splitCategories(categories) {
+  const manualCategories = [];
+  const systemCategories = [];
+
+  for (const category of categories) {
+    if (category.slug === "uncategorized") {
+      systemCategories.push(category);
+      continue;
+    }
+    manualCategories.push(category);
+  }
+
+  return {
+    manualCategories,
+    systemCategories,
+  };
 }
 
 function HomeActionButtons() {
@@ -110,6 +146,8 @@ function ViewToggle({ view, onChange }) {
 }
 
 function PromptCard({ prompt }) {
+  const categories = getPromptCategories(prompt);
+
   return (
     <article
       data-testid="prompt-card"
@@ -121,22 +159,27 @@ function PromptCard({ prompt }) {
         cursor: "pointer",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+      <div style={{ display: "grid", gap: "8px" }}>
         <h3 style={{ margin: 0, fontSize: "16px", color: "var(--pm-title)" }}>{prompt.title}</h3>
-        <span
-          style={{
-            fontSize: "12px",
-            padding: "2px 8px",
-            borderRadius: "12px",
-            backgroundColor: "var(--pm-accent-light)",
-            color: "var(--pm-accent)",
-            fontWeight: 500,
-            whiteSpace: "nowrap",
-            marginLeft: "8px",
-          }}
-        >
-          {prompt.categoryName}
-        </span>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+          {categories.map((category) => (
+            <span
+              key={`${prompt.slug}-${category.slug}`}
+              data-testid="prompt-category-tag"
+              style={{
+                fontSize: "12px",
+                padding: "2px 8px",
+                borderRadius: "12px",
+                backgroundColor: "var(--pm-accent-light)",
+                color: "var(--pm-accent)",
+                fontWeight: 500,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {category.name}
+            </span>
+          ))}
+        </div>
       </div>
       <p style={{ margin: 0, color: "var(--pm-muted)", fontSize: "14px", lineHeight: 1.5 }}>
         {prompt.summary}
@@ -158,6 +201,8 @@ function PromptCard({ prompt }) {
 }
 
 function PromptListItem({ prompt }) {
+  const categories = getPromptCategories(prompt);
+
   return (
     <article
       data-testid="prompt-card"
@@ -179,22 +224,26 @@ function PromptListItem({ prompt }) {
         e.currentTarget.style.boxShadow = "none";
       }}
     >
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
-          <h3 style={{ margin: 0, fontSize: "15px", color: "var(--pm-title)" }}>{prompt.title}</h3>
-          <span
-            style={{
-              fontSize: "12px",
-              padding: "2px 8px",
-              borderRadius: "12px",
-              backgroundColor: "var(--pm-accent-light)",
-              color: "var(--pm-accent)",
-              fontWeight: 500,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {prompt.categoryName}
-          </span>
+      <div style={{ flex: 1, minWidth: 0, display: "grid", gap: "6px" }}>
+        <h3 style={{ margin: 0, fontSize: "15px", color: "var(--pm-title)" }}>{prompt.title}</h3>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+          {categories.map((category) => (
+            <span
+              key={`${prompt.slug}-${category.slug}`}
+              data-testid="prompt-category-tag"
+              style={{
+                fontSize: "12px",
+                padding: "2px 8px",
+                borderRadius: "12px",
+                backgroundColor: "var(--pm-accent-light)",
+                color: "var(--pm-accent)",
+                fontWeight: 500,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {category.name}
+            </span>
+          ))}
         </div>
         <p style={{ margin: 0, color: "var(--pm-muted)", fontSize: "14px", lineHeight: 1.5 }}>
           {prompt.summary}
@@ -217,14 +266,31 @@ function PromptListItem({ prompt }) {
 }
 
 export function HomePageShell({ prompts }) {
-  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedCategories, setSelectedCategories] = useState([]);
   const [keyword, setKeyword] = useState("");
   const [viewMode, setViewMode] = useState("card");
   const categories = collectCategories(prompts);
+  const { manualCategories, systemCategories } = splitCategories(categories);
   const normalizedKeyword = keyword.trim().toLowerCase();
 
+  function toggleCategory(categorySlug) {
+    setSelectedCategories((prev) => {
+      if (prev.includes(categorySlug)) {
+        return prev.filter((item) => item !== categorySlug);
+      }
+      return [...prev, categorySlug];
+    });
+  }
+
   const filteredPrompts = prompts.filter((prompt) => {
-    if (selectedCategory !== "all" && prompt.categorySlug !== selectedCategory) {
+    const promptCategorySlugs = Array.isArray(prompt.categorySlugs) && prompt.categorySlugs.length > 0
+      ? prompt.categorySlugs
+      : getPromptCategories(prompt).map((item) => item.slug);
+
+    if (
+      selectedCategories.length > 0 &&
+      !selectedCategories.some((category) => promptCategorySlugs.includes(category))
+    ) {
       return false;
     }
 
@@ -250,7 +316,7 @@ export function HomePageShell({ prompts }) {
       >
         <div>
           <h1 className="pm-page-title" style={{ margin: 0, fontSize: "24px" }}>
-            Prompt Library
+            公司提示词库
           </h1>
           <p style={{ margin: "6px 0 0 0", color: "var(--pm-muted)", fontSize: "14px" }}>
             收录提示词总数：{prompts.length}
@@ -270,9 +336,9 @@ export function HomePageShell({ prompts }) {
         <aside
           data-testid="home-section-categories"
           className="pm-card"
-          style={{ padding: "16px" }}
+          style={{ padding: "16px", display: "grid", gap: "10px" }}
         >
-          <h2 style={{ margin: "0 0 12px 0", fontSize: "16px", color: "var(--pm-title)" }}>分类</h2>
+          <h2 style={{ margin: 0, fontSize: "16px", color: "var(--pm-title)" }}>分类</h2>
           <div
             style={{
               display: "flex",
@@ -282,24 +348,60 @@ export function HomePageShell({ prompts }) {
           >
             <button
               type="button"
-              className={`pm-tag ${selectedCategory === "all" ? "active" : ""}`}
+              className={`pm-tag ${selectedCategories.length === 0 ? "active" : ""}`}
               style={{ justifyContent: "flex-start" }}
-              onClick={() => setSelectedCategory("all")}
+              onClick={() => setSelectedCategories([])}
             >
               全部
             </button>
-            {categories.map((category) => (
+            {manualCategories.map((category) => (
               <button
                 key={category.slug}
                 type="button"
-                className={`pm-tag ${selectedCategory === category.slug ? "active" : ""}`}
+                className={`pm-tag ${selectedCategories.includes(category.slug) ? "active" : ""}`}
                 style={{ justifyContent: "flex-start" }}
-                onClick={() => setSelectedCategory(category.slug)}
+                onClick={() => toggleCategory(category.slug)}
               >
                 {category.name}
               </button>
             ))}
           </div>
+
+          {systemCategories.length > 0 ? (
+            <details data-testid="system-categories-panel">
+              <summary
+                data-testid="system-categories-toggle"
+                style={{
+                  cursor: "pointer",
+                  color: "var(--pm-muted)",
+                  fontSize: "13px",
+                  userSelect: "none",
+                }}
+              >
+                系统分类
+              </summary>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                  marginTop: "8px",
+                }}
+              >
+                {systemCategories.map((category) => (
+                  <button
+                    key={category.slug}
+                    type="button"
+                    className={`pm-tag ${selectedCategories.includes(category.slug) ? "active" : ""}`}
+                    style={{ justifyContent: "flex-start" }}
+                    onClick={() => toggleCategory(category.slug)}
+                  >
+                    {category.name}
+                  </button>
+                ))}
+              </div>
+            </details>
+          ) : null}
         </aside>
 
         <section
@@ -339,6 +441,7 @@ export function HomePageShell({ prompts }) {
             </svg>
             <input
               id="home-keyword-input"
+              aria-label="关键词搜索"
               className="pm-search-input"
               value={keyword}
               onChange={(event) => setKeyword(event.target.value)}

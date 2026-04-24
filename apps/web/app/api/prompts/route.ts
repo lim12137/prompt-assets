@@ -59,13 +59,38 @@ function mapCreateErrorCode(
   return "invalid_request";
 }
 
+function parseCategoryFilters(searchParams: URLSearchParams): string[] | undefined {
+  const deduped = new Set<string>();
+  const rawList = searchParams.getAll("categories");
+  const legacyCategory = searchParams.get("category");
+  if (legacyCategory) {
+    rawList.push(legacyCategory);
+  }
+
+  for (const raw of rawList) {
+    const text = typeof raw === "string" ? raw.trim() : "";
+    if (!text) {
+      continue;
+    }
+    for (const segment of text.split(",")) {
+      const slug = segment.trim();
+      if (slug) {
+        deduped.add(slug);
+      }
+    }
+  }
+
+  return deduped.size > 0 ? [...deduped] : undefined;
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const category = searchParams.get("category") ?? undefined;
+  const categories = parseCategoryFilters(searchParams);
   const keyword = searchParams.get("keyword") ?? undefined;
   const sort = searchParams.get("sort") ?? undefined;
 
-  const data = await listPrompts({ category, keyword, sort });
+  const data = await listPrompts({ category, categories, keyword, sort });
   return NextResponse.json(data, { status: 200 });
 }
 
