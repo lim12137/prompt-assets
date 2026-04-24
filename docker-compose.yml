@@ -37,7 +37,7 @@ services:
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:13000}
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-prompt_assets}
     ports:
-      - "${WEB_PORT:-13000}:13000"
+      - "${WEB_PORT:-13000}:3000"
 
 volumes:
   prompt_assets_postgres_data:
