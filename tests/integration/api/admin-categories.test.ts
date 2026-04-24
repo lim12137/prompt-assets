@@ -36,9 +36,6 @@ let categoryDeleteRouteModule: {
     context: { params: { slug: string } },
   ) => Promise<Response>;
 };
-let promptsRouteModule: {
-  POST: (request: Request) => Promise<Response>;
-};
 let lockModule: {
   withTestDbLock: <T>(task: () => Promise<T>) => Promise<T>;
 };
@@ -85,7 +82,6 @@ async function loadModules(): Promise<void> {
   categoryDeleteRouteModule = await import(
     "../../../apps/web/app/api/admin/categories/[slug]/route.ts"
   );
-  promptsRouteModule = await import("../../../apps/web/app/api/prompts/route.ts");
   lockModule = await import("../../../scripts/with-test-db-lock.mjs");
 
   modulesLoaded = true;
@@ -123,14 +119,6 @@ function adminDeleteCategoryRequest(
 ): Request {
   return new Request(`http://localhost:3000/api/admin/categories/${slug}`, {
     method: "DELETE",
-    headers: adminHeaders(),
-    body: JSON.stringify(body),
-  });
-}
-
-function adminCreatePromptRequest(body: Record<string, unknown>): Request {
-  return new Request("http://localhost:3000/api/prompts", {
-    method: "POST",
     headers: adminHeaders(),
     body: JSON.stringify(body),
   });
@@ -202,16 +190,67 @@ async function createPrompt(input: {
   summary: string;
   categorySlug: string;
 }): Promise<void> {
-  const response = await promptsRouteModule.POST(
-    adminCreatePromptRequest({
-      slug: input.slug,
-      title: input.title,
-      summary: input.summary,
-      categorySlug: input.categorySlug,
-      content: `content for ${input.slug}`,
-    }),
-  );
-  assert.equal(response.status, 201);
+  await clientModule.withPgClient(testDbUrl, async (client) => {
+    const categoryResult = await client.query<{ id: number }>(
+      `SELECT id FROM categories WHERE slug = $1 LIMIT 1;`,
+      [input.categorySlug],
+    );
+    const categoryId = Number(categoryResult.rows[0]?.id ?? 0);
+    assert.ok(categoryId > 0, `category 不存在: ${input.categorySlug}`);
+
+    const promptResult = await client.query<{ id: number }>(
+      `
+        INSERT INTO prompts (slug, title, summary, category_id, status)
+        VALUES ($1, $2, $3, $4, 'published')
+        RETURNING id;
+      `,
+      [input.slug, input.title, input.summary, categoryId],
+    );
+    const promptId = Number(promptResult.rows[0]?.id ?? 0);
+    assert.ok(promptId > 0, `prompt 创建失败: ${input.slug}`);
+
+    await client.query(
+      `
+        INSERT INTO prompt_categories (prompt_id, category_id)
+        VALUES ($1, $2)
+        ON CONFLICT (prompt_id, category_id) DO NOTHING;
+      `,
+      [promptId, categoryId],
+    );
+
+    const creatorResult = await client.query<{ id: number }>(
+      `SELECT id FROM users WHERE email = $1 LIMIT 1;`,
+      ["admin@example.com"],
+    );
+    const creatorId = Number(creatorResult.rows[0]?.id ?? 0);
+
+    const versionResult = await client.query<{ id: number }>(
+      `
+        INSERT INTO prompt_versions (
+          prompt_id,
+          version_no,
+          content,
+          change_note,
+          source_type,
+          submitted_by
+        )
+        VALUES ($1, 'v0001', $2, NULL, 'create', $3)
+        RETURNING id;
+      `,
+      [promptId, `content for ${input.slug}`, creatorId > 0 ? creatorId : null],
+    );
+    const versionId = Number(versionResult.rows[0]?.id ?? 0);
+    assert.ok(versionId > 0, `prompt v0001 创建失败: ${input.slug}`);
+
+    await client.query(
+      `
+        UPDATE prompts
+        SET current_version_id = $2, updated_at = NOW()
+        WHERE id = $1;
+      `,
+      [promptId, versionId],
+    );
+  });
 }
 
 async function addPromptCategoryRelation(
@@ -545,4 +584,34 @@ test("删除分类: 历史漂移下 impacted 口径与补挂目标保持一致",
     "漂移场景应补挂 1 条 uncategorized",
   );
   assert.deepEqual(await getPromptCategorySlugs(promptSlug), ["uncategorized"]);
+});
+
+test("分类删除前置创建不依赖 /api/prompts 数据源回落", async (t) => {
+  if (!(await ensureDbReady(t))) {
+    return;
+  }
+  await resetDbSeed();
+
+  const categorySlug = `task2-precondition-stable-${Date.now()}`;
+  const promptSlug = `task2-precondition-stable-prompt-${Date.now()}`;
+  await createCategory({ name: "前置稳定分类", slug: categorySlug });
+
+  const originalSourceMode = process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+  process.env.PROMPT_REPOSITORY_DATA_SOURCE = "fixture";
+  try {
+    await createPrompt({
+      slug: promptSlug,
+      title: "前置稳定 Prompt",
+      summary: "前置创建应稳定写入 DB",
+      categorySlug,
+    });
+  } finally {
+    if (originalSourceMode === undefined) {
+      delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+    } else {
+      process.env.PROMPT_REPOSITORY_DATA_SOURCE = originalSourceMode;
+    }
+  }
+
+  assert.deepEqual(await getPromptCategorySlugs(promptSlug), [categorySlug]);
 });
