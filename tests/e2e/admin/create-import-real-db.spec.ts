@@ -30,7 +30,7 @@ test("真实 DB: 管理创建与批量导入链路可用", async ({ page }) => {
   await page.getByLabel("标题").fill(createTitle);
   await page.getByLabel("摘要").fill("真实DB创建链路回归摘要。");
   await page.getByLabel("编程").check();
-  await page.getByLabel("内容").fill(`真实DB创建正文:${marker}`);
+  await page.getByRole("textbox", { name: "内容" }).fill(`真实DB创建正文:${marker}`);
   await page.getByRole("button", { name: "提交创建" }).click();
   await expect(page.getByRole("status")).toContainText("创建请求提交中");
   await expect(page.getByRole("status")).toContainText("已创建");
@@ -39,7 +39,7 @@ test("真实 DB: 管理创建与批量导入链路可用", async ({ page }) => {
   const createdDetail = await page.goto(`/prompts/${createSlug}`);
   expect(createdDetail?.status()).toBe(200);
   await expect(
-    page.getByRole("heading", { level: 1, name: `提示词详情：${createTitle}` }),
+    page.getByRole("heading", { level: 1, name: createTitle }),
   ).toBeVisible();
 
   await page.goto("/admin/import");
@@ -64,6 +64,6 @@ test("真实 DB: 管理创建与批量导入链路可用", async ({ page }) => {
   const importedDetail = await page.goto(`/prompts/${importSlug}`);
   expect(importedDetail?.status()).toBe(200);
   await expect(
-    page.getByRole("heading", { level: 1, name: `提示词详情：${importTitle}` }),
+    page.getByRole("heading", { level: 1, name: importTitle }),
   ).toBeVisible();
 });
