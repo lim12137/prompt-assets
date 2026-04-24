@@ -90,23 +90,28 @@ export async function POST(request: Request) {
     content,
   });
 
-  if (!result.ok) {
-    const status =
-      result.code === "forbidden"
-        ? 403
-        : result.code === "conflict"
-          ? 409
-          : result.code === "not_found"
-            ? 404
-            : 400;
-    return NextResponse.json(
-      {
-        error: result.message,
-        code: mapCreateErrorCode(result.code),
-      },
-      { status },
-    );
+  if (result.ok) {
+    return NextResponse.json(result.value, { status: 201 });
   }
 
-  return NextResponse.json(result.value, { status: 201 });
+  const failedResult = result as {
+    ok: false;
+    code: "forbidden" | "conflict" | "not_found" | "bad_request";
+    message: string;
+  };
+  const status =
+    failedResult.code === "forbidden"
+      ? 403
+      : failedResult.code === "conflict"
+        ? 409
+        : failedResult.code === "not_found"
+          ? 404
+          : 400;
+  return NextResponse.json(
+    {
+      error: failedResult.message,
+      code: mapCreateErrorCode(failedResult.code),
+    },
+    { status },
+  );
 }

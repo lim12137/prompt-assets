@@ -102,6 +102,39 @@ export type PromptCreateResult =
       message: string;
     };
 
+export type PromptImportItemInput = {
+  slug: string;
+  title: string;
+  summary: string;
+  categorySlug: string;
+  content: string;
+};
+
+export type PromptImportInput = {
+  creatorEmail: string;
+  creatorRole: "user" | "admin";
+  items: PromptImportItemInput[];
+};
+
+export type PromptImportSuccess = {
+  total: number;
+  mode: "all_or_nothing";
+  prompts: PromptCreateSuccess["prompt"][];
+};
+
+export type PromptImportResult =
+  | {
+      ok: true;
+      value: PromptImportSuccess;
+    }
+  | {
+      ok: false;
+      code: "forbidden" | "conflict" | "not_found" | "bad_request";
+      message: string;
+      itemIndex?: number;
+      itemSlug?: string;
+    };
+
 type SubmissionStatus = "pending" | "approved" | "rejected";
 
 export type PromptSubmissionMutationResult = {
@@ -1119,6 +1152,165 @@ async function createPromptInDb(
   });
 }
 
+async function importPromptsInDb(
+  input: PromptImportInput,
+): Promise<PromptImportResult> {
+  if (input.creatorRole !== "admin") {
+    return {
+      ok: false,
+      code: "forbidden",
+      message: "admin role is required",
+    };
+  }
+
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    return {
+      ok: false,
+      code: "bad_request",
+      message: "import items must be a non-empty array",
+    };
+  }
+
+  const payloadSlugSet = new Set<string>();
+  for (let index = 0; index < input.items.length; index += 1) {
+    const item = input.items[index];
+    if (payloadSlugSet.has(item.slug)) {
+      return {
+        ok: false,
+        code: "bad_request",
+        message: "duplicated slug in import payload",
+        itemIndex: index,
+        itemSlug: item.slug,
+      };
+    }
+    payloadSlugSet.add(item.slug);
+  }
+
+  return withPgClient(databaseUrl, async (client) => {
+    await client.query("BEGIN;");
+    try {
+      const validatedItems: Array<
+        PromptImportItemInput & {
+          categoryId: number;
+          itemIndex: number;
+        }
+      > = [];
+      const categoryIdCache = new Map<string, number>();
+
+      for (let index = 0; index < input.items.length; index += 1) {
+        const item = input.items[index];
+        const existedPromptId = await findAnyPromptId(client, item.slug);
+        if (existedPromptId) {
+          await client.query("ROLLBACK;");
+          return {
+            ok: false,
+            code: "conflict",
+            message: "prompt slug already exists",
+            itemIndex: index,
+            itemSlug: item.slug,
+          };
+        }
+
+        let categoryId = categoryIdCache.get(item.categorySlug);
+        if (!categoryId) {
+          const foundCategoryId = await findCategoryId(client, item.categorySlug);
+          if (!foundCategoryId) {
+            await client.query("ROLLBACK;");
+            return {
+              ok: false,
+              code: "not_found",
+              message: "category not found",
+              itemIndex: index,
+              itemSlug: item.slug,
+            };
+          }
+          categoryId = foundCategoryId;
+          categoryIdCache.set(item.categorySlug, categoryId);
+        }
+
+        validatedItems.push({
+          ...item,
+          categoryId,
+          itemIndex: index,
+        });
+      }
+
+      const creatorId = await upsertAdminReviewerId(client, input.creatorEmail);
+      const importedPrompts: PromptCreateSuccess["prompt"][] = [];
+
+      for (const item of validatedItems) {
+        const insertedPrompt = await client.query<DbPromptLookupRow>(
+          `
+            INSERT INTO prompts
+              (slug, title, summary, category_id, status, likes_count, updated_at)
+            VALUES ($1, $2, $3, $4, 'published', 0, NOW())
+            RETURNING id;
+          `,
+          [item.slug, item.title, item.summary, item.categoryId],
+        );
+        const promptId = asNumber(insertedPrompt.rows[0]?.id);
+
+        const insertedVersion = await client.query<DbPromptVersionInsertRow>(
+          `
+            INSERT INTO prompt_versions
+              (prompt_id, version_no, content, source_type, submitted_by, submitted_at)
+            VALUES ($1, 'v0001', $2, 'create', $3, NOW())
+            RETURNING id, version_no;
+          `,
+          [promptId, item.content, creatorId],
+        );
+        const versionId = asNumber(insertedVersion.rows[0]?.id);
+        const versionNo = insertedVersion.rows[0]?.version_no ?? "v0001";
+
+        await client.query(
+          `
+            UPDATE prompts
+            SET current_version_id = $2, updated_at = NOW()
+            WHERE id = $1;
+          `,
+          [promptId, versionId],
+        );
+
+        await writeAuditLog(client, {
+          actorId: creatorId,
+          action: "prompt.created",
+          targetType: "prompt",
+          targetId: promptId,
+          payload: {
+            promptSlug: item.slug,
+            categorySlug: item.categorySlug,
+            versionNo,
+          },
+        });
+
+        importedPrompts.push({
+          slug: item.slug,
+          title: item.title,
+          summary: item.summary,
+          categorySlug: item.categorySlug,
+          currentVersion: {
+            versionNo,
+            sourceType: "create",
+          },
+        });
+      }
+
+      await client.query("COMMIT;");
+      return {
+        ok: true,
+        value: {
+          total: importedPrompts.length,
+          mode: "all_or_nothing",
+          prompts: importedPrompts,
+        },
+      };
+    } catch (error) {
+      await client.query("ROLLBACK;");
+      throw error;
+    }
+  });
+}
+
 async function readPromptLikesCount(client: SqlClient, promptId: number): Promise<number> {
   const result = await client.query<DbPromptLikesCountRow>(
     `
@@ -1799,6 +1991,96 @@ function createPromptInFixtures(input: PromptCreateInput): PromptCreateResult {
   };
 }
 
+function importPromptsInFixtures(
+  input: PromptImportInput,
+): PromptImportResult {
+  if (input.creatorRole !== "admin") {
+    return {
+      ok: false,
+      code: "forbidden",
+      message: "admin role is required",
+    };
+  }
+
+  if (!Array.isArray(input.items) || input.items.length === 0) {
+    return {
+      ok: false,
+      code: "bad_request",
+      message: "import items must be a non-empty array",
+    };
+  }
+
+  const payloadSlugSet = new Set<string>();
+  for (let index = 0; index < input.items.length; index += 1) {
+    const item = input.items[index];
+    if (payloadSlugSet.has(item.slug)) {
+      return {
+        ok: false,
+        code: "bad_request",
+        message: "duplicated slug in import payload",
+        itemIndex: index,
+        itemSlug: item.slug,
+      };
+    }
+    payloadSlugSet.add(item.slug);
+
+    if (findFixturePromptRecord(item.slug)) {
+      return {
+        ok: false,
+        code: "conflict",
+        message: "prompt slug already exists",
+        itemIndex: index,
+        itemSlug: item.slug,
+      };
+    }
+
+    if (!CATEGORY_MAP.has(item.categorySlug)) {
+      return {
+        ok: false,
+        code: "not_found",
+        message: "category not found",
+        itemIndex: index,
+        itemSlug: item.slug,
+      };
+    }
+  }
+
+  const importedPrompts: PromptCreateSuccess["prompt"][] = [];
+  for (const item of input.items) {
+    const created = createPromptInFixtures({
+      creatorEmail: input.creatorEmail,
+      creatorRole: "admin",
+      slug: item.slug,
+      title: item.title,
+      summary: item.summary,
+      categorySlug: item.categorySlug,
+      content: item.content,
+    });
+    if (!created.ok) {
+      const failedCreate = created as {
+        ok: false;
+        code: "forbidden" | "conflict" | "not_found" | "bad_request";
+        message: string;
+      };
+      return {
+        ok: false,
+        code: failedCreate.code,
+        message: failedCreate.message,
+      };
+    }
+    importedPrompts.push(created.value.prompt);
+  }
+
+  return {
+    ok: true,
+    value: {
+      total: importedPrompts.length,
+      mode: "all_or_nothing",
+      prompts: importedPrompts,
+    },
+  };
+}
+
 async function listAdminSubmissionsFromDb(
   query: AdminSubmissionListQuery,
 ): Promise<AdminSubmissionListItem[]> {
@@ -2037,6 +2319,40 @@ export async function createPrompt(
     return createPromptInDb(normalizedInput);
   }
   return createPromptInFixtures(normalizedInput);
+}
+
+export async function importPrompts(
+  input: PromptImportInput,
+): Promise<PromptImportResult> {
+  const normalizedEmail = normalizeUserEmail(input.creatorEmail);
+  if (!normalizedEmail) {
+    return {
+      ok: false,
+      code: "bad_request",
+      message: "creator email is required",
+    };
+  }
+
+  const normalizedItems = Array.isArray(input.items)
+    ? input.items.map((item) => ({
+        slug: item.slug.trim(),
+        title: item.title.trim(),
+        summary: item.summary.trim(),
+        categorySlug: item.categorySlug.trim(),
+        content: item.content.trim(),
+      }))
+    : [];
+
+  const normalizedInput: PromptImportInput = {
+    creatorEmail: normalizedEmail,
+    creatorRole: input.creatorRole,
+    items: normalizedItems,
+  };
+
+  if (await canReadFromDatabase()) {
+    return importPromptsInDb(normalizedInput);
+  }
+  return importPromptsInFixtures(normalizedInput);
 }
 
 export async function reviewPromptSubmission(
