@@ -1,0 +1,47 @@
+name: Admin Management Flow E2E
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/admin-management-flow-e2e.yml"
+      - "tests/e2e/admin/**"
+      - "scripts/run-admin-real-db-e2e.mjs"
+      - "scripts/prepare-test-db.mjs"
+      - "packages/db/**"
+      - "apps/web/**"
+      - "playwright.config.ts"
+      - "package.json"
+      - "pnpm-lock.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  admin-management-flow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run admin real DB management flow
+        run: pnpm test:e2e:admin:management-flow
