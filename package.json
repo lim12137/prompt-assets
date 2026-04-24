@@ -21,6 +21,7 @@
     "db:test": "pnpm --filter @prompt-management/db db:test",
     "db:test:down": "pnpm --filter @prompt-management/db db:test:down",
     "test:e2e:admin:db": "node ./scripts/run-admin-real-db-e2e.mjs",
+    "test:e2e:admin:create-import:db": "node ./scripts/run-admin-create-import-real-db-e2e.mjs",
     "test:e2e:admin:management-flow": "node ./scripts/run-admin-real-db-e2e.mjs",
     "test:e2e:detail:db": "node ./scripts/run-detail-real-db-e2e.mjs"
   },
