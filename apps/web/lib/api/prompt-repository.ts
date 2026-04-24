@@ -2299,7 +2299,14 @@ export async function createPromptSubmission(
   };
 
   if (await canReadFromDatabase()) {
-    return createPromptSubmissionInDb(slug, normalizedInput);
+    const fromDb = await createPromptSubmissionInDb(slug, normalizedInput);
+    if (fromDb) {
+      return fromDb;
+    }
+    if (getRepositoryDataSourceMode() === "auto") {
+      return createPromptSubmissionInFixtures(slug, normalizedInput);
+    }
+    return null;
   }
   return createPromptSubmissionInFixtures(slug, normalizedInput);
 }
@@ -2407,7 +2414,14 @@ export async function listAdminSubmissions(
 
 export async function getPromptDetail(slug: string): Promise<PromptDetailDto | null> {
   if (await canReadFromDatabase()) {
-    return getPromptDetailFromDb(slug);
+    const fromDb = await getPromptDetailFromDb(slug);
+    if (fromDb) {
+      return fromDb;
+    }
+    if (getRepositoryDataSourceMode() === "auto") {
+      return getPromptDetailFromFixtures(slug);
+    }
+    return null;
   }
   return getPromptDetailFromFixtures(slug);
 }

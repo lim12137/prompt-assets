@@ -66,11 +66,11 @@ function pickLatestCandidateByEmployee(versions) {
         item.submittedBy.length > 0,
     )
     .sort((left, right) => {
-      const byTime = toVersionTimestamp(right.submittedAt) - toVersionTimestamp(left.submittedAt);
-      if (byTime !== 0) {
-        return byTime;
+      const byVersionNo = toVersionNumber(right.versionNo) - toVersionNumber(left.versionNo);
+      if (byVersionNo !== 0) {
+        return byVersionNo;
       }
-      return toVersionNumber(right.versionNo) - toVersionNumber(left.versionNo);
+      return toVersionTimestamp(right.submittedAt) - toVersionTimestamp(left.submittedAt);
     });
 
   const latestByEmployee = new Map();
