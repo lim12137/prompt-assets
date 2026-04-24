@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { withTestDbLock } from "./with-test-db-lock.mjs";
 
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const testDatabaseUrl =
@@ -7,6 +8,7 @@ const testDatabaseUrl =
 const testSpecPath =
   process.env.ADMIN_E2E_SPEC_PATH ??
   "tests/e2e/admin/management-flow.spec.ts";
+const playwrightWebPort = process.env.PLAYWRIGHT_WEB_PORT ?? "3112";
 
 function runStep(args, label, env = process.env, allowFailure = false) {
   console.log(`==> ${label}`);
@@ -25,17 +27,20 @@ function runStep(args, label, env = process.env, allowFailure = false) {
   }
 }
 
-try {
-  runStep(["db:test:prepare"], "准备真实测试数据库");
-  runStep(
-    ["exec", "playwright", "test", testSpecPath],
-    `执行 admin 真实 DB E2E (${testSpecPath})`,
-    {
-      ...process.env,
-      DATABASE_URL: testDatabaseUrl,
-      PROMPT_REPOSITORY_DATA_SOURCE: "auto",
-    },
-  );
-} finally {
-  runStep(["db:test:down"], "清理测试数据库容器", process.env, true);
-}
+await withTestDbLock(async () => {
+  try {
+    runStep(["db:test:prepare"], "准备真实测试数据库");
+    runStep(
+      ["exec", "playwright", "test", testSpecPath],
+      `执行 admin 真实 DB E2E (${testSpecPath})`,
+      {
+        ...process.env,
+        DATABASE_URL: testDatabaseUrl,
+        PROMPT_REPOSITORY_DATA_SOURCE: "auto",
+        PLAYWRIGHT_WEB_PORT: playwrightWebPort,
+      },
+    );
+  } finally {
+    runStep(["db:test:down"], "清理测试数据库容器", process.env, true);
+  }
+});

@@ -8,6 +8,7 @@ const testDatabaseUrl =
 const testSpecPath =
   process.env.DETAIL_E2E_SPEC_PATH ??
   "tests/e2e/smoke/prompt-detail-real-db.spec.ts";
+const playwrightWebPort = process.env.PLAYWRIGHT_WEB_PORT ?? "3111";
 
 function runStep(args, label, env = process.env, allowFailure = false) {
   console.log(`==> ${label}`);
@@ -36,6 +37,7 @@ await withTestDbLock(async () => {
         ...process.env,
         DATABASE_URL: testDatabaseUrl,
         PROMPT_REPOSITORY_DATA_SOURCE: "auto",
+        PLAYWRIGHT_WEB_PORT: playwrightWebPort,
       },
     );
   } finally {

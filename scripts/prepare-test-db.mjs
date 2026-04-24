@@ -3,6 +3,7 @@ import net from "node:net";
 
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const stepTimeoutMs = Number(process.env.TEST_DB_PREPARE_STEP_TIMEOUT_MS ?? 180000);
+const retryCount = Number(process.env.TEST_DB_PREPARE_RETRIES ?? 3);
 
 function runStep(args, label, options = {}) {
   console.log(`==> ${label}`);
@@ -91,7 +92,7 @@ async function waitForHostDatabase() {
   throw new Error(`测试数据库主机端口未就绪: ${host}:${port}`);
 }
 
-await runStepWithRetry(["db:test:up"], "启动 Docker 测试数据库");
+await runStepWithRetry(["db:test:up"], "启动 Docker 测试数据库", retryCount);
 await waitForHostDatabase();
-await runStepWithRetry(["db:test:migrate"], "执行测试库迁移");
-runStep(["db:test:seed"], "写入测试库 seed");
+await runStepWithRetry(["db:test:migrate"], "执行测试库迁移", retryCount);
+await runStepWithRetry(["db:test:seed"], "写入测试库 seed", retryCount);
