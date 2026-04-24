@@ -76,7 +76,8 @@ export type PromptCreateInput = {
   slug: string;
   title: string;
   summary: string;
-  categorySlug: string;
+  categorySlug?: string;
+  categorySlugs?: string[];
   content: string;
 };
 
@@ -86,6 +87,8 @@ export type PromptCreateSuccess = {
     title: string;
     summary: string;
     categorySlug: string;
+    categories: PromptCategoryDto[];
+    categorySlugs: string[];
     currentVersion: {
       versionNo: string;
       sourceType: "create";
@@ -108,7 +111,8 @@ export type PromptImportItemInput = {
   slug: string;
   title: string;
   summary: string;
-  categorySlug: string;
+  categorySlug?: string;
+  categorySlugs?: string[];
   content: string;
 };
 
@@ -352,6 +356,13 @@ type DbCategoryDetailLookupRow = {
   is_collapsed_by_default: boolean;
 };
 
+type DbCategoryResolveRow = {
+  id: number | string;
+  slug: string;
+  name: string;
+  is_system: boolean;
+};
+
 type DbCategoryListRow = {
   slug: string;
   name: string;
@@ -437,6 +448,7 @@ type FixturePromptRecord = {
   title: string;
   summary: string;
   categorySlug: string;
+  categorySlugs: string[];
   createdAt: string;
   createdByEmail: string;
 };
@@ -449,7 +461,16 @@ type CategoryDeleteTokenPayload = {
   exp: number;
 };
 
-const CATEGORY_MAP = new Map(baseCategories.map((item) => [item.slug, item]));
+const UNCATEGORIZED_CATEGORY = {
+  slug: "uncategorized",
+  name: "待分类",
+  sortOrder: 0,
+  status: "active",
+} as const;
+const SYSTEM_CATEGORY_SLUGS = new Set<string>([UNCATEGORIZED_CATEGORY.slug]);
+const CATEGORY_MAP = new Map(
+  [...baseCategories, UNCATEGORIZED_CATEGORY].map((item) => [item.slug, item]),
+);
 const CATEGORY_DELETE_TOKEN_SECRET =
   process.env.CATEGORY_DELETE_TOKEN_SECRET ??
   "prompt-management-admin-category-delete-secret";
@@ -519,6 +540,7 @@ function findFixturePromptRecord(
   title: string;
   summary: string;
   categorySlug: string;
+  categorySlugs: string[];
 } | null {
   const fromCatalog = promptCatalog.find(
     (item) => item.slug === slug && item.status === "published",
@@ -529,6 +551,7 @@ function findFixturePromptRecord(
       title: fromCatalog.title,
       summary: fromCatalog.summary,
       categorySlug: fromCatalog.categorySlug,
+      categorySlugs: [fromCatalog.categorySlug],
     };
   }
 
@@ -542,6 +565,7 @@ function findFixturePromptRecord(
     title: fromCreated.title,
     summary: fromCreated.summary,
     categorySlug: fromCreated.categorySlug,
+    categorySlugs: [...fromCreated.categorySlugs],
   };
 }
 
@@ -694,6 +718,53 @@ function normalizePromptCategories(
     categories: stableCategories,
     categorySlugs: stableCategories.map((item) => item.slug),
   };
+}
+
+function normalizeCategorySlugsInput(input: {
+  categorySlug?: string;
+  categorySlugs?: string[];
+}): string[] {
+  const deduped = new Set<string>();
+  const normalizedFromArray = Array.isArray(input.categorySlugs)
+    ? input.categorySlugs
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter((item) => item.length > 0)
+    : [];
+
+  for (const slug of normalizedFromArray) {
+    if (!deduped.has(slug)) {
+      deduped.add(slug);
+    }
+  }
+  if (deduped.size > 0) {
+    return [...deduped];
+  }
+
+  const singleSlug =
+    typeof input.categorySlug === "string" ? input.categorySlug.trim() : "";
+  if (singleSlug) {
+    return [singleSlug];
+  }
+
+  return [UNCATEGORIZED_CATEGORY.slug];
+}
+
+function selectPrimaryCategorySlug(
+  categorySlugs: string[],
+  isSystemCategory: (slug: string) => boolean,
+): string {
+  const primary =
+    categorySlugs.find((slug) => !isSystemCategory(slug)) ??
+    categorySlugs[0] ??
+    UNCATEGORIZED_CATEGORY.slug;
+  return primary;
+}
+
+function mapCategoryDtosFromSlugs(categorySlugs: string[]): PromptCategoryDto[] {
+  return categorySlugs.map((slug) => ({
+    slug,
+    name: CATEGORY_MAP.get(slug)?.name ?? slug,
+  }));
 }
 
 function normalizeUserEmail(input: string): string {
@@ -983,6 +1054,8 @@ function listPromptsFromFixtures(query: ListPromptsQuery): PromptListItemDto[] {
         updatedAt: buildFixtureTimestamp(index),
         categorySlug: prompt.categorySlug,
         categoryName: CATEGORY_MAP.get(prompt.categorySlug)?.name ?? "",
+        categories: mapCategoryDtosFromSlugs([prompt.categorySlug]),
+        categorySlugs: [prompt.categorySlug],
       }),
     )
     .filter((item) => !fixtureCreatedPrompts.has(item.slug));
@@ -995,11 +1068,13 @@ function listPromptsFromFixtures(query: ListPromptsQuery): PromptListItemDto[] {
       updatedAt: buildFixtureTimestamp(promptCatalog.length + index),
       categorySlug: prompt.categorySlug,
       categoryName: CATEGORY_MAP.get(prompt.categorySlug)?.name ?? "",
+      categories: mapCategoryDtosFromSlugs(prompt.categorySlugs),
+      categorySlugs: [...prompt.categorySlugs],
     }),
   );
   const rows = [...seededRows, ...createdRows]
     .filter((item) => {
-      if (query.category && item.categorySlug !== query.category) {
+      if (query.category && !item.categorySlugs.includes(query.category)) {
         return false;
       }
       if (!keyword) {
@@ -1098,6 +1173,8 @@ function getPromptDetailFromFixtures(slug: string): PromptDetailDto | null {
       buildFixtureTimestamp(Math.max(promptCatalog.findIndex((item) => item.slug === prompt.slug), 0)),
     categorySlug: prompt.categorySlug,
     categoryName: CATEGORY_MAP.get(prompt.categorySlug)?.name ?? "",
+    categories: mapCategoryDtosFromSlugs(prompt.categorySlugs),
+    categorySlugs: [...prompt.categorySlugs],
     currentVersionNo: currentVersion.versionNo,
     currentVersionSourceType: currentVersion.sourceType ?? "edit",
     currentVersionSubmittedAt: buildFixtureTimestamp(0),
@@ -1219,6 +1296,7 @@ async function getPromptDetailFromDb(slug: string): Promise<PromptDetailDto | nu
       categorySlug: normalizedCategories.categories[0]?.slug ?? head.category_slug,
       categoryName: normalizedCategories.categories[0]?.name ?? head.category_name,
       categories: normalizedCategories.categories,
+      categorySlugs: normalizedCategories.categorySlugs,
       currentVersionNo,
       currentVersionSourceType,
       currentVersionSubmittedAt,
@@ -1346,6 +1424,61 @@ async function findCategoryId(client: SqlClient, categorySlug: string): Promise<
     return null;
   }
   return asNumber(row.id);
+}
+
+async function findCategoriesBySlugs(
+  client: SqlClient,
+  categorySlugs: string[],
+): Promise<
+  Array<{
+    id: number;
+    slug: string;
+    name: string;
+    isSystem: boolean;
+  }>
+> {
+  if (categorySlugs.length === 0) {
+    return [];
+  }
+
+  const result = await client.query<DbCategoryResolveRow>(
+    `
+      SELECT
+        id,
+        slug,
+        name,
+        is_system
+      FROM categories
+      WHERE slug = ANY($1::text[]);
+    `,
+    [categorySlugs],
+  );
+  const bySlug = new Map(
+    result.rows.map((row) => [
+      row.slug,
+      {
+        id: asNumber(row.id),
+        slug: row.slug,
+        name: row.name,
+        isSystem: Boolean(row.is_system),
+      },
+    ]),
+  );
+
+  const resolved: Array<{
+    id: number;
+    slug: string;
+    name: string;
+    isSystem: boolean;
+  }> = [];
+  for (const slug of categorySlugs) {
+    const row = bySlug.get(slug);
+    if (!row) {
+      continue;
+    }
+    resolved.push(row);
+  }
+  return resolved;
 }
 
 async function insertPromptCategoryRelation(
@@ -1884,8 +2017,24 @@ async function createPromptInDb(
         };
       }
 
-      const categoryId = await findCategoryId(client, input.categorySlug);
-      if (!categoryId) {
+      const categorySlugs = normalizeCategorySlugsInput(input);
+      const resolvedCategories = await findCategoriesBySlugs(client, categorySlugs);
+      if (resolvedCategories.length !== categorySlugs.length) {
+        await client.query("ROLLBACK;");
+        return {
+          ok: false,
+          code: "not_found",
+          message: "category not found",
+        };
+      }
+      const primaryCategorySlug = selectPrimaryCategorySlug(
+        categorySlugs,
+        (slug) => resolvedCategories.find((item) => item.slug === slug)?.isSystem ?? false,
+      );
+      const primaryCategory = resolvedCategories.find(
+        (item) => item.slug === primaryCategorySlug,
+      );
+      if (!primaryCategory) {
         await client.query("ROLLBACK;");
         return {
           ok: false,
@@ -1902,10 +2051,12 @@ async function createPromptInDb(
           VALUES ($1, $2, $3, $4, 'published', 0, NOW())
           RETURNING id;
         `,
-        [input.slug, input.title, input.summary, categoryId],
+        [input.slug, input.title, input.summary, primaryCategory.id],
       );
       const promptId = asNumber(insertedPrompt.rows[0]?.id);
-      await insertPromptCategoryRelation(client, promptId, categoryId);
+      for (const category of resolvedCategories) {
+        await insertPromptCategoryRelation(client, promptId, category.id);
+      }
 
       const insertedVersion = await client.query<DbPromptVersionInsertRow>(
         `
@@ -1935,7 +2086,8 @@ async function createPromptInDb(
         targetId: promptId,
         payload: {
           promptSlug: input.slug,
-          categorySlug: input.categorySlug,
+          categorySlug: primaryCategory.slug,
+          categorySlugs,
           versionNo,
         },
       });
@@ -1948,7 +2100,12 @@ async function createPromptInDb(
             slug: input.slug,
             title: input.title,
             summary: input.summary,
-            categorySlug: input.categorySlug,
+            categorySlug: primaryCategory.slug,
+            categories: resolvedCategories.map((item) => ({
+              slug: item.slug,
+              name: item.name,
+            })),
+            categorySlugs,
             currentVersion: {
               versionNo,
               sourceType: "create",
@@ -2002,11 +2159,31 @@ async function importPromptsInDb(
     try {
       const validatedItems: Array<
         PromptImportItemInput & {
-          categoryId: number;
+          categorySlugs: string[];
+          categories: Array<{
+            id: number;
+            slug: string;
+            name: string;
+            isSystem: boolean;
+          }>;
+          primaryCategory: {
+            id: number;
+            slug: string;
+            name: string;
+            isSystem: boolean;
+          };
           itemIndex: number;
         }
       > = [];
-      const categoryIdCache = new Map<string, number>();
+      const categoryCache = new Map<
+        string,
+        {
+          id: number;
+          slug: string;
+          name: string;
+          isSystem: boolean;
+        }
+      >();
 
       for (let index = 0; index < input.items.length; index += 1) {
         const item = input.items[index];
@@ -2022,26 +2199,78 @@ async function importPromptsInDb(
           };
         }
 
-        let categoryId = categoryIdCache.get(item.categorySlug);
-        if (!categoryId) {
-          const foundCategoryId = await findCategoryId(client, item.categorySlug);
-          if (!foundCategoryId) {
-            await client.query("ROLLBACK;");
-            return {
-              ok: false,
-              code: "not_found",
-              message: "category not found",
-              itemIndex: index,
-              itemSlug: item.slug,
-            };
+        const categorySlugs = normalizeCategorySlugsInput(item);
+        const missingSlugs: string[] = [];
+        for (const slug of categorySlugs) {
+          if (!categoryCache.has(slug)) {
+            missingSlugs.push(slug);
           }
-          categoryId = foundCategoryId;
-          categoryIdCache.set(item.categorySlug, categoryId);
+        }
+        if (missingSlugs.length > 0) {
+          const fetched = await findCategoriesBySlugs(client, missingSlugs);
+          for (const category of fetched) {
+            categoryCache.set(category.slug, category);
+          }
+          for (const slug of missingSlugs) {
+            if (!categoryCache.has(slug)) {
+              await client.query("ROLLBACK;");
+              return {
+                ok: false,
+                code: "not_found",
+                message: "category not found",
+                itemIndex: index,
+                itemSlug: item.slug,
+              };
+            }
+          }
+        }
+
+        const categories = categorySlugs
+          .map((slug) => categoryCache.get(slug))
+          .filter(
+            (
+              category,
+            ): category is {
+              id: number;
+              slug: string;
+              name: string;
+              isSystem: boolean;
+            } => Boolean(category),
+          );
+        if (categories.length !== categorySlugs.length) {
+          await client.query("ROLLBACK;");
+          return {
+            ok: false,
+            code: "not_found",
+            message: "category not found",
+            itemIndex: index,
+            itemSlug: item.slug,
+          };
+        }
+
+        const primaryCategorySlug = selectPrimaryCategorySlug(
+          categorySlugs,
+          (slug) => categories.find((item2) => item2.slug === slug)?.isSystem ?? false,
+        );
+        const primaryCategory = categories.find(
+          (category) => category.slug === primaryCategorySlug,
+        );
+        if (!primaryCategory) {
+          await client.query("ROLLBACK;");
+          return {
+            ok: false,
+            code: "not_found",
+            message: "category not found",
+            itemIndex: index,
+            itemSlug: item.slug,
+          };
         }
 
         validatedItems.push({
           ...item,
-          categoryId,
+          categorySlugs,
+          categories,
+          primaryCategory,
           itemIndex: index,
         });
       }
@@ -2057,10 +2286,12 @@ async function importPromptsInDb(
             VALUES ($1, $2, $3, $4, 'published', 0, NOW())
             RETURNING id;
           `,
-          [item.slug, item.title, item.summary, item.categoryId],
+          [item.slug, item.title, item.summary, item.primaryCategory.id],
         );
         const promptId = asNumber(insertedPrompt.rows[0]?.id);
-        await insertPromptCategoryRelation(client, promptId, item.categoryId);
+        for (const category of item.categories) {
+          await insertPromptCategoryRelation(client, promptId, category.id);
+        }
 
         const insertedVersion = await client.query<DbPromptVersionInsertRow>(
           `
@@ -2090,7 +2321,8 @@ async function importPromptsInDb(
           targetId: promptId,
           payload: {
             promptSlug: item.slug,
-            categorySlug: item.categorySlug,
+            categorySlug: item.primaryCategory.slug,
+            categorySlugs: item.categorySlugs,
             versionNo,
           },
         });
@@ -2099,7 +2331,12 @@ async function importPromptsInDb(
           slug: item.slug,
           title: item.title,
           summary: item.summary,
-          categorySlug: item.categorySlug,
+          categorySlug: item.primaryCategory.slug,
+          categories: item.categories.map((category) => ({
+            slug: category.slug,
+            name: category.name,
+          })),
+          categorySlugs: item.categorySlugs,
           currentVersion: {
             versionNo,
             sourceType: "create",
@@ -2743,20 +2980,27 @@ function createPromptInFixtures(input: PromptCreateInput): PromptCreateResult {
     };
   }
 
-  if (!CATEGORY_MAP.has(input.categorySlug)) {
+  const categorySlugs = normalizeCategorySlugsInput(input);
+  const missingCategorySlug = categorySlugs.find((slug) => !CATEGORY_MAP.has(slug));
+  if (missingCategorySlug) {
     return {
       ok: false,
       code: "not_found",
       message: "category not found",
     };
   }
+  const primaryCategorySlug = selectPrimaryCategorySlug(
+    categorySlugs,
+    (slug) => SYSTEM_CATEGORY_SLUGS.has(slug),
+  );
 
   const createdAt = new Date().toISOString();
   fixtureCreatedPrompts.set(input.slug, {
     slug: input.slug,
     title: input.title,
     summary: input.summary,
-    categorySlug: input.categorySlug,
+    categorySlug: primaryCategorySlug,
+    categorySlugs: [...categorySlugs],
     createdAt,
     createdByEmail: input.creatorEmail,
   });
@@ -2780,7 +3024,8 @@ function createPromptInFixtures(input: PromptCreateInput): PromptCreateResult {
       targetId: promptId,
       payload: {
         promptSlug: input.slug,
-        categorySlug: input.categorySlug,
+        categorySlug: primaryCategorySlug,
+        categorySlugs,
         versionNo: "v0001",
       },
     }),
@@ -2793,7 +3038,9 @@ function createPromptInFixtures(input: PromptCreateInput): PromptCreateResult {
         slug: input.slug,
         title: input.title,
         summary: input.summary,
-        categorySlug: input.categorySlug,
+        categorySlug: primaryCategorySlug,
+        categories: mapCategoryDtosFromSlugs(categorySlugs),
+        categorySlugs,
         currentVersion: {
           versionNo: "v0001",
           sourceType: "create",
@@ -2846,7 +3093,9 @@ function importPromptsInFixtures(
       };
     }
 
-    if (!CATEGORY_MAP.has(item.categorySlug)) {
+    const categorySlugs = normalizeCategorySlugsInput(item);
+    const missingCategorySlug = categorySlugs.find((slug) => !CATEGORY_MAP.has(slug));
+    if (missingCategorySlug) {
       return {
         ok: false,
         code: "not_found",
@@ -2866,6 +3115,7 @@ function importPromptsInFixtures(
       title: item.title,
       summary: item.summary,
       categorySlug: item.categorySlug,
+      categorySlugs: item.categorySlugs,
       content: item.content,
     });
     if (!created.ok) {
@@ -3125,6 +3375,13 @@ export async function createPrompt(
   const normalizedInput: PromptCreateInput = {
     ...input,
     creatorEmail: normalizedEmail,
+    categorySlug:
+      typeof input.categorySlug === "string" ? input.categorySlug.trim() : undefined,
+    categorySlugs: Array.isArray(input.categorySlugs)
+      ? input.categorySlugs
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter((item) => item.length > 0)
+      : undefined,
   };
 
   if (await canReadFromDatabase()) {
@@ -3150,7 +3407,13 @@ export async function importPrompts(
         slug: item.slug.trim(),
         title: item.title.trim(),
         summary: item.summary.trim(),
-        categorySlug: item.categorySlug.trim(),
+        categorySlug:
+          typeof item.categorySlug === "string" ? item.categorySlug.trim() : undefined,
+        categorySlugs: Array.isArray(item.categorySlugs)
+          ? item.categorySlugs
+              .map((slug) => (typeof slug === "string" ? slug.trim() : ""))
+              .filter((slug) => slug.length > 0)
+          : undefined,
         content: item.content.trim(),
       }))
     : [];

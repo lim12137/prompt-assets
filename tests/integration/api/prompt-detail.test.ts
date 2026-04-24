@@ -12,6 +12,7 @@ type PromptDetail = {
     slug: string;
     name: string;
   }>;
+  categorySlugs: string[];
   category: {
     slug: string;
     name: string;
@@ -41,6 +42,8 @@ test("GET /api/prompts/[slug] 返回最小详情结构", async () => {
   assert.equal(typeof payload.summary, "string");
   assert.ok(Array.isArray(payload.categories), "应返回 categories[] 兼容字段");
   assert.ok(payload.categories.length >= 1, "categories[] 至少包含 1 条");
+  assert.ok(Array.isArray(payload.categorySlugs), "应返回 categorySlugs[] 兼容字段");
+  assert.ok(payload.categorySlugs.length >= 1, "categorySlugs[] 至少包含 1 条");
   assert.equal(typeof payload.category.slug, "string");
   assert.equal(typeof payload.category.name, "string");
   assert.equal(

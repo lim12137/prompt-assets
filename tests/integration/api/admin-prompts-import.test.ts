@@ -10,9 +10,10 @@ import {
 
 type ImportRequestItem = {
   title: string;
-  slug: string;
+  slug?: string;
   summary: string;
-  categorySlug: string;
+  categorySlug?: string;
+  categorySlugs?: string[];
   content: string;
 };
 
@@ -24,6 +25,11 @@ type ImportSuccessResponse = {
     title: string;
     summary: string;
     categorySlug: string;
+    categories: Array<{
+      slug: string;
+      name: string;
+    }>;
+    categorySlugs: string[];
     currentVersion: {
       versionNo: string;
       sourceType: "create";
@@ -79,7 +85,7 @@ test("POST /api/admin/prompts/import 成功导入多个首版 prompt 并写入�
       title: "测试导入-编程提示词",
       slug: "import-programming-assistant",
       summary: "用于验证管理员批量导入能力。",
-      categorySlug: "programming",
+      categorySlugs: ["programming", "design"],
       content: "你是一名资深工程师，请按风险等级输出改造计划。",
     },
     {
@@ -99,6 +105,12 @@ test("POST /api/admin/prompts/import 成功导入多个首版 prompt 并写入�
   assert.equal(payload.mode, "all_or_nothing");
   assert.equal(payload.prompts.length, 2);
   assert.equal(payload.prompts[0]?.slug, "import-programming-assistant");
+  assert.equal(payload.prompts[0]?.categorySlug, "programming");
+  assert.deepEqual(payload.prompts[0]?.categorySlugs, ["programming", "design"]);
+  assert.deepEqual(
+    payload.prompts[0]?.categories.map((item) => item.slug),
+    ["programming", "design"],
+  );
   assert.equal(payload.prompts[0]?.currentVersion.versionNo, "v0001");
   assert.equal(payload.prompts[0]?.currentVersion.sourceType, "create");
   assert.equal(payload.prompts[1]?.slug, "import-content-planner");
@@ -110,6 +122,29 @@ test("POST /api/admin/prompts/import 成功导入多个首版 prompt 并写入�
   const logs = __getAuditLogFixtureStateForTests();
   const createdLogs = logs.filter((entry) => entry.action === "prompt.created");
   assert.equal(createdLogs.length, 2);
+});
+
+test("POST /api/admin/prompts/import 空分类自动落入 uncategorized", async () => {
+  const response = await POST(
+    postAsAdmin([
+      {
+        title: "导入空分类回落",
+        slug: "import-auto-uncategorized",
+        summary: "验证导入空分类回落策略",
+        content: "fallback to uncategorized",
+      },
+    ]),
+  );
+  const payload = (await response.json()) as ImportSuccessResponse;
+
+  assert.equal(response.status, 201);
+  assert.equal(payload.total, 1);
+  assert.equal(payload.prompts[0]?.categorySlug, "uncategorized");
+  assert.deepEqual(payload.prompts[0]?.categorySlugs, ["uncategorized"]);
+  assert.deepEqual(
+    payload.prompts[0]?.categories.map((item) => item.slug),
+    ["uncategorized"],
+  );
 });
 
 test("POST /api/admin/prompts/import 禁止非 admin 访问", async () => {

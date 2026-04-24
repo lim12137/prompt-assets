@@ -82,14 +82,18 @@ function validateImportItems(body: unknown): {
       title,
       slug: slugInput || generateSlugFromTitle(title),
       summary: toNonEmptyString(item.summary),
-      categorySlug: toNonEmptyString(item.categorySlug),
+      categorySlug: toNonEmptyString(item.categorySlug) || undefined,
+      categorySlugs: Array.isArray(item.categorySlugs)
+        ? item.categorySlugs
+            .map((slug) => (typeof slug === "string" ? slug.trim() : ""))
+            .filter((slug) => slug.length > 0)
+        : undefined,
       content: toNonEmptyString(item.content),
     };
 
     const requiredFields: Array<keyof PromptImportItemInput> = [
       "title",
       "summary",
-      "categorySlug",
       "content",
     ];
     for (const field of requiredFields) {

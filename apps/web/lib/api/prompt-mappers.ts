@@ -33,6 +33,7 @@ export type PromptDetailDto = {
   likesCount: number;
   updatedAt: string;
   categories: PromptCategoryDto[];
+  categorySlugs: string[];
   category: {
     slug: string;
     name: string;
@@ -76,6 +77,7 @@ export type PromptDetailRaw = {
   categorySlug: string;
   categoryName: string;
   categories?: PromptCategoryDto[];
+  categorySlugs?: string[];
   currentVersionNo: string;
   currentVersionSourceType: string;
   currentVersionSubmittedAt: string | Date;
@@ -140,6 +142,10 @@ export function mapPromptDetail(raw: PromptDetailRaw): PromptDetailDto {
     raw.categories && raw.categories.length > 0
       ? raw.categories
       : [{ slug: raw.categorySlug, name: raw.categoryName }];
+  const categorySlugs =
+    raw.categorySlugs && raw.categorySlugs.length > 0
+      ? raw.categorySlugs
+      : categories.map((item) => item.slug);
 
   return {
     slug: raw.slug,
@@ -148,6 +154,7 @@ export function mapPromptDetail(raw: PromptDetailRaw): PromptDetailDto {
     likesCount: raw.likesCount,
     updatedAt: toIsoString(raw.updatedAt),
     categories,
+    categorySlugs,
     category: {
       slug: categories[0]?.slug ?? raw.categorySlug,
       name: categories[0]?.name ?? raw.categoryName,

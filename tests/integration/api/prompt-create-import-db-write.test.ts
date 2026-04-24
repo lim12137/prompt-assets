@@ -32,7 +32,8 @@ let repositoryModule: {
     slug: string;
     title: string;
     summary: string;
-    categorySlug: string;
+    categorySlug?: string;
+    categorySlugs?: string[];
     content: string;
   }) => Promise<
     | {
@@ -41,6 +42,11 @@ let repositoryModule: {
           prompt: {
             slug: string;
             categorySlug: string;
+            categories: Array<{
+              slug: string;
+              name: string;
+            }>;
+            categorySlugs: string[];
           };
         };
       }
@@ -57,7 +63,8 @@ let repositoryModule: {
       slug: string;
       title: string;
       summary: string;
-      categorySlug: string;
+      categorySlug?: string;
+      categorySlugs?: string[];
       content: string;
     }>;
   }) => Promise<
@@ -68,6 +75,11 @@ let repositoryModule: {
           prompts: Array<{
             slug: string;
             categorySlug: string;
+            categories: Array<{
+              slug: string;
+              name: string;
+            }>;
+            categorySlugs: string[];
           }>;
         };
       }
@@ -80,12 +92,32 @@ let repositoryModule: {
   getPromptDetail: (slug: string) => Promise<
     | {
         slug: string;
+        categories: Array<{
+          slug: string;
+          name: string;
+        }>;
+        categorySlugs: string[];
         category: {
           slug: string;
           name: string;
         };
       }
     | null
+  >;
+  listPrompts: (query?: {
+    category?: string;
+    keyword?: string;
+    sort?: string;
+  }) => Promise<
+    Array<{
+      slug: string;
+      categorySlug: string;
+      categories: Array<{
+        slug: string;
+        name: string;
+      }>;
+      categorySlugs: string[];
+    }>
   >;
 };
 
@@ -160,7 +192,7 @@ test("真实DB写路径: createPrompt 会双写 prompts.category_id 与 prompt_c
     slug,
     title: "真实DB创建双写",
     summary: "验证 createPrompt 的双写基线",
-    categorySlug: "programming",
+    categorySlugs: ["uncategorized", "programming", "design"],
     content: "create prompt in db with dual write",
   });
 
@@ -170,9 +202,13 @@ test("真实DB写路径: createPrompt 会双写 prompts.category_id 与 prompt_c
   }
   assert.equal(created.value.prompt.slug, slug);
   assert.equal(created.value.prompt.categorySlug, "programming");
+  assert.deepEqual(
+    created.value.prompt.categorySlugs,
+    ["uncategorized", "programming", "design"],
+  );
 
   const relationSlugs = await queryPromptCategorySlugs(slug);
-  assert.deepEqual(relationSlugs, ["programming"]);
+  assert.deepEqual(relationSlugs, ["design", "programming", "uncategorized"]);
 
   const legacyCategorySlug = await queryLegacyCategorySlug(slug);
   assert.equal(legacyCategorySlug, "programming");
@@ -194,14 +230,14 @@ test("真实DB写路径: importPrompts 会为每条记录写入 prompt_categorie
         slug: slugA,
         title: "真实DB导入A",
         summary: "导入双写A",
-        categorySlug: "programming",
+        categorySlugs: ["programming", "design"],
         content: "import item A",
       },
       {
         slug: slugB,
         title: "真实DB导入B",
         summary: "导入双写B",
-        categorySlug: "content-creation",
+        categorySlugs: [],
         content: "import item B",
       },
     ],
@@ -213,10 +249,51 @@ test("真实DB写路径: importPrompts 会为每条记录写入 prompt_categorie
   }
   assert.equal(imported.value.total, 2);
 
-  assert.deepEqual(await queryPromptCategorySlugs(slugA), ["programming"]);
-  assert.deepEqual(await queryPromptCategorySlugs(slugB), ["content-creation"]);
+  assert.deepEqual(await queryPromptCategorySlugs(slugA), ["design", "programming"]);
+  assert.deepEqual(await queryPromptCategorySlugs(slugB), ["uncategorized"]);
   assert.equal(await queryLegacyCategorySlug(slugA), "programming");
-  assert.equal(await queryLegacyCategorySlug(slugB), "content-creation");
+  assert.equal(await queryLegacyCategorySlug(slugB), "uncategorized");
+});
+
+test("真实DB读取DTO: 多分类 prompt 在列表与详情返回 categories/categorySlugs", async (t) => {
+  if (!(await ensureDbReady(t))) {
+    return;
+  }
+  await resetDbSeed();
+
+  const slug = `db-multi-dto-${Date.now()}`;
+  const created = await repositoryModule.createPrompt({
+    creatorEmail: "admin@example.com",
+    creatorRole: "admin",
+    slug,
+    title: "多分类 DTO 读取",
+    summary: "验证列表/详情 DTO 输出 categories 与 categorySlugs",
+    categorySlugs: ["design", "programming"],
+    content: "multi category dto",
+  });
+  assert.equal(created.ok, true);
+  if (!created.ok) {
+    return;
+  }
+
+  const list = await repositoryModule.listPrompts();
+  const listItem = list.find((item) => item.slug === slug);
+  assert.ok(listItem, "列表应包含新建的多分类 prompt");
+  assert.equal(listItem?.categorySlugs.includes("design"), true);
+  assert.equal(listItem?.categorySlugs.includes("programming"), true);
+  assert.equal(
+    listItem?.categories.some((item) => item.slug === "design"),
+    true,
+  );
+  assert.equal(
+    listItem?.categories.some((item) => item.slug === "programming"),
+    true,
+  );
+
+  const detail = await repositoryModule.getPromptDetail(slug);
+  assert.ok(detail, "详情应存在");
+  assert.equal(detail?.categorySlugs.includes("design"), true);
+  assert.equal(detail?.categorySlugs.includes("programming"), true);
 });
 
 test("真实DB读取口径: 兼容字段 category 不应优先返回 uncategorized", async (t) => {

@@ -11,6 +11,7 @@ type CreatePromptBody = {
   slug?: unknown;
   summary?: unknown;
   categorySlug?: unknown;
+  categorySlugs?: unknown;
   content?: unknown;
 };
 
@@ -86,14 +87,19 @@ export async function POST(request: Request) {
   const slugInput = typeof body.slug === "string" ? body.slug.trim() : "";
   const summary = typeof body.summary === "string" ? body.summary.trim() : "";
   const categorySlug =
-    typeof body.categorySlug === "string" ? body.categorySlug.trim() : "";
+    typeof body.categorySlug === "string" ? body.categorySlug.trim() : undefined;
+  const categorySlugs = Array.isArray(body.categorySlugs)
+    ? body.categorySlugs
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter((item) => item.length > 0)
+    : undefined;
   const content = typeof body.content === "string" ? body.content.trim() : "";
   const slug = slugInput || generateSlugFromTitle(title);
 
-  if (!title || !summary || !categorySlug || !content) {
+  if (!title || !summary || !content) {
     return NextResponse.json(
       {
-        error: "title/summary/categorySlug/content are required",
+        error: "title/summary/content are required",
         code: "required_fields_missing",
       },
       { status: 400 },
@@ -107,6 +113,7 @@ export async function POST(request: Request) {
     slug,
     summary,
     categorySlug,
+    categorySlugs,
     content,
   });
 

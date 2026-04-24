@@ -14,6 +14,11 @@ type CreatePromptResponse = {
     title: string;
     summary: string;
     categorySlug: string;
+    categories: Array<{
+      slug: string;
+      name: string;
+    }>;
+    categorySlugs: string[];
     currentVersion: {
       versionNo: string;
       sourceType: string;
@@ -73,7 +78,7 @@ test("POST /api/prompts 管理员可创建首版官方 Prompt 并写入审计日
       title: "管理员首版提示词",
       slug,
       summary: "用于验证管理员创建首版 Prompt 的最小流程",
-      categorySlug: "programming",
+      categorySlugs: ["programming", "design"],
       content: "你是代码助手，请先输出分析，再给最小可执行结论。",
     }),
   );
@@ -84,6 +89,11 @@ test("POST /api/prompts 管理员可创建首版官方 Prompt 并写入审计日
   assert.equal(payload.prompt.title, "管理员首版提示词");
   assert.equal(payload.prompt.summary, "用于验证管理员创建首版 Prompt 的最小流程");
   assert.equal(payload.prompt.categorySlug, "programming");
+  assert.deepEqual(payload.prompt.categorySlugs, ["programming", "design"]);
+  assert.deepEqual(
+    payload.prompt.categories.map((item) => item.slug),
+    ["programming", "design"],
+  );
   assert.equal(payload.prompt.currentVersion.versionNo, "v0001");
   assert.equal(payload.prompt.currentVersion.sourceType, "create");
 
@@ -97,6 +107,26 @@ test("POST /api/prompts 管理员可创建首版官方 Prompt 并写入审计日
   assert.equal(createdLog?.targetType, "prompt");
   assert.equal(createdLog?.payloadJson.promptSlug, slug);
   assert.equal(createdLog?.payloadJson.versionNo, "v0001");
+});
+
+test("POST /api/prompts 在未传分类时自动落入 uncategorized", async () => {
+  const response = await POST(
+    adminCreateRequest({
+      title: "未传分类自动归类",
+      slug: "auto-uncategorized-by-create",
+      summary: "验证空分类兼容策略",
+      content: "category fallback to uncategorized",
+    }),
+  );
+  const payload = (await response.json()) as CreatePromptResponse;
+
+  assert.equal(response.status, 201);
+  assert.equal(payload.prompt.categorySlug, "uncategorized");
+  assert.deepEqual(payload.prompt.categorySlugs, ["uncategorized"]);
+  assert.deepEqual(
+    payload.prompt.categories.map((item) => item.slug),
+    ["uncategorized"],
+  );
 });
 
 test("POST /api/prompts 禁止非 admin 创建", async () => {
