@@ -1,9 +1,15 @@
 import { spawnSync } from "node:child_process";
 import net from "node:net";
+import { withTestDbLock } from "./with-test-db-lock.mjs";
 
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const stepTimeoutMs = Number(process.env.TEST_DB_PREPARE_STEP_TIMEOUT_MS ?? 180000);
 const retryCount = Number(process.env.TEST_DB_PREPARE_RETRIES ?? 3);
+const lockTimeoutMs = Number(
+  process.env.TEST_DB_PREPARE_LOCK_TIMEOUT_MS ??
+    retryCount * (stepTimeoutMs * 3 + 15000) + 60000,
+);
+const lockStaleMs = Number(process.env.TEST_DB_PREPARE_LOCK_STALE_MS ?? lockTimeoutMs);
 
 function runStep(args, label, options = {}) {
   console.log(`==> ${label}`);
@@ -73,24 +79,35 @@ async function waitForHostDatabase(label = "测试数据库主机端口") {
   throw new Error(`${label}未就绪: ${host}:${port}`);
 }
 
-let attempt = 0;
-while (attempt < retryCount) {
-  attempt += 1;
+async function runPreparePipeline() {
+  let attempt = 0;
+  while (attempt < retryCount) {
+    attempt += 1;
 
-  try {
-    runStep(["db:test:up"], `启动 Docker 测试数据库（第 ${attempt} 次）`);
-    await waitForHostDatabase("启动后测试数据库主机端口");
+    try {
+      runStep(["db:test:up"], `启动 Docker 测试数据库（第 ${attempt} 次）`);
+      await waitForHostDatabase("启动后测试数据库主机端口");
 
-    runStep(["db:test:migrate"], `执行测试库迁移（第 ${attempt} 次）`);
-    await waitForHostDatabase("迁移后测试数据库主机端口");
+      runStep(["db:test:migrate"], `执行测试库迁移（第 ${attempt} 次）`);
+      await waitForHostDatabase("迁移后测试数据库主机端口");
 
-    runStep(["db:test:seed"], `写入测试库 seed（第 ${attempt} 次）`);
-    break;
-  } catch (error) {
-    runStepAllowFailure(["db:test:down"], "失败后清理测试数据库容器", { timeout: 30000 });
-    if (attempt >= retryCount) {
-      throw error;
+      runStep(["db:test:seed"], `写入测试库 seed（第 ${attempt} 次）`);
+      return;
+    } catch (error) {
+      runStepAllowFailure(["db:test:down"], "失败后清理测试数据库容器", { timeout: 30000 });
+      if (attempt >= retryCount) {
+        throw error;
+      }
+      await sleep(1000);
     }
-    await sleep(1000);
   }
+}
+
+if (process.env.TEST_DB_PREPARE_SKIP_LOCK === "1") {
+  await runPreparePipeline();
+} else {
+  await withTestDbLock(runPreparePipeline, {
+    timeoutMs: lockTimeoutMs,
+    staleMs: lockStaleMs,
+  });
 }

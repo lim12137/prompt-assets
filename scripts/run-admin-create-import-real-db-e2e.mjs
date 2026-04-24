@@ -27,7 +27,10 @@ function runStep(args, label, env = process.env, allowFailure = false) {
 
 await withTestDbLock(async () => {
   try {
-    runStep(["db:test:prepare"], "准备真实测试数据库");
+    runStep(["db:test:prepare"], "准备真实测试数据库", {
+      ...process.env,
+      TEST_DB_PREPARE_SKIP_LOCK: "1",
+    });
     runStep(
       ["exec", "playwright", "test", testSpecPath],
       `执行 admin 创建/导入真实 DB E2E (${testSpecPath})`,

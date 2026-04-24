@@ -151,7 +151,10 @@ async function ensureDbReady(t: test.TestContext): Promise<boolean> {
 
         const result = spawnSync(pnpmCommand, ["db:test:prepare"], {
           stdio: "inherit",
-          env: process.env,
+          env: {
+            ...process.env,
+            TEST_DB_PREPARE_SKIP_LOCK: "1",
+          },
           shell: process.platform === "win32",
         });
 
