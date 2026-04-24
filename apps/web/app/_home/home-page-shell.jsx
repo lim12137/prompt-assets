@@ -6,7 +6,28 @@ function getPromptCategories(prompt) {
   if (Array.isArray(prompt.categories) && prompt.categories.length > 0) {
     return prompt.categories.filter(
       (item) => item && typeof item.slug === "string" && typeof item.name === "string",
-    );
+    ).map((item) => ({
+      slug: item.slug,
+      name: item.name,
+      isSystem:
+        typeof item.isSystem === "boolean"
+          ? item.isSystem
+          : item.slug === "uncategorized",
+    }));
+  }
+  if (Array.isArray(prompt.categorySlugs) && prompt.categorySlugs.length > 0) {
+    return prompt.categorySlugs.filter((slug) => typeof slug === "string" && slug).map((slug) => ({
+      slug,
+      name:
+        slug === prompt.categorySlug &&
+        typeof prompt.categoryName === "string" &&
+        prompt.categoryName
+          ? prompt.categoryName
+          : slug === "uncategorized"
+            ? "待分类"
+            : slug,
+      isSystem: slug === "uncategorized",
+    }));
   }
   if (typeof prompt.categorySlug === "string" && prompt.categorySlug) {
     return [
@@ -15,6 +36,7 @@ function getPromptCategories(prompt) {
         name: typeof prompt.categoryName === "string" && prompt.categoryName
           ? prompt.categoryName
           : prompt.categorySlug,
+        isSystem: prompt.categorySlug === "uncategorized",
       },
     ];
   }
@@ -34,6 +56,14 @@ function collectCategories(prompts) {
     }
   }
 
+  if (!seen.has("uncategorized")) {
+    categories.push({
+      slug: "uncategorized",
+      name: "待分类",
+      isSystem: true,
+    });
+  }
+
   return categories;
 }
 
@@ -42,7 +72,7 @@ function splitCategories(categories) {
   const systemCategories = [];
 
   for (const category of categories) {
-    if (category.slug === "uncategorized") {
+    if (category.isSystem) {
       systemCategories.push(category);
       continue;
     }
@@ -392,9 +422,10 @@ export function HomePageShell({ prompts }) {
                   <button
                     key={category.slug}
                     type="button"
+                    disabled
+                    aria-disabled="true"
                     className={`pm-tag ${selectedCategories.includes(category.slug) ? "active" : ""}`}
                     style={{ justifyContent: "flex-start" }}
-                    onClick={() => toggleCategory(category.slug)}
                   >
                     {category.name}
                   </button>

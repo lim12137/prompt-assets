@@ -42,7 +42,7 @@ test("home page task4: 分类支持多选 OR 过滤", async ({ page }) => {
   await expect(page.getByText("博客大纲生成器")).toHaveCount(0);
 });
 
-test("home page task4: 系统待分类默认折叠", async ({ page }) => {
+test("home page task4: 系统待分类默认折叠且不可手动勾选", async ({ page }) => {
   const slug = `home-uncategorized-${Date.now()}`;
   await createPromptByApi(page.request, {
     title: "待分类折叠验证",
@@ -58,7 +58,9 @@ test("home page task4: 系统待分类默认折叠", async ({ page }) => {
   await expect(aside.getByTestId("system-categories-panel")).not.toHaveAttribute("open", "");
   await aside.getByTestId("system-categories-toggle").click();
   await expect(aside.getByTestId("system-categories-panel")).toHaveAttribute("open", "");
-  await expect(aside.getByRole("button", { name: "待分类" })).toBeVisible();
+  const uncategorizedOption = aside.getByRole("button", { name: "待分类" });
+  await expect(uncategorizedOption).toBeVisible();
+  await expect(uncategorizedOption).toBeDisabled();
 });
 
 test("home page task4: 卡片与列表都展示多分类标签", async ({ page }) => {
