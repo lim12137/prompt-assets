@@ -742,7 +742,7 @@ async function listPromptsFromDb(
               'slug', c_rel.slug,
               'name', c_rel.name
             )
-            ORDER BY c_rel.sort_order ASC, c_rel.id ASC
+            ORDER BY c_rel.is_system ASC, c_rel.sort_order ASC, c_rel.id ASC
           ) AS categories_json
           FROM prompt_categories pc_rel
           INNER JOIN categories c_rel ON c_rel.id = pc_rel.category_id
@@ -941,7 +941,7 @@ async function getPromptDetailFromDb(slug: string): Promise<PromptDetailDto | nu
               'slug', c_rel.slug,
               'name', c_rel.name
             )
-            ORDER BY c_rel.sort_order ASC, c_rel.id ASC
+            ORDER BY c_rel.is_system ASC, c_rel.sort_order ASC, c_rel.id ASC
           ) AS categories_json
           FROM prompt_categories pc_rel
           INNER JOIN categories c_rel ON c_rel.id = pc_rel.category_id
@@ -1154,6 +1154,21 @@ async function findCategoryId(client: SqlClient, categorySlug: string): Promise<
   return asNumber(row.id);
 }
 
+async function insertPromptCategoryRelation(
+  client: SqlClient,
+  promptId: number,
+  categoryId: number,
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO prompt_categories (prompt_id, category_id)
+      VALUES ($1, $2)
+      ON CONFLICT (prompt_id, category_id) DO NOTHING;
+    `,
+    [promptId, categoryId],
+  );
+}
+
 async function upsertUserId(client: SqlClient, email: string): Promise<number> {
   const result = await client.query<DbUserRow>(
     `
@@ -1232,6 +1247,7 @@ async function createPromptInDb(
         [input.slug, input.title, input.summary, categoryId],
       );
       const promptId = asNumber(insertedPrompt.rows[0]?.id);
+      await insertPromptCategoryRelation(client, promptId, categoryId);
 
       const insertedVersion = await client.query<DbPromptVersionInsertRow>(
         `
@@ -1386,6 +1402,7 @@ async function importPromptsInDb(
           [item.slug, item.title, item.summary, item.categoryId],
         );
         const promptId = asNumber(insertedPrompt.rows[0]?.id);
+        await insertPromptCategoryRelation(client, promptId, item.categoryId);
 
         const insertedVersion = await client.query<DbPromptVersionInsertRow>(
           `
