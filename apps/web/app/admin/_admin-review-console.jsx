@@ -165,10 +165,6 @@ export function AdminReviewConsole({ initialSubmissions }) {
                   }}
                 >
                   <div>
-                    <dt className="pm-meta-term">提示词</dt>
-                    <dd className="pm-meta-value">{submission.promptSlug}</dd>
-                  </div>
-                  <div>
                     <dt className="pm-meta-term">版本变更</dt>
                     <dd className="pm-meta-value">
                       {submission.baseVersionNo} → {submission.candidateVersionNo}

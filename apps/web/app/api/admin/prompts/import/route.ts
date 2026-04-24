@@ -26,6 +26,25 @@ function toNonEmptyString(input: unknown): string {
   return typeof input === "string" ? input.trim() : "";
 }
 
+function generateSlugFromTitle(title: string): string {
+  const normalized = title
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^\p{Letter}\p{Number}-]+/gu, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  if (normalized) {
+    return normalized;
+  }
+
+  let hash = 0;
+  for (const char of title) {
+    hash = (hash * 31 + char.charCodeAt(0)) % 1000000007;
+  }
+  return `prompt-${Math.abs(hash)}`;
+}
+
 function validateImportItems(body: unknown): {
   ok: true;
   items: PromptImportItemInput[];
@@ -57,9 +76,11 @@ function validateImportItems(body: unknown): {
     }
 
     const item = raw as Record<string, unknown>;
+    const title = toNonEmptyString(item.title);
+    const slugInput = toNonEmptyString(item.slug);
     const normalizedItem: PromptImportItemInput = {
-      title: toNonEmptyString(item.title),
-      slug: toNonEmptyString(item.slug),
+      title,
+      slug: slugInput || generateSlugFromTitle(title),
       summary: toNonEmptyString(item.summary),
       categorySlug: toNonEmptyString(item.categorySlug),
       content: toNonEmptyString(item.content),
@@ -67,7 +88,6 @@ function validateImportItems(body: unknown): {
 
     const requiredFields: Array<keyof PromptImportItemInput> = [
       "title",
-      "slug",
       "summary",
       "categorySlug",
       "content",

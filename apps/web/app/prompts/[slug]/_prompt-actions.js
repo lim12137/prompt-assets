@@ -2,14 +2,14 @@
 
 import { createElement, useState, useTransition } from "react";
 
-const ACTOR_EMAIL = "alice@example.com";
+const DEFAULT_ACTOR_EMAIL = "alice@example.com";
 
-async function mutateLike(slug, liked) {
+async function mutateLike(slug, liked, actorEmail) {
   const method = liked ? "DELETE" : "POST";
   const response = await fetch(`/api/prompts/${encodeURIComponent(slug)}/like`, {
     method,
     headers: {
-      "x-user-email": ACTOR_EMAIL,
+      "x-user-email": actorEmail,
     },
   });
 
@@ -20,12 +20,12 @@ async function mutateLike(slug, liked) {
   return response.json();
 }
 
-async function submitCandidate(slug, content) {
+async function submitCandidate(slug, content, actorEmail) {
   const response = await fetch(`/api/prompts/${encodeURIComponent(slug)}/submissions`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-user-email": ACTOR_EMAIL,
+      "x-user-email": actorEmail,
     },
     body: JSON.stringify({
       content,
@@ -45,6 +45,7 @@ async function submitCandidate(slug, content) {
 }
 
 export function PromptActions({ slug, initialLikesCount, currentVersionContent }) {
+  const [actorEmail, setActorEmail] = useState(DEFAULT_ACTOR_EMAIL);
   const [likesCount, setLikesCount] = useState(initialLikesCount ?? 0);
   const [liked, setLiked] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -58,7 +59,7 @@ export function PromptActions({ slug, initialLikesCount, currentVersionContent }
   const onToggleLike = () => {
     startTransition(() => {
       setErrorMessage("");
-      void mutateLike(slug, liked)
+      void mutateLike(slug, liked, actorEmail.trim())
         .then((payload) => {
           setLiked(Boolean(payload?.liked));
           setLikesCount(Number(payload?.likesCount ?? 0));
@@ -104,9 +105,14 @@ export function PromptActions({ slug, initialLikesCount, currentVersionContent }
         setCandidateErrorMessage("候选内容不能为空");
         return;
       }
+      const currentActorEmail = actorEmail.trim();
+      if (!currentActorEmail || !currentActorEmail.includes("@")) {
+        setCandidateErrorMessage("当前员工邮箱无效");
+        return;
+      }
 
       setCandidateStatusMessage("候选提交中...");
-      void submitCandidate(slug, content)
+      void submitCandidate(slug, content, currentActorEmail)
         .then((payload) => {
           const candidateNo = payload?.candidateVersion?.candidateNo;
           setCandidateStatusMessage(
@@ -129,6 +135,15 @@ export function PromptActions({ slug, initialLikesCount, currentVersionContent }
     createElement(
       "div",
       { style: { display: "flex", gap: "8px", alignItems: "center" } },
+      createElement(
+        "label",
+        { style: { display: "flex", alignItems: "center", gap: "6px" } },
+        createElement("span", null, "当前员工邮箱"),
+        createElement("input", {
+          value: actorEmail,
+          onChange: (event) => setActorEmail(event.target.value),
+        }),
+      ),
       createElement(
         "button",
         {

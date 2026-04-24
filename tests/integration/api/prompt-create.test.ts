@@ -162,3 +162,20 @@ test("POST /api/prompts 分类不存在时返回 404", async () => {
   assert.equal(response.status, 404);
   assert.equal(payload.code, "category_not_found");
 });
+
+test("POST /api/prompts 在未传 slug 时可按标题自动生成", async () => {
+  const response = await POST(
+    adminCreateRequest({
+      title: "自动生成 Slug 的标题 2026",
+      summary: "未显式传入 slug。",
+      categorySlug: "programming",
+      content: "auto slug content",
+    }),
+  );
+  const payload = (await response.json()) as CreatePromptResponse;
+
+  assert.equal(response.status, 201);
+  assert.equal(typeof payload.prompt.slug, "string");
+  assert.ok(payload.prompt.slug.length > 0);
+  assert.equal(payload.prompt.title, "自动生成 Slug 的标题 2026");
+});

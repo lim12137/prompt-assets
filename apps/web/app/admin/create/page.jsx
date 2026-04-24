@@ -7,7 +7,6 @@ const ADMIN_ROLE = "admin";
 
 const INITIAL_FORM = {
   title: "",
-  slug: "",
   summary: "",
   categorySlug: "",
   content: "",
@@ -54,12 +53,12 @@ export default function AdminCreatePromptPage() {
       }
 
       const prompt = payload.prompt ?? {};
-      const slug = typeof prompt.slug === "string" ? prompt.slug : "";
+      const title = typeof prompt.title === "string" ? prompt.title : form.title;
       const versionNo =
         typeof prompt?.currentVersion?.versionNo === "string"
           ? prompt.currentVersion.versionNo
           : "v0001";
-      setFeedback(`已创建 ${slug}，当前版本 ${versionNo}。`);
+      setFeedback(`已创建《${title}》，当前版本 ${versionNo}。`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "请求失败";
       setFeedback(`创建失败：${message}`);
@@ -106,15 +105,6 @@ export default function AdminCreatePromptPage() {
         </label>
 
         <label style={{ display: "grid", gap: "6px" }}>
-          <span>Slug</span>
-          <input
-            value={form.slug}
-            onChange={(event) => updateField("slug", event.target.value)}
-            required
-          />
-        </label>
-
-        <label style={{ display: "grid", gap: "6px" }}>
           <span>摘要</span>
           <input
             value={form.summary}
@@ -124,7 +114,7 @@ export default function AdminCreatePromptPage() {
         </label>
 
         <label style={{ display: "grid", gap: "6px" }}>
-          <span>分类 Slug</span>
+          <span>分类</span>
           <input
             value={form.categorySlug}
             onChange={(event) => updateField("categorySlug", event.target.value)}

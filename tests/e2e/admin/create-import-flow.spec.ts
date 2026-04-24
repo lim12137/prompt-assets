@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 
 test("管理页展示创建/导入入口并可跳转到目标页面", async ({ page }) => {
   await page.goto("/admin");
+  await expect(page.getByText("js-code-reviewer")).toHaveCount(0);
+  await expect(page.getByText("landing-copy-framework")).toHaveCount(0);
 
   await expect(page.getByRole("link", { name: "创建提示词" })).toBeVisible();
   await expect(page.getByRole("link", { name: "批量导入" })).toBeVisible();
@@ -20,7 +22,6 @@ test("管理页展示创建/导入入口并可跳转到目标页面", async ({ p
 });
 
 test("管理创建页可提交并展示成功与失败反馈", async ({ page }) => {
-  const slug = `e2e-admin-create-${Date.now()}`;
   let createRequestCount = 0;
   await page.route("**/api/prompts", async (route) => {
     const request = route.request();
@@ -37,7 +38,7 @@ test("管理创建页可提交并展示成功与失败反馈", async ({ page }) 
         contentType: "application/json",
         body: JSON.stringify({
           prompt: {
-            slug,
+            slug: "internal-slug-only",
             title: "E2E 管理创建标题",
             summary: "用于验证管理员创建页闭环。",
             categorySlug: "programming",
@@ -63,22 +64,21 @@ test("管理创建页可提交并展示成功与失败反馈", async ({ page }) 
 
   await page.goto("/admin/create");
   await page.getByLabel("标题").fill("E2E 管理创建标题");
-  await page.getByLabel(/^Slug$/).fill(slug);
+  await expect(page.getByLabel(/^Slug$/)).toHaveCount(0);
   await page.getByLabel("摘要").fill("用于验证管理员创建页闭环。");
-  await page.getByLabel("分类 Slug").fill("programming");
+  await page.getByLabel("分类").fill("programming");
   await page.getByLabel("内容").fill("你是测试助手，请输出步骤和结果。");
 
   await page.getByRole("button", { name: "提交创建" }).click();
   await expect(page.getByRole("status")).toContainText("创建请求提交中");
   await expect(page.getByRole("status")).toContainText("已创建");
-  await expect(page.getByRole("status")).toContainText(slug);
+  await expect(page.getByRole("status")).toContainText("E2E 管理创建标题");
 
   await page.getByRole("button", { name: "提交创建" }).click();
   await expect(page.getByRole("status")).toContainText("创建失败");
 });
 
 test("管理导入页可提交并展示成功与失败反馈", async ({ page }) => {
-  const slug = `e2e-admin-import-${Date.now()}`;
   await page.route("**/api/admin/prompts/import", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 250));
     await route.fulfill({
@@ -89,7 +89,7 @@ test("管理导入页可提交并展示成功与失败反馈", async ({ page }) 
         mode: "all_or_nothing",
         prompts: [
           {
-            slug,
+            slug: "internal-import-slug",
             title: "E2E 导入标题",
             summary: "用于验证导入页闭环。",
             categorySlug: "programming",
@@ -106,7 +106,6 @@ test("管理导入页可提交并展示成功与失败反馈", async ({ page }) 
     [
       {
         title: "E2E 导入标题",
-        slug,
         summary: "用于验证导入页闭环。",
         categorySlug: "programming",
         content: "请输出导入测试结论。",
@@ -117,13 +116,18 @@ test("管理导入页可提交并展示成功与失败反馈", async ({ page }) 
   );
 
   await page.goto("/admin/import");
-  await page.getByLabel("JSON 内容").fill(payload);
+  const jsonInput = page.getByLabel("JSON 内容");
+  await jsonInput.click();
+  await jsonInput.press("Control+A");
+  await jsonInput.fill(payload);
   await page.getByRole("button", { name: "提交导入" }).click();
   await expect(page.getByRole("status")).toContainText("导入请求提交中");
   await expect(page.getByRole("status")).toContainText("导入成功");
-  await expect(page.getByRole("status")).toContainText(slug);
+  await expect(page.getByRole("status")).toContainText("E2E 导入标题");
 
-  await page.getByLabel("JSON 内容").fill("{invalid json");
+  await jsonInput.click();
+  await jsonInput.press("Control+A");
+  await jsonInput.fill("{invalid json");
   await page.getByRole("button", { name: "提交导入" }).click();
   await expect(page.getByRole("status")).toContainText("JSON 解析失败");
 });

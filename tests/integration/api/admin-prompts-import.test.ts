@@ -216,3 +216,22 @@ test("POST /api/admin/prompts/import 在批次失败时应整体回滚", async (
   );
   assert.equal(createdLogs.length, 0);
 });
+
+test("POST /api/admin/prompts/import 在未传 slug 时可按标题自动生成", async () => {
+  const response = await POST(
+    postAsAdmin([
+      {
+        title: "导入自动 Slug 标题 2026",
+        summary: "未显式传入 slug",
+        categorySlug: "programming",
+        content: "import auto slug content",
+      },
+    ]),
+  );
+  const payload = (await response.json()) as ImportSuccessResponse;
+
+  assert.equal(response.status, 201);
+  assert.equal(payload.total, 1);
+  assert.equal(typeof payload.prompts[0]?.slug, "string");
+  assert.ok((payload.prompts[0]?.slug ?? "").length > 0);
+});

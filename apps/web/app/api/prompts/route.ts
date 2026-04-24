@@ -14,6 +14,25 @@ type CreatePromptBody = {
   content?: unknown;
 };
 
+function generateSlugFromTitle(title: string): string {
+  const normalized = title
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^\p{Letter}\p{Number}-]+/gu, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  if (normalized) {
+    return normalized;
+  }
+
+  let hash = 0;
+  for (const char of title) {
+    hash = (hash * 31 + char.charCodeAt(0)) % 1000000007;
+  }
+  return `prompt-${Math.abs(hash)}`;
+}
+
 function resolveCreatorRole(request: Request): PromptCreateInput["creatorRole"] {
   return request.headers.get("x-user-role")?.trim().toLowerCase() === "admin"
     ? "admin"
@@ -64,16 +83,17 @@ export async function POST(request: Request) {
   }
 
   const title = typeof body.title === "string" ? body.title.trim() : "";
-  const slug = typeof body.slug === "string" ? body.slug.trim() : "";
+  const slugInput = typeof body.slug === "string" ? body.slug.trim() : "";
   const summary = typeof body.summary === "string" ? body.summary.trim() : "";
   const categorySlug =
     typeof body.categorySlug === "string" ? body.categorySlug.trim() : "";
   const content = typeof body.content === "string" ? body.content.trim() : "";
+  const slug = slugInput || generateSlugFromTitle(title);
 
-  if (!title || !slug || !summary || !categorySlug || !content) {
+  if (!title || !summary || !categorySlug || !content) {
     return NextResponse.json(
       {
-        error: "title/slug/summary/categorySlug/content are required",
+        error: "title/summary/categorySlug/content are required",
         code: "required_fields_missing",
       },
       { status: 400 },

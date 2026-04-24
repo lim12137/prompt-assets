@@ -9,7 +9,6 @@ const DEFAULT_IMPORT_SAMPLE = JSON.stringify(
   [
     {
       title: "导入示例标题",
-      slug: "import-sample-slug",
       summary: "导入示例摘要",
       categorySlug: "programming",
       content: "你是助手，请输出结构化结果。",
@@ -62,13 +61,13 @@ export default function AdminImportPromptPage() {
       }
 
       const total = typeof payload.total === "number" ? payload.total : 0;
-      const slugs = Array.isArray(payload.prompts)
+      const titles = Array.isArray(payload.prompts)
         ? payload.prompts
-            .map((item) => (typeof item?.slug === "string" ? item.slug : ""))
+            .map((item) => (typeof item?.title === "string" ? item.title : ""))
             .filter(Boolean)
-            .join(", ")
+            .join("、")
         : "";
-      setFeedback(`导入成功：共 ${total} 条。${slugs ? `已导入 ${slugs}` : ""}`);
+      setFeedback(`导入成功：共 ${total} 条。${titles ? `已导入 ${titles}` : ""}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "请求失败";
       setFeedback(`导入失败：${message}`);
