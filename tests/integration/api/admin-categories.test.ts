@@ -17,7 +17,6 @@ type DbClient = {
 };
 
 let modulesLoaded = false;
-let preparingPromise: Promise<boolean> | null = null;
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 let clientModule: {
   isPgReachable: (url: string) => Promise<boolean>;
@@ -130,41 +129,40 @@ async function ensureDbReady(t: test.TestContext): Promise<boolean> {
     return true;
   }
 
-  if (!preparingPromise) {
-    preparingPromise = lockModule
-      .withTestDbLock(async () => {
-        if (await clientModule.isPgReachable(testDbUrl)) {
-          return true;
-        }
+  const result = spawnSync(pnpmCommand, ["db:test:prepare"], {
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      TEST_DB_PREPARE_SKIP_LOCK: "1",
+    },
+    shell: process.platform === "win32",
+  });
 
-        const result = spawnSync(pnpmCommand, ["db:test:prepare"], {
-          stdio: "inherit",
-          env: {
-            ...process.env,
-            TEST_DB_PREPARE_SKIP_LOCK: "1",
-          },
-          shell: process.platform === "win32",
-        });
-
-        if (result.error || result.status !== 0) {
-          return false;
-        }
-
-        const reachable = await clientModule.isPgReachable(testDbUrl);
-        return reachable;
-      })
-      .finally(() => {
-        preparingPromise = null;
-      });
+  if (result.error || result.status !== 0) {
+    t.skip(`测试库不可达，跳过 admin categories 测试: ${testDbUrl}`);
+    return false;
   }
 
-  const ready = await preparingPromise;
+  const ready = await clientModule.isPgReachable(testDbUrl);
   if (!ready) {
     t.skip(`测试库不可达，跳过 admin categories 测试: ${testDbUrl}`);
     return false;
   }
 
   return true;
+}
+
+async function withDbLifecycleLock(
+  t: test.TestContext,
+  run: () => Promise<void>,
+): Promise<void> {
+  await loadModules();
+  await lockModule.withTestDbLock(async () => {
+    if (!(await ensureDbReady(t))) {
+      return;
+    }
+    await run();
+  });
 }
 
 async function resetDbSeed(): Promise<void> {
@@ -349,269 +347,261 @@ async function categoryExists(slug: string): Promise<boolean> {
 }
 
 test("GET /api/admin/categories 返回分类列表（含系统待分类）", async (t) => {
-  if (!(await ensureDbReady(t))) {
-    return;
-  }
-  await resetDbSeed();
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
 
-  const response = await categoriesRouteModule.GET(adminListCategoryRequest());
-  const payload = (await response.json()) as CategoryListResponse;
+    const response = await categoriesRouteModule.GET(adminListCategoryRequest());
+    const payload = (await response.json()) as CategoryListResponse;
 
-  assert.equal(response.status, 200);
-  assert.ok(Array.isArray(payload.categories));
-  const uncategorized = payload.categories.find((item) => item.slug === "uncategorized");
-  assert.ok(uncategorized, "应包含系统分类 uncategorized");
-  assert.equal(uncategorized?.isSystem, true);
-  assert.equal(uncategorized?.isSelectable, false);
-  assert.equal(uncategorized?.isCollapsedByDefault, true);
+    assert.equal(response.status, 200);
+    assert.ok(Array.isArray(payload.categories));
+    const uncategorized = payload.categories.find((item) => item.slug === "uncategorized");
+    assert.ok(uncategorized, "应包含系统分类 uncategorized");
+    assert.equal(uncategorized?.isSystem, true);
+    assert.equal(uncategorized?.isSelectable, false);
+    assert.equal(uncategorized?.isCollapsedByDefault, true);
+  });
 });
 
 test("POST /api/admin/categories 可新增分类", async (t) => {
-  if (!(await ensureDbReady(t))) {
-    return;
-  }
-  await resetDbSeed();
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
 
-  const slug = `task2-create-${Date.now()}`;
-  const response = await categoriesRouteModule.POST(
-    adminPostCategoryRequest({
-      name: "Task2 新分类",
-      slug,
-    }),
-  );
-  const payload = (await response.json()) as {
-    category: CategoryListItem;
-  };
+    const slug = `task2-create-${Date.now()}`;
+    const response = await categoriesRouteModule.POST(
+      adminPostCategoryRequest({
+        name: "Task2 新分类",
+        slug,
+      }),
+    );
+    const payload = (await response.json()) as {
+      category: CategoryListItem;
+    };
 
-  assert.equal(response.status, 201);
-  assert.equal(payload.category.slug, slug);
-  assert.equal(payload.category.name, "Task2 新分类");
-  assert.equal(payload.category.isSystem, false);
-  assert.equal(payload.category.isSelectable, true);
-  assert.equal(payload.category.isCollapsedByDefault, false);
-  assert.equal(await categoryExists(slug), true);
+    assert.equal(response.status, 201);
+    assert.equal(payload.category.slug, slug);
+    assert.equal(payload.category.name, "Task2 新分类");
+    assert.equal(payload.category.isSystem, false);
+    assert.equal(payload.category.isSelectable, true);
+    assert.equal(payload.category.isCollapsedByDefault, false);
+    assert.equal(await categoryExists(slug), true);
+  });
 });
 
 test("DELETE /api/admin/categories/[slug] 预检查返回计数与确认 token", async (t) => {
-  if (!(await ensureDbReady(t))) {
-    return;
-  }
-  await resetDbSeed();
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
 
-  const categorySlug = `task2-precheck-${Date.now()}`;
-  const promptSlug = `task2-precheck-prompt-${Date.now()}`;
-  await createCategory({ name: "预检查分类", slug: categorySlug });
-  await createPrompt({
-    slug: promptSlug,
-    title: "预检查 Prompt",
-    summary: "用于删除预检查",
-    categorySlug,
+    const categorySlug = `task2-precheck-${Date.now()}`;
+    const promptSlug = `task2-precheck-prompt-${Date.now()}`;
+    await createCategory({ name: "预检查分类", slug: categorySlug });
+    await createPrompt({
+      slug: promptSlug,
+      title: "预检查 Prompt",
+      summary: "用于删除预检查",
+      categorySlug,
+    });
+
+    const response = await categoryDeleteRouteModule.DELETE(
+      adminDeleteCategoryRequest(categorySlug, { confirm: false }),
+      { params: { slug: categorySlug } },
+    );
+    const payload = (await response.json()) as CategoryDeletePreviewResponse;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.dryRun, true);
+    assert.equal(payload.slug, categorySlug);
+    assert.equal(payload.impactedPromptCount, 1);
+    assert.equal(payload.willBeUncategorizedCount, 1);
+    assert.equal(payload.autoAssignedUncategorizedCount, 1);
+    assert.equal(typeof payload.confirmationToken, "string");
+    assert.ok(payload.confirmationToken.length > 20);
   });
-
-  const response = await categoryDeleteRouteModule.DELETE(
-    adminDeleteCategoryRequest(categorySlug, { confirm: false }),
-    { params: { slug: categorySlug } },
-  );
-  const payload = (await response.json()) as CategoryDeletePreviewResponse;
-
-  assert.equal(response.status, 200);
-  assert.equal(payload.dryRun, true);
-  assert.equal(payload.slug, categorySlug);
-  assert.equal(payload.impactedPromptCount, 1);
-  assert.equal(payload.willBeUncategorizedCount, 1);
-  assert.equal(payload.autoAssignedUncategorizedCount, 1);
-  assert.equal(typeof payload.confirmationToken, "string");
-  assert.ok(payload.confirmationToken.length > 20);
 });
 
 test("删除分类: 多分类提示词删一类后不进入待分类", async (t) => {
-  if (!(await ensureDbReady(t))) {
-    return;
-  }
-  await resetDbSeed();
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
 
-  const categoryA = `task2-multi-a-${Date.now()}`;
-  const categoryB = `task2-multi-b-${Date.now()}`;
-  const promptSlug = `task2-multi-prompt-${Date.now()}`;
-  await createCategory({ name: "多分类A", slug: categoryA });
-  await createCategory({ name: "多分类B", slug: categoryB });
-  await createPrompt({
-    slug: promptSlug,
-    title: "多分类提示词",
-    summary: "删除其中一类后不应进入待分类",
-    categorySlug: categoryA,
+    const categoryA = `task2-multi-a-${Date.now()}`;
+    const categoryB = `task2-multi-b-${Date.now()}`;
+    const promptSlug = `task2-multi-prompt-${Date.now()}`;
+    await createCategory({ name: "多分类A", slug: categoryA });
+    await createCategory({ name: "多分类B", slug: categoryB });
+    await createPrompt({
+      slug: promptSlug,
+      title: "多分类提示词",
+      summary: "删除其中一类后不应进入待分类",
+      categorySlug: categoryA,
+    });
+    await addPromptCategoryRelation(promptSlug, categoryB);
+
+    const previewResponse = await categoryDeleteRouteModule.DELETE(
+      adminDeleteCategoryRequest(categoryA, { confirm: false }),
+      { params: { slug: categoryA } },
+    );
+    const previewPayload = (await previewResponse.json()) as CategoryDeletePreviewResponse;
+    assert.equal(previewResponse.status, 200);
+    assert.equal(previewPayload.willBeUncategorizedCount, 0);
+
+    const confirmResponse = await categoryDeleteRouteModule.DELETE(
+      adminDeleteCategoryRequest(categoryA, {
+        confirm: true,
+        confirmationToken: previewPayload.confirmationToken,
+      }),
+      { params: { slug: categoryA } },
+    );
+    const confirmPayload = (await confirmResponse.json()) as CategoryDeleteConfirmResponse;
+
+    assert.equal(confirmResponse.status, 200);
+    assert.equal(confirmPayload.deleted, true);
+    assert.equal(confirmPayload.autoAssignedUncategorizedCount, 0);
+    assert.equal(await categoryExists(categoryA), false);
+
+    const relationSlugs = await getPromptCategorySlugs(promptSlug);
+    assert.deepEqual(relationSlugs, [categoryB]);
+    assert.equal(await getPromptLegacyCategorySlug(promptSlug), categoryB);
   });
-  await addPromptCategoryRelation(promptSlug, categoryB);
-
-  const previewResponse = await categoryDeleteRouteModule.DELETE(
-    adminDeleteCategoryRequest(categoryA, { confirm: false }),
-    { params: { slug: categoryA } },
-  );
-  const previewPayload = (await previewResponse.json()) as CategoryDeletePreviewResponse;
-  assert.equal(previewResponse.status, 200);
-  assert.equal(previewPayload.willBeUncategorizedCount, 0);
-
-  const confirmResponse = await categoryDeleteRouteModule.DELETE(
-    adminDeleteCategoryRequest(categoryA, {
-      confirm: true,
-      confirmationToken: previewPayload.confirmationToken,
-    }),
-    { params: { slug: categoryA } },
-  );
-  const confirmPayload = (await confirmResponse.json()) as CategoryDeleteConfirmResponse;
-
-  assert.equal(confirmResponse.status, 200);
-  assert.equal(confirmPayload.deleted, true);
-  assert.equal(confirmPayload.autoAssignedUncategorizedCount, 0);
-  assert.equal(await categoryExists(categoryA), false);
-
-  const relationSlugs = await getPromptCategorySlugs(promptSlug);
-  assert.deepEqual(relationSlugs, [categoryB]);
-  assert.equal(await getPromptLegacyCategorySlug(promptSlug), categoryB);
 });
 
 test("删除分类: 单分类提示词删后自动归入待分类", async (t) => {
-  if (!(await ensureDbReady(t))) {
-    return;
-  }
-  await resetDbSeed();
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
 
-  const categorySlug = `task2-single-${Date.now()}`;
-  const promptSlug = `task2-single-prompt-${Date.now()}`;
-  await createCategory({ name: "单分类", slug: categorySlug });
-  await createPrompt({
-    slug: promptSlug,
-    title: "单分类提示词",
-    summary: "删除后应进入待分类",
-    categorySlug,
+    const categorySlug = `task2-single-${Date.now()}`;
+    const promptSlug = `task2-single-prompt-${Date.now()}`;
+    await createCategory({ name: "单分类", slug: categorySlug });
+    await createPrompt({
+      slug: promptSlug,
+      title: "单分类提示词",
+      summary: "删除后应进入待分类",
+      categorySlug,
+    });
+
+    const previewResponse = await categoryDeleteRouteModule.DELETE(
+      adminDeleteCategoryRequest(categorySlug, { confirm: false }),
+      { params: { slug: categorySlug } },
+    );
+    const previewPayload = (await previewResponse.json()) as CategoryDeletePreviewResponse;
+    assert.equal(previewResponse.status, 200);
+    assert.equal(previewPayload.willBeUncategorizedCount, 1);
+
+    const confirmResponse = await categoryDeleteRouteModule.DELETE(
+      adminDeleteCategoryRequest(categorySlug, {
+        confirm: true,
+        confirmationToken: previewPayload.confirmationToken,
+      }),
+      { params: { slug: categorySlug } },
+    );
+    const confirmPayload = (await confirmResponse.json()) as CategoryDeleteConfirmResponse;
+
+    assert.equal(confirmResponse.status, 200);
+    assert.equal(confirmPayload.autoAssignedUncategorizedCount, 1);
+    assert.equal(await categoryExists(categorySlug), false);
+    assert.deepEqual(await getPromptCategorySlugs(promptSlug), ["uncategorized"]);
+    assert.equal(await getPromptLegacyCategorySlug(promptSlug), "uncategorized");
   });
-
-  const previewResponse = await categoryDeleteRouteModule.DELETE(
-    adminDeleteCategoryRequest(categorySlug, { confirm: false }),
-    { params: { slug: categorySlug } },
-  );
-  const previewPayload = (await previewResponse.json()) as CategoryDeletePreviewResponse;
-  assert.equal(previewResponse.status, 200);
-  assert.equal(previewPayload.willBeUncategorizedCount, 1);
-
-  const confirmResponse = await categoryDeleteRouteModule.DELETE(
-    adminDeleteCategoryRequest(categorySlug, {
-      confirm: true,
-      confirmationToken: previewPayload.confirmationToken,
-    }),
-    { params: { slug: categorySlug } },
-  );
-  const confirmPayload = (await confirmResponse.json()) as CategoryDeleteConfirmResponse;
-
-  assert.equal(confirmResponse.status, 200);
-  assert.equal(confirmPayload.autoAssignedUncategorizedCount, 1);
-  assert.equal(await categoryExists(categorySlug), false);
-  assert.deepEqual(await getPromptCategorySlugs(promptSlug), ["uncategorized"]);
-  assert.equal(await getPromptLegacyCategorySlug(promptSlug), "uncategorized");
 });
 
 test("DELETE /api/admin/categories/[slug] 在确认 token 非法时返回 400", async (t) => {
-  if (!(await ensureDbReady(t))) {
-    return;
-  }
-  await resetDbSeed();
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
 
-  const categorySlug = `task2-invalid-token-${Date.now()}`;
-  await createCategory({ name: "非法 token 分类", slug: categorySlug });
+    const categorySlug = `task2-invalid-token-${Date.now()}`;
+    await createCategory({ name: "非法 token 分类", slug: categorySlug });
 
-  const response = await categoryDeleteRouteModule.DELETE(
-    adminDeleteCategoryRequest(categorySlug, {
-      confirm: true,
-      confirmationToken: "invalid.token",
-    }),
-    { params: { slug: categorySlug } },
-  );
-  const payload = (await response.json()) as {
-    error: string;
-    code: string;
-  };
+    const response = await categoryDeleteRouteModule.DELETE(
+      adminDeleteCategoryRequest(categorySlug, {
+        confirm: true,
+        confirmationToken: "invalid.token",
+      }),
+      { params: { slug: categorySlug } },
+    );
+    const payload = (await response.json()) as {
+      error: string;
+      code: string;
+    };
 
-  assert.equal(response.status, 400);
-  assert.equal(payload.code, "invalid_confirmation_token");
-  assert.equal(await categoryExists(categorySlug), true);
+    assert.equal(response.status, 400);
+    assert.equal(payload.code, "invalid_confirmation_token");
+    assert.equal(await categoryExists(categorySlug), true);
+  });
 });
 
 test("删除分类: 历史漂移下 impacted 口径与补挂目标保持一致", async (t) => {
-  if (!(await ensureDbReady(t))) {
-    return;
-  }
-  await resetDbSeed();
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
 
-  const deletingSlug = `task2-drift-del-${Date.now()}`;
-  const legacySlug = `task2-drift-legacy-${Date.now()}`;
-  const promptSlug = `task2-drift-prompt-${Date.now()}`;
-  await createCategory({ name: "待删分类", slug: deletingSlug });
-  await createCategory({ name: "旧主分类", slug: legacySlug });
-  await createPrompt({
-    slug: promptSlug,
-    title: "漂移提示词",
-    summary: "仅 relation 挂待删分类，legacy category_id 指向其他分类",
-    categorySlug: legacySlug,
+    const deletingSlug = `task2-drift-del-${Date.now()}`;
+    const legacySlug = `task2-drift-legacy-${Date.now()}`;
+    const promptSlug = `task2-drift-prompt-${Date.now()}`;
+    await createCategory({ name: "待删分类", slug: deletingSlug });
+    await createCategory({ name: "旧主分类", slug: legacySlug });
+    await createPrompt({
+      slug: promptSlug,
+      title: "漂移提示词",
+      summary: "仅 relation 挂待删分类，legacy category_id 指向其他分类",
+      categorySlug: legacySlug,
+    });
+
+    await addPromptCategoryRelation(promptSlug, deletingSlug);
+    await removePromptCategoryRelation(promptSlug, legacySlug);
+
+    const previewResponse = await categoryDeleteRouteModule.DELETE(
+      adminDeleteCategoryRequest(deletingSlug, { confirm: false }),
+      { params: { slug: deletingSlug } },
+    );
+    const previewPayload = (await previewResponse.json()) as CategoryDeletePreviewResponse;
+    assert.equal(previewResponse.status, 200);
+    assert.equal(previewPayload.impactedPromptCount, 1);
+    assert.equal(previewPayload.willBeUncategorizedCount, 1);
+
+    const confirmResponse = await categoryDeleteRouteModule.DELETE(
+      adminDeleteCategoryRequest(deletingSlug, {
+        confirm: true,
+        confirmationToken: previewPayload.confirmationToken,
+      }),
+      { params: { slug: deletingSlug } },
+    );
+    const confirmPayload = (await confirmResponse.json()) as CategoryDeleteConfirmResponse;
+
+    assert.equal(confirmResponse.status, 200);
+    assert.equal(confirmPayload.impactedPromptCount, 1);
+    assert.equal(confirmPayload.willBeUncategorizedCount, 1);
+    assert.equal(
+      confirmPayload.autoAssignedUncategorizedCount,
+      1,
+      "漂移场景应补挂 1 条 uncategorized",
+    );
+    assert.deepEqual(await getPromptCategorySlugs(promptSlug), ["uncategorized"]);
   });
-
-  await addPromptCategoryRelation(promptSlug, deletingSlug);
-  await removePromptCategoryRelation(promptSlug, legacySlug);
-
-  const previewResponse = await categoryDeleteRouteModule.DELETE(
-    adminDeleteCategoryRequest(deletingSlug, { confirm: false }),
-    { params: { slug: deletingSlug } },
-  );
-  const previewPayload = (await previewResponse.json()) as CategoryDeletePreviewResponse;
-  assert.equal(previewResponse.status, 200);
-  assert.equal(previewPayload.impactedPromptCount, 1);
-  assert.equal(previewPayload.willBeUncategorizedCount, 1);
-
-  const confirmResponse = await categoryDeleteRouteModule.DELETE(
-    adminDeleteCategoryRequest(deletingSlug, {
-      confirm: true,
-      confirmationToken: previewPayload.confirmationToken,
-    }),
-    { params: { slug: deletingSlug } },
-  );
-  const confirmPayload = (await confirmResponse.json()) as CategoryDeleteConfirmResponse;
-
-  assert.equal(confirmResponse.status, 200);
-  assert.equal(confirmPayload.impactedPromptCount, 1);
-  assert.equal(confirmPayload.willBeUncategorizedCount, 1);
-  assert.equal(
-    confirmPayload.autoAssignedUncategorizedCount,
-    1,
-    "漂移场景应补挂 1 条 uncategorized",
-  );
-  assert.deepEqual(await getPromptCategorySlugs(promptSlug), ["uncategorized"]);
 });
 
 test("分类删除前置创建不依赖 /api/prompts 数据源回落", async (t) => {
-  if (!(await ensureDbReady(t))) {
-    return;
-  }
-  await resetDbSeed();
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
 
-  const categorySlug = `task2-precondition-stable-${Date.now()}`;
-  const promptSlug = `task2-precondition-stable-prompt-${Date.now()}`;
-  await createCategory({ name: "前置稳定分类", slug: categorySlug });
+    const categorySlug = `task2-precondition-stable-${Date.now()}`;
+    const promptSlug = `task2-precondition-stable-prompt-${Date.now()}`;
+    await createCategory({ name: "前置稳定分类", slug: categorySlug });
 
-  const originalSourceMode = process.env.PROMPT_REPOSITORY_DATA_SOURCE;
-  process.env.PROMPT_REPOSITORY_DATA_SOURCE = "fixture";
-  try {
-    await createPrompt({
-      slug: promptSlug,
-      title: "前置稳定 Prompt",
-      summary: "前置创建应稳定写入 DB",
-      categorySlug,
-    });
-  } finally {
-    if (originalSourceMode === undefined) {
-      delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
-    } else {
-      process.env.PROMPT_REPOSITORY_DATA_SOURCE = originalSourceMode;
+    const originalSourceMode = process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+    process.env.PROMPT_REPOSITORY_DATA_SOURCE = "fixture";
+    try {
+      await createPrompt({
+        slug: promptSlug,
+        title: "前置稳定 Prompt",
+        summary: "前置创建应稳定写入 DB",
+        categorySlug,
+      });
+    } finally {
+      if (originalSourceMode === undefined) {
+        delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+      } else {
+        process.env.PROMPT_REPOSITORY_DATA_SOURCE = originalSourceMode;
+      }
     }
-  }
 
-  assert.deepEqual(await getPromptCategorySlugs(promptSlug), [categorySlug]);
+    assert.deepEqual(await getPromptCategorySlugs(promptSlug), [categorySlug]);
+  });
 });
