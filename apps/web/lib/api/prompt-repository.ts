@@ -361,11 +361,6 @@ type DbCategoryListRow = {
   prompt_count: number | string;
 };
 
-type DbCategoryDeleteStatsRow = {
-  impacted_prompt_count: number | string;
-  will_be_uncategorized_count: number | string;
-};
-
 type DbUserRow = {
   id: number | string;
 };
@@ -1414,15 +1409,17 @@ async function findUncategorizedCategoryId(client: SqlClient): Promise<number | 
   return asNumber(row.id);
 }
 
-async function readCategoryDeleteStats(
+async function readCategoryDeleteImpact(
   client: SqlClient,
   categoryId: number,
 ): Promise<{
+  impactedPromptIds: number[];
+  willBeUncategorizedPromptIds: number[];
   impactedPromptCount: number;
   willBeUncategorizedCount: number;
   autoAssignedUncategorizedCount: number;
 }> {
-  const result = await client.query<DbCategoryDeleteStatsRow>(
+  const impactedResult = await client.query<{ prompt_id: number | string }>(
     `
       WITH impacted AS (
         SELECT id AS prompt_id
@@ -1432,28 +1429,50 @@ async function readCategoryDeleteStats(
         SELECT prompt_id
         FROM prompt_categories
         WHERE category_id = $1
-      ),
-      will_be AS (
-        SELECT i.prompt_id
-        FROM impacted i
-        WHERE NOT EXISTS (
-          SELECT 1
-          FROM prompt_categories pc
-          WHERE pc.prompt_id = i.prompt_id
-            AND pc.category_id <> $1
-        )
       )
-      SELECT
-        (SELECT COUNT(*)::text FROM impacted) AS impacted_prompt_count,
-        (SELECT COUNT(*)::text FROM will_be) AS will_be_uncategorized_count;
+      SELECT prompt_id
+      FROM impacted
+      ORDER BY prompt_id ASC;
     `,
     [categoryId],
   );
+  const impactedPromptIds = impactedResult.rows
+    .map((row) => asNumber(row.prompt_id))
+    .filter((value) => value > 0);
 
-  const row = result.rows[0];
-  const impactedPromptCount = asNumber(row?.impacted_prompt_count);
-  const willBeUncategorizedCount = asNumber(row?.will_be_uncategorized_count);
+  if (impactedPromptIds.length === 0) {
+    return {
+      impactedPromptIds: [],
+      willBeUncategorizedPromptIds: [],
+      impactedPromptCount: 0,
+      willBeUncategorizedCount: 0,
+      autoAssignedUncategorizedCount: 0,
+    };
+  }
+
+  const willBeResult = await client.query<{ prompt_id: number | string }>(
+    `
+      SELECT i.prompt_id
+      FROM unnest($1::int[]) AS i(prompt_id)
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM prompt_categories pc
+        WHERE pc.prompt_id = i.prompt_id
+          AND pc.category_id <> $2
+      )
+      ORDER BY i.prompt_id ASC;
+    `,
+    [impactedPromptIds, categoryId],
+  );
+  const willBeUncategorizedPromptIds = willBeResult.rows
+    .map((row) => asNumber(row.prompt_id))
+    .filter((value) => value > 0);
+
+  const impactedPromptCount = impactedPromptIds.length;
+  const willBeUncategorizedCount = willBeUncategorizedPromptIds.length;
   return {
+    impactedPromptIds,
+    willBeUncategorizedPromptIds,
     impactedPromptCount,
     willBeUncategorizedCount,
     autoAssignedUncategorizedCount: willBeUncategorizedCount,
@@ -1489,17 +1508,20 @@ async function listAdminCategoriesFromDb(): Promise<AdminCategoryListItem[]> {
           c.is_system,
           c.is_selectable,
           c.is_collapsed_by_default,
-          COUNT(DISTINCT pc.prompt_id)::text AS prompt_count
+          COALESCE(category_stats.prompt_count, '0') AS prompt_count
         FROM categories c
-        LEFT JOIN prompt_categories pc ON pc.category_id = c.id
-        GROUP BY
-          c.id,
-          c.slug,
-          c.name,
-          c.is_system,
-          c.is_selectable,
-          c.is_collapsed_by_default,
-          c.sort_order
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::text AS prompt_count
+          FROM (
+            SELECT p.id AS prompt_id
+            FROM prompts p
+            WHERE p.category_id = c.id
+            UNION
+            SELECT pc.prompt_id
+            FROM prompt_categories pc
+            WHERE pc.category_id = c.id
+          ) category_prompts
+        ) category_stats ON TRUE
         ORDER BY c.is_system ASC, c.sort_order ASC, c.id ASC;
       `,
     );
@@ -1633,12 +1655,15 @@ async function deleteAdminCategoryInDb(
         };
       }
 
-      const stats = await readCategoryDeleteStats(client, asNumber(targetCategory.id));
+      const impact = await readCategoryDeleteImpact(
+        client,
+        asNumber(targetCategory.id),
+      );
       const token = createCategoryDeleteConfirmationToken({
         slug,
-        impactedPromptCount: stats.impactedPromptCount,
-        willBeUncategorizedCount: stats.willBeUncategorizedCount,
-        autoAssignedUncategorizedCount: stats.autoAssignedUncategorizedCount,
+        impactedPromptCount: impact.impactedPromptCount,
+        willBeUncategorizedCount: impact.willBeUncategorizedCount,
+        autoAssignedUncategorizedCount: impact.autoAssignedUncategorizedCount,
       });
 
       return {
@@ -1646,9 +1671,9 @@ async function deleteAdminCategoryInDb(
         value: {
           dryRun: true,
           slug,
-          impactedPromptCount: stats.impactedPromptCount,
-          willBeUncategorizedCount: stats.willBeUncategorizedCount,
-          autoAssignedUncategorizedCount: stats.autoAssignedUncategorizedCount,
+          impactedPromptCount: impact.impactedPromptCount,
+          willBeUncategorizedCount: impact.willBeUncategorizedCount,
+          autoAssignedUncategorizedCount: impact.autoAssignedUncategorizedCount,
           confirmationToken: token.token,
           confirmationExpiresAt: token.expiresAt,
         },
@@ -1701,14 +1726,14 @@ async function deleteAdminCategoryInDb(
         };
       }
 
-      const stats = await readCategoryDeleteStats(client, targetCategoryId);
+      const impact = await readCategoryDeleteImpact(client, targetCategoryId);
       if (
         !isCategoryDeleteTokenValid({
           token: confirmationToken,
           slug,
-          impactedPromptCount: stats.impactedPromptCount,
-          willBeUncategorizedCount: stats.willBeUncategorizedCount,
-          autoAssignedUncategorizedCount: stats.autoAssignedUncategorizedCount,
+          impactedPromptCount: impact.impactedPromptCount,
+          willBeUncategorizedCount: impact.willBeUncategorizedCount,
+          autoAssignedUncategorizedCount: impact.autoAssignedUncategorizedCount,
         })
       ) {
         await client.query("ROLLBACK;");
@@ -1730,18 +1755,9 @@ async function deleteAdminCategoryInDb(
 
       const autoAssignedResult = await client.query<{ prompt_id: number | string }>(
         `
-          WITH impacted AS (
-            SELECT id AS prompt_id
-            FROM prompts
-            WHERE category_id = $1
-            UNION
-            SELECT prompt_id
-            FROM prompt_categories
-            WHERE category_id = $1
-          )
           INSERT INTO prompt_categories (prompt_id, category_id)
           SELECT i.prompt_id, $2
-          FROM impacted i
+          FROM unnest($1::int[]) AS i(prompt_id)
           WHERE NOT EXISTS (
             SELECT 1
             FROM prompt_categories pc
@@ -1750,7 +1766,7 @@ async function deleteAdminCategoryInDb(
           ON CONFLICT (prompt_id, category_id) DO NOTHING
           RETURNING prompt_id;
         `,
-        [targetCategoryId, uncategorizedId],
+        [impact.impactedPromptIds, uncategorizedId],
       );
       const autoAssignedUncategorizedCount = autoAssignedResult.rows.length;
 
@@ -1770,9 +1786,9 @@ async function deleteAdminCategoryInDb(
               $2
             ),
             updated_at = NOW()
-          WHERE p.category_id = $1;
+          WHERE p.id = ANY($1::int[]);
         `,
-        [targetCategoryId, uncategorizedId],
+        [impact.impactedPromptIds, uncategorizedId],
       );
 
       const deletedCategoryResult = await client.query<DbCategoryLookupRow>(
@@ -1799,8 +1815,8 @@ async function deleteAdminCategoryInDb(
         value: {
           deleted: true,
           slug,
-          impactedPromptCount: stats.impactedPromptCount,
-          willBeUncategorizedCount: stats.willBeUncategorizedCount,
+          impactedPromptCount: impact.impactedPromptCount,
+          willBeUncategorizedCount: impact.willBeUncategorizedCount,
           autoAssignedUncategorizedCount,
         },
       };

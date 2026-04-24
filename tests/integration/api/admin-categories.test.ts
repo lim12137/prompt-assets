@@ -202,6 +202,25 @@ async function addPromptCategoryRelation(
   });
 }
 
+async function removePromptCategoryRelation(
+  promptSlug: string,
+  categorySlug: string,
+): Promise<void> {
+  await clientModule.withPgClient(testDbUrl, async (client) => {
+    await client.query(
+      `
+        DELETE FROM prompt_categories pc
+        USING prompts p, categories c
+        WHERE p.slug = $1
+          AND c.slug = $2
+          AND pc.prompt_id = p.id
+          AND pc.category_id = c.id;
+      `,
+      [promptSlug, categorySlug],
+    );
+  });
+}
+
 async function getPromptCategorySlugs(promptSlug: string): Promise<string[]> {
   return clientModule.withPgClient(testDbUrl, async (client) => {
     const result = await client.query<{ slug: string }>(
@@ -435,4 +454,54 @@ test("DELETE /api/admin/categories/[slug] 在确认 token 非法时返回 400", 
   assert.equal(response.status, 400);
   assert.equal(payload.code, "invalid_confirmation_token");
   assert.equal(await categoryExists(categorySlug), true);
+});
+
+test("删除分类: 历史漂移下 impacted 口径与补挂目标保持一致", async (t) => {
+  if (!(await ensureDbReady(t))) {
+    return;
+  }
+  await resetDbSeed();
+
+  const deletingSlug = `task2-drift-del-${Date.now()}`;
+  const legacySlug = `task2-drift-legacy-${Date.now()}`;
+  const promptSlug = `task2-drift-prompt-${Date.now()}`;
+  await createCategory({ name: "待删分类", slug: deletingSlug });
+  await createCategory({ name: "旧主分类", slug: legacySlug });
+  await createPrompt({
+    slug: promptSlug,
+    title: "漂移提示词",
+    summary: "仅 relation 挂待删分类，legacy category_id 指向其他分类",
+    categorySlug: legacySlug,
+  });
+
+  await addPromptCategoryRelation(promptSlug, deletingSlug);
+  await removePromptCategoryRelation(promptSlug, legacySlug);
+
+  const previewResponse = await categoryDeleteRouteModule.DELETE(
+    adminDeleteCategoryRequest(deletingSlug, { confirm: false }),
+    { params: { slug: deletingSlug } },
+  );
+  const previewPayload = (await previewResponse.json()) as CategoryDeletePreviewResponse;
+  assert.equal(previewResponse.status, 200);
+  assert.equal(previewPayload.impactedPromptCount, 1);
+  assert.equal(previewPayload.willBeUncategorizedCount, 1);
+
+  const confirmResponse = await categoryDeleteRouteModule.DELETE(
+    adminDeleteCategoryRequest(deletingSlug, {
+      confirm: true,
+      confirmationToken: previewPayload.confirmationToken,
+    }),
+    { params: { slug: deletingSlug } },
+  );
+  const confirmPayload = (await confirmResponse.json()) as CategoryDeleteConfirmResponse;
+
+  assert.equal(confirmResponse.status, 200);
+  assert.equal(confirmPayload.impactedPromptCount, 1);
+  assert.equal(confirmPayload.willBeUncategorizedCount, 1);
+  assert.equal(
+    confirmPayload.autoAssignedUncategorizedCount,
+    1,
+    "漂移场景应补挂 1 条 uncategorized",
+  );
+  assert.deepEqual(await getPromptCategorySlugs(promptSlug), ["uncategorized"]);
 });
