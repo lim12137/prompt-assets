@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const REVIEWER_EMAIL = "admin@example.com";
 const REVIEWER_ROLE = "admin";
@@ -19,6 +19,14 @@ function formatSubmittedAt(input) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function adminHeaders() {
+  return {
+    "content-type": "application/json",
+    "x-user-email": REVIEWER_EMAIL,
+    "x-user-role": REVIEWER_ROLE,
+  };
 }
 
 async function submitReview(submissionId, action) {
@@ -42,10 +50,54 @@ async function submitReview(submissionId, action) {
   return payload;
 }
 
+async function fetchAdminCategories() {
+  const response = await fetch("/api/admin/categories", {
+    method: "GET",
+    headers: {
+      "x-user-email": REVIEWER_EMAIL,
+      "x-user-role": REVIEWER_ROLE,
+    },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      typeof payload.error === "string" && payload.error.length > 0
+        ? payload.error
+        : "加载分类失败",
+    );
+  }
+  return Array.isArray(payload.categories) ? payload.categories : [];
+}
+
 export function AdminReviewConsole({ initialSubmissions }) {
   const [submissions, setSubmissions] = useState(initialSubmissions);
   const [activeReview, setActiveReview] = useState(null);
   const [feedback, setFeedback] = useState("待审核列表已加载，可以直接执行通过或拒绝。");
+
+  const [categories, setCategories] = useState([]);
+  const [categoryLoading, setCategoryLoading] = useState(true);
+  const [categorySubmitting, setCategorySubmitting] = useState(false);
+  const [categoryDeleteSubmitting, setCategoryDeleteSubmitting] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategorySlug, setNewCategorySlug] = useState("");
+  const [deletePreview, setDeletePreview] = useState(null);
+
+  async function loadCategories() {
+    setCategoryLoading(true);
+    try {
+      const items = await fetchAdminCategories();
+      setCategories(items);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "加载分类失败";
+      setFeedback(`分类加载失败：${message}`);
+    } finally {
+      setCategoryLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadCategories();
+  }, []);
 
   async function handleReview(submission, action) {
     setActiveReview({ id: submission.id, action });
@@ -66,6 +118,121 @@ export function AdminReviewConsole({ initialSubmissions }) {
       setFeedback(`${submission.promptTitle} 审核失败：${message}`);
     } finally {
       setActiveReview(null);
+    }
+  }
+
+  async function handleCreateCategory(event) {
+    event.preventDefault();
+    if (categorySubmitting) {
+      return;
+    }
+
+    const name = newCategoryName.trim();
+    const slug = newCategorySlug.trim();
+    if (!name) {
+      setFeedback("新增分类失败：分类名称不能为空");
+      return;
+    }
+
+    setCategorySubmitting(true);
+    try {
+      const response = await fetch("/api/admin/categories", {
+        method: "POST",
+        headers: adminHeaders(),
+        body: JSON.stringify({
+          name,
+          slug: slug || undefined,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          typeof payload.error === "string" && payload.error.length > 0
+            ? payload.error
+            : "新增分类失败",
+        );
+      }
+
+      setFeedback(`新增分类成功：${payload?.category?.name ?? name}`);
+      setNewCategoryName("");
+      setNewCategorySlug("");
+      await loadCategories();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "新增分类失败";
+      setFeedback(`新增分类失败：${message}`);
+    } finally {
+      setCategorySubmitting(false);
+    }
+  }
+
+  async function handlePrepareDeleteCategory(category) {
+    setCategoryDeleteSubmitting(true);
+    try {
+      const response = await fetch(`/api/admin/categories/${category.slug}`, {
+        method: "DELETE",
+        headers: adminHeaders(),
+        body: JSON.stringify({ confirm: false }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          typeof payload.error === "string" && payload.error.length > 0
+            ? payload.error
+            : "删除预检查失败",
+        );
+      }
+
+      setDeletePreview({
+        slug: category.slug,
+        name: category.name,
+        impactedPromptCount: payload.impactedPromptCount ?? 0,
+        willBeUncategorizedCount: payload.willBeUncategorizedCount ?? 0,
+        confirmationToken: payload.confirmationToken ?? "",
+      });
+      setFeedback(`已加载删除预检查：${category.name}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "删除预检查失败";
+      setFeedback(`删除预检查失败：${message}`);
+    } finally {
+      setCategoryDeleteSubmitting(false);
+    }
+  }
+
+  async function handleConfirmDeleteCategory() {
+    if (!deletePreview?.slug || !deletePreview?.confirmationToken) {
+      setFeedback("删除失败：确认信息缺失");
+      return;
+    }
+
+    setCategoryDeleteSubmitting(true);
+    try {
+      const response = await fetch(`/api/admin/categories/${deletePreview.slug}`, {
+        method: "DELETE",
+        headers: adminHeaders(),
+        body: JSON.stringify({
+          confirm: true,
+          confirmationToken: deletePreview.confirmationToken,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          typeof payload.error === "string" && payload.error.length > 0
+            ? payload.error
+            : "删除失败",
+        );
+      }
+
+      setFeedback(
+        `已删除分类：${deletePreview.name}（受影响 ${payload.impactedPromptCount ?? 0}，归入待分类 ${payload.willBeUncategorizedCount ?? 0}）`,
+      );
+      setDeletePreview(null);
+      await loadCategories();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "删除失败";
+      setFeedback(`删除失败：${message}`);
+    } finally {
+      setCategoryDeleteSubmitting(false);
     }
   }
 
@@ -116,6 +283,124 @@ export function AdminReviewConsole({ initialSubmissions }) {
           {feedback}
         </p>
       </header>
+
+      <section className="pm-card" style={{ display: "grid", gap: "12px" }}>
+        <h2 style={{ margin: 0, fontSize: "18px" }}>分类管理</h2>
+
+        <form
+          style={{
+            display: "grid",
+            gap: "8px",
+            gridTemplateColumns: "1fr 1fr auto",
+            alignItems: "end",
+          }}
+          onSubmit={handleCreateCategory}
+        >
+          <label style={{ display: "grid", gap: "4px" }}>
+            <span style={{ fontSize: "13px", color: "var(--pm-muted)" }}>新增分类名称</span>
+            <input
+              aria-label="新增分类名称"
+              value={newCategoryName}
+              onChange={(event) => setNewCategoryName(event.target.value)}
+              placeholder="例如：运营"
+            />
+          </label>
+          <label style={{ display: "grid", gap: "4px" }}>
+            <span style={{ fontSize: "13px", color: "var(--pm-muted)" }}>新增分类Slug</span>
+            <input
+              aria-label="新增分类Slug"
+              value={newCategorySlug}
+              onChange={(event) => setNewCategorySlug(event.target.value)}
+              placeholder="例如：operations（可留空自动生成）"
+            />
+          </label>
+          <button
+            type="submit"
+            className="pm-primary-button"
+            disabled={categorySubmitting}
+          >
+            {categorySubmitting ? "新增中..." : "新增分类"}
+          </button>
+        </form>
+
+        {categoryLoading ? (
+          <p style={{ margin: 0, color: "var(--pm-muted)" }}>分类加载中...</p>
+        ) : (
+          <div style={{ display: "grid", gap: "8px" }}>
+            {categories.map((category) => (
+              <article
+                key={category.slug}
+                data-testid={`admin-category-row-${category.slug}`}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                  border: "1px solid var(--pm-border)",
+                  borderRadius: "8px",
+                  padding: "10px 12px",
+                }}
+              >
+                <div style={{ display: "grid", gap: "4px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <strong>{category.name}</strong>
+                    {category.isSystem ? <span className="pm-pill">系统</span> : null}
+                  </div>
+                  <span style={{ color: "var(--pm-muted)", fontSize: "13px" }}>
+                    slug: {category.slug} · 关联提示词：{category.promptCount}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="pm-secondary-button"
+                  disabled={categoryDeleteSubmitting || category.isSystem}
+                  onClick={() => handlePrepareDeleteCategory(category)}
+                >
+                  删除
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
+
+        {deletePreview ? (
+          <section
+            className="pm-card"
+            style={{
+              border: "1px solid #f59e0b",
+              backgroundColor: "#fffbeb",
+              display: "grid",
+              gap: "8px",
+            }}
+          >
+            <h3 style={{ margin: 0, fontSize: "16px" }}>删除确认：{deletePreview.name}</h3>
+            <p style={{ margin: 0, color: "var(--pm-muted)" }}>
+              受影响提示词：{deletePreview.impactedPromptCount}
+            </p>
+            <p style={{ margin: 0, color: "var(--pm-muted)" }}>
+              将归入待分类：{deletePreview.willBeUncategorizedCount}
+            </p>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                type="button"
+                className="pm-primary-button"
+                disabled={categoryDeleteSubmitting}
+                onClick={handleConfirmDeleteCategory}
+              >
+                {categoryDeleteSubmitting ? "删除中..." : "确认删除分类"}
+              </button>
+              <button
+                type="button"
+                className="pm-secondary-button"
+                disabled={categoryDeleteSubmitting}
+                onClick={() => setDeletePreview(null)}
+              >
+                取消
+              </button>
+            </div>
+          </section>
+        ) : null}
+      </section>
 
       {submissions.length === 0 ? (
         <section className="pm-card">

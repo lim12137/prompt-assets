@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const ADMIN_EMAIL = "admin@example.com";
 const ADMIN_ROLE = "admin";
@@ -8,12 +8,14 @@ const ADMIN_ROLE = "admin";
 const INITIAL_FORM = {
   title: "",
   summary: "",
-  categorySlug: "",
   content: "",
 };
 
 export default function AdminCreatePromptPage() {
   const [form, setForm] = useState(INITIAL_FORM);
+  const [categories, setCategories] = useState([]);
+  const [selectedCategorySlugs, setSelectedCategorySlugs] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState("请填写提示词信息并提交创建。");
 
@@ -24,9 +26,55 @@ export default function AdminCreatePromptPage() {
     }));
   }
 
+  useEffect(() => {
+    async function loadCategories() {
+      setCategoriesLoading(true);
+      try {
+        const response = await fetch("/api/admin/categories", {
+          headers: {
+            "x-user-email": ADMIN_EMAIL,
+            "x-user-role": ADMIN_ROLE,
+          },
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(
+            typeof payload.error === "string" && payload.error.length > 0
+              ? payload.error
+              : "分类加载失败",
+          );
+        }
+
+        const items = Array.isArray(payload.categories) ? payload.categories : [];
+        setCategories(items);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "分类加载失败";
+        setFeedback(`分类加载失败：${message}`);
+      } finally {
+        setCategoriesLoading(false);
+      }
+    }
+
+    void loadCategories();
+  }, []);
+
+  function toggleCategory(categorySlug) {
+    setSelectedCategorySlugs((current) => {
+      if (current.includes(categorySlug)) {
+        return current.filter((item) => item !== categorySlug);
+      }
+      return [...current, categorySlug];
+    });
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
     if (submitting) {
+      return;
+    }
+
+    if (selectedCategorySlugs.length === 0) {
+      setFeedback("创建失败：请至少选择一个分类。");
       return;
     }
 
@@ -41,7 +89,10 @@ export default function AdminCreatePromptPage() {
           "x-user-email": ADMIN_EMAIL,
           "x-user-role": ADMIN_ROLE,
         },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          categorySlugs: selectedCategorySlugs,
+        }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -113,14 +164,46 @@ export default function AdminCreatePromptPage() {
           />
         </label>
 
-        <label style={{ display: "grid", gap: "6px" }}>
-          <span>分类</span>
-          <input
-            value={form.categorySlug}
-            onChange={(event) => updateField("categorySlug", event.target.value)}
-            required
-          />
-        </label>
+        <fieldset
+          aria-label="分类（可多选）"
+          style={{
+            border: "1px solid var(--pm-border)",
+            borderRadius: "8px",
+            padding: "10px 12px",
+            display: "grid",
+            gap: "8px",
+          }}
+        >
+          <legend style={{ padding: "0 6px" }}>分类（可多选）</legend>
+          {categoriesLoading ? (
+            <p style={{ margin: 0, color: "var(--pm-muted)" }}>分类加载中...</p>
+          ) : (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px 14px" }}>
+              {categories.map((category) => {
+                const disabled = category.isSystem || category.isSelectable === false;
+                return (
+                  <label
+                    key={category.slug}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      color: disabled ? "var(--pm-muted)" : "inherit",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedCategorySlugs.includes(category.slug)}
+                      disabled={disabled}
+                      onChange={() => toggleCategory(category.slug)}
+                    />
+                    <span>{category.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </fieldset>
 
         <label style={{ display: "grid", gap: "6px" }}>
           <span>内容</span>

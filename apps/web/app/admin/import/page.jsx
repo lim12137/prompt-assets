@@ -10,13 +10,40 @@ const DEFAULT_IMPORT_SAMPLE = JSON.stringify(
     {
       title: "导入示例标题",
       summary: "导入示例摘要",
-      categorySlug: "programming",
+      categorySlugs: ["programming", "design"],
       content: "你是助手，请输出结构化结果。",
     },
   ],
   null,
   2,
 );
+
+function validateImportItems(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return "导入内容必须为非空数组。";
+  }
+
+  for (const item of items) {
+    if (!item || typeof item !== "object") {
+      return "每个导入项都必须是对象。";
+    }
+    const record = item;
+    if (
+      !Array.isArray(record.categorySlugs) ||
+      record.categorySlugs.length === 0 ||
+      record.categorySlugs.some((slug) => typeof slug !== "string" || !slug.trim())
+    ) {
+      return "categorySlugs 必须为非空数组。";
+    }
+
+    const normalized = record.categorySlugs.map((slug) => slug.trim().toLowerCase());
+    if (normalized.includes("uncategorized")) {
+      return "待分类不能手动选择。";
+    }
+  }
+
+  return null;
+}
 
 export default function AdminImportPromptPage() {
   const [jsonText, setJsonText] = useState(DEFAULT_IMPORT_SAMPLE);
@@ -35,6 +62,12 @@ export default function AdminImportPromptPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : "invalid json";
       setFeedback(`JSON 解析失败：${message}`);
+      return;
+    }
+
+    const validationError = validateImportItems(parsed);
+    if (validationError) {
+      setFeedback(`导入失败：${validationError}`);
       return;
     }
 
