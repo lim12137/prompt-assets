@@ -296,6 +296,91 @@ test("真实DB读取DTO: 多分类 prompt 在列表与详情返回 categories/ca
   assert.equal(detail?.categorySlugs.includes("programming"), true);
 });
 
+test("真实DB兼容字段一致性: create 返回 categorySlug 与读回保持一致", async (t) => {
+  if (!(await ensureDbReady(t))) {
+    return;
+  }
+  await resetDbSeed();
+
+  const slug = `db-create-compat-consistency-${Date.now()}`;
+  const created = await repositoryModule.createPrompt({
+    creatorEmail: "admin@example.com",
+    creatorRole: "admin",
+    slug,
+    title: "创建后兼容字段一致性",
+    summary: "验证 create 返回 categorySlug 与后续读取一致",
+    categorySlugs: ["design", "programming"],
+    content: "create compatibility consistency",
+  });
+  assert.equal(created.ok, true);
+  if (!created.ok) {
+    return;
+  }
+  assert.equal(created.value.prompt.categorySlug, "design");
+
+  const detail = await repositoryModule.getPromptDetail(slug);
+  assert.ok(detail, "详情应存在");
+  assert.equal(
+    detail?.category.slug,
+    created.value.prompt.categorySlug,
+    "详情兼容字段 category.slug 应与 create 返回的 categorySlug 一致",
+  );
+
+  const list = await repositoryModule.listPrompts();
+  const listItem = list.find((item) => item.slug === slug);
+  assert.ok(listItem, "列表应包含新建 prompt");
+  assert.equal(
+    listItem?.categorySlug,
+    created.value.prompt.categorySlug,
+    "列表兼容字段 categorySlug 应与 create 返回保持一致",
+  );
+});
+
+test("真实DB兼容字段一致性: import 返回 categorySlug 与读回保持一致", async (t) => {
+  if (!(await ensureDbReady(t))) {
+    return;
+  }
+  await resetDbSeed();
+
+  const slug = `db-import-compat-consistency-${Date.now()}`;
+  const imported = await repositoryModule.importPrompts({
+    creatorEmail: "admin@example.com",
+    creatorRole: "admin",
+    items: [
+      {
+        slug,
+        title: "导入后兼容字段一致性",
+        summary: "验证 import 返回 categorySlug 与后续读取一致",
+        categorySlugs: ["design", "programming"],
+        content: "import compatibility consistency",
+      },
+    ],
+  });
+  assert.equal(imported.ok, true);
+  if (!imported.ok) {
+    return;
+  }
+  const importedPrompt = imported.value.prompts[0];
+  assert.equal(importedPrompt?.categorySlug, "design");
+
+  const detail = await repositoryModule.getPromptDetail(slug);
+  assert.ok(detail, "详情应存在");
+  assert.equal(
+    detail?.category.slug,
+    importedPrompt?.categorySlug,
+    "详情兼容字段 category.slug 应与 import 返回的 categorySlug 一致",
+  );
+
+  const list = await repositoryModule.listPrompts();
+  const listItem = list.find((item) => item.slug === slug);
+  assert.ok(listItem, "列表应包含导入 prompt");
+  assert.equal(
+    listItem?.categorySlug,
+    importedPrompt?.categorySlug,
+    "列表兼容字段 categorySlug 应与 import 返回保持一致",
+  );
+});
+
 test("真实DB读取口径: 兼容字段 category 不应优先返回 uncategorized", async (t) => {
   if (!(await ensureDbReady(t))) {
     return;

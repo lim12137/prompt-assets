@@ -156,8 +156,8 @@ export function mapPromptDetail(raw: PromptDetailRaw): PromptDetailDto {
     categories,
     categorySlugs,
     category: {
-      slug: categories[0]?.slug ?? raw.categorySlug,
-      name: categories[0]?.name ?? raw.categoryName,
+      slug: raw.categorySlug || categories[0]?.slug || "",
+      name: raw.categoryName || categories[0]?.name || "",
     },
     currentVersion: {
       versionNo: raw.currentVersionNo,
