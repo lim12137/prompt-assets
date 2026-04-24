@@ -4,6 +4,9 @@ const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const testDatabaseUrl =
   process.env.TEST_DATABASE_URL ??
   "postgres://postgres:postgres@127.0.0.1:55432/prompt_management_test";
+const testSpecPath =
+  process.env.ADMIN_E2E_SPEC_PATH ??
+  "tests/e2e/admin/management-flow.spec.ts";
 
 function runStep(args, label, env = process.env, allowFailure = false) {
   console.log(`==> ${label}`);
@@ -25,8 +28,8 @@ function runStep(args, label, env = process.env, allowFailure = false) {
 try {
   runStep(["db:test:prepare"], "准备真实测试数据库");
   runStep(
-    ["exec", "playwright", "test", "tests/e2e/admin/management-real-db.spec.ts"],
-    "执行 admin 真实 DB E2E",
+    ["exec", "playwright", "test", testSpecPath],
+    `执行 admin 真实 DB E2E (${testSpecPath})`,
     {
       ...process.env,
       DATABASE_URL: testDatabaseUrl,

@@ -20,7 +20,8 @@
     "db:test:prepare": "node ./scripts/prepare-test-db.mjs",
     "db:test": "pnpm --filter @prompt-management/db db:test",
     "db:test:down": "pnpm --filter @prompt-management/db db:test:down",
-    "test:e2e:admin:db": "node ./scripts/run-admin-real-db-e2e.mjs"
+    "test:e2e:admin:db": "node ./scripts/run-admin-real-db-e2e.mjs",
+    "test:e2e:admin:management-flow": "node ./scripts/run-admin-real-db-e2e.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1"
