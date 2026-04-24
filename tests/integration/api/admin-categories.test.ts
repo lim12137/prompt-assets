@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 
 const testDbUrl =
   process.env.TEST_DATABASE_URL ??
@@ -16,6 +17,8 @@ type DbClient = {
 };
 
 let modulesLoaded = false;
+let preparingPromise: Promise<boolean> | null = null;
+const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 let clientModule: {
   isPgReachable: (url: string) => Promise<boolean>;
   withPgClient: <T>(url: string, run: (client: DbClient) => Promise<T>) => Promise<T>;
@@ -35,6 +38,9 @@ let categoryDeleteRouteModule: {
 };
 let promptsRouteModule: {
   POST: (request: Request) => Promise<Response>;
+};
+let lockModule: {
+  withTestDbLock: <T>(task: () => Promise<T>) => Promise<T>;
 };
 
 type CategoryListItem = {
@@ -80,6 +86,7 @@ async function loadModules(): Promise<void> {
     "../../../apps/web/app/api/admin/categories/[slug]/route.ts"
   );
   promptsRouteModule = await import("../../../apps/web/app/api/prompts/route.ts");
+  lockModule = await import("../../../scripts/with-test-db-lock.mjs");
 
   modulesLoaded = true;
 }
@@ -131,10 +138,41 @@ function adminCreatePromptRequest(body: Record<string, unknown>): Request {
 
 async function ensureDbReady(t: test.TestContext): Promise<boolean> {
   await loadModules();
-  if (!(await clientModule.isPgReachable(testDbUrl))) {
+  if (await clientModule.isPgReachable(testDbUrl)) {
+    return true;
+  }
+
+  if (!preparingPromise) {
+    preparingPromise = lockModule
+      .withTestDbLock(async () => {
+        if (await clientModule.isPgReachable(testDbUrl)) {
+          return true;
+        }
+
+        const result = spawnSync(pnpmCommand, ["db:test:prepare"], {
+          stdio: "inherit",
+          env: process.env,
+          shell: process.platform === "win32",
+        });
+
+        if (result.error || result.status !== 0) {
+          return false;
+        }
+
+        const reachable = await clientModule.isPgReachable(testDbUrl);
+        return reachable;
+      })
+      .finally(() => {
+        preparingPromise = null;
+      });
+  }
+
+  const ready = await preparingPromise;
+  if (!ready) {
     t.skip(`测试库不可达，跳过 admin categories 测试: ${testDbUrl}`);
     return false;
   }
+
   return true;
 }
 
