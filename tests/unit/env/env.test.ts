@@ -22,3 +22,11 @@ test("APP_BASE_URL 应可被正确解析", () => {
   assert.equal(env.databaseUrl, "postgres://user:pass@localhost:5432/prompt_db");
   assert.equal(env.appBaseUrl.href, "https://example.com/");
 });
+
+test("未提供 APP_BASE_URL 时应回退到 13000 端口默认值", () => {
+  const env = parseAppEnv({
+    DATABASE_URL: "postgres://user:pass@localhost:5432/prompt_db",
+  });
+
+  assert.equal(env.appBaseUrl.href, "http://localhost:13000/");
+});

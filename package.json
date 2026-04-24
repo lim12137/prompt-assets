@@ -5,9 +5,9 @@
   "packageManager": "pnpm@10.11.0",
   "scripts": {
     "test:runtime": "node --test --experimental-strip-types tests/unit/smoke/runtime.test.ts",
-    "dev:web": "pnpm --filter @prompt-management/web dev --hostname 127.0.0.1 --port 3000",
+    "dev:web": "pnpm --filter @prompt-management/web dev --hostname 127.0.0.1 --port 13000",
     "build:web": "pnpm --filter @prompt-management/web build",
-    "start:web": "pnpm --filter @prompt-management/web start --hostname 127.0.0.1 --port 3000",
+    "start:web": "pnpm --filter @prompt-management/web start --hostname 127.0.0.1 --port 13000",
     "test:e2e": "playwright test tests/e2e/smoke/home.spec.ts",
     "db:generate": "pnpm --filter @prompt-management/db db:generate",
     "db:migrate": "pnpm --filter @prompt-management/db db:migrate",

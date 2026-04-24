@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [string]$ComposeFile = "docker-compose.yml",
-  [string]$HealthUrl = "http://localhost:3000/api/health",
+  [string]$HealthUrl = "http://localhost:13000/api/health",
   [int]$HealthRetries = 30,
   [int]$HealthIntervalSeconds = 2
 )

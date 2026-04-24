@@ -28,14 +28,14 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
-ENV PORT=3000
+ENV PORT=13000
 
 RUN addgroup -S nodejs && adduser -S nextjs -G nodejs
 RUN corepack enable
 
 COPY --from=builder /app ./
 
-EXPOSE 3000
+EXPOSE 13000
 USER nextjs
 
-CMD ["pnpm", "--filter", "@prompt-management/web", "exec", "next", "start", "--hostname", "0.0.0.0", "--port", "3000"]
+CMD ["pnpm", "--filter", "@prompt-management/web", "exec", "next", "start", "--hostname", "0.0.0.0", "--port", "13000"]

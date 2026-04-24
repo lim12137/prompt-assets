@@ -10,7 +10,7 @@ import { Counter } from "k6/metrics";
  * - 10 并发投稿用户，命中 POST /api/prompts/{slug}/submissions
  *
  * 可覆盖参数（通过 k6 环境变量传入）：
- * - BASE_URL: 默认 http://127.0.0.1:3000
+ * - BASE_URL: 默认 http://127.0.0.1:13000
  * - TEST_DURATION: 默认 30s
  * - SEARCH_VUS: 默认 20
  * - SUBMIT_VUS: 默认 10
@@ -26,10 +26,10 @@ import { Counter } from "k6/metrics";
  * k6 run tests/concurrency/search-and-submit.js
  *
  * 示例命令（Docker 运行 k6）：
- * docker run --rm -i -e BASE_URL=http://host.docker.internal:3000 grafana/k6 run - < tests/concurrency/search-and-submit.js
+ * docker run --rm -i -e BASE_URL=http://host.docker.internal:13000 grafana/k6 run - < tests/concurrency/search-and-submit.js
  */
 
-const BASE_URL = __ENV.BASE_URL || "http://127.0.0.1:3000";
+const BASE_URL = __ENV.BASE_URL || "http://127.0.0.1:13000";
 const TEST_DURATION = __ENV.TEST_DURATION || "30s";
 const SEARCH_VUS = Number(__ENV.SEARCH_VUS || 20);
 const SUBMIT_VUS = Number(__ENV.SUBMIT_VUS || 10);

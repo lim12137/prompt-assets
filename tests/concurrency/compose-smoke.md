@@ -22,14 +22,14 @@ docker compose ps
 ## 健康检查命令
 
 ```powershell
-Invoke-WebRequest http://localhost:3000/api/health
+Invoke-WebRequest http://localhost:13000/api/health
 ```
 
 预期响应：`{"status":"ok"}`
 
 ## 预期端口
 
-- `3000/tcp`：`web` 对外访问端口
+- `13000/tcp`：`web` 对外访问端口
 - `5432/tcp`：`postgres` 对外访问端口
 
 ## 预期挂载卷
