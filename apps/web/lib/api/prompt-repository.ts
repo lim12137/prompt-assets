@@ -5,6 +5,7 @@ import {
 } from "../../../../packages/db/src/client.ts";
 import {
   buildAuditLogEntry,
+  buildSubmissionCandidateNo,
   type AuditLogEntry,
   canTransitionReviewStatus,
   nextVersionNo,
@@ -75,10 +76,13 @@ export type PromptSubmissionMutationResult = {
   candidateVersion: {
     versionNo: string;
     sourceType: "submission";
+    candidateNo: string;
   };
   submission: {
     id: number;
     status: SubmissionStatus;
+    submitter: string;
+    revisionIndex: number;
   };
   currentVersion: {
     versionNo: string;
@@ -213,6 +217,10 @@ type DbPromptVersionInsertRow = {
 type DbSubmissionInsertRow = {
   id: number | string;
   status: SubmissionStatus;
+};
+
+type DbSubmissionCountRow = {
+  count: number | string;
 };
 
 type DbSubmissionReviewRow = {
@@ -974,6 +982,20 @@ async function createPromptSubmissionInDb(
       const latestVersionNo = latestVersionResult.rows[0]?.version_no ?? baseVersionNo;
       const candidateVersionNo = nextVersionNo(latestVersionNo);
       const userId = await upsertUserId(client, input.userEmail);
+      const revisionCountResult = await client.query<DbSubmissionCountRow>(
+        `
+          SELECT COUNT(*)::text AS count
+          FROM submissions
+          WHERE prompt_id = $1 AND base_version_id = $2 AND submitter_id = $3;
+        `,
+        [promptId, baseVersionId, userId],
+      );
+      const revisionIndex = asNumber(revisionCountResult.rows[0]?.count) + 1;
+      const candidateNo = buildSubmissionCandidateNo({
+        baseVersionNo,
+        submitter: input.userEmail,
+        revisionIndex,
+      });
 
       const insertedVersion = await client.query<DbPromptVersionInsertRow>(
         `
@@ -1019,10 +1041,13 @@ async function createPromptSubmissionInDb(
         candidateVersion: {
           versionNo: candidateVersionNo,
           sourceType: "submission",
+          candidateNo,
         },
         submission: {
           id: submissionId,
           status: submissionStatus,
+          submitter: input.userEmail,
+          revisionIndex,
         },
         currentVersion: {
           versionNo: baseVersionNo,
@@ -1193,6 +1218,18 @@ function createPromptSubmissionInFixtures(
     return null;
   }
 
+  const revisionIndex =
+    fixtureSubmissions.filter(
+      (item) =>
+        item.promptSlug === slug &&
+        item.baseVersionNo === currentVersionNo &&
+        item.submitterEmail === input.userEmail,
+    ).length + 1;
+  const candidateNo = buildSubmissionCandidateNo({
+    baseVersionNo: currentVersionNo,
+    submitter: input.userEmail,
+    revisionIndex,
+  });
   const candidateVersionNo = nextVersionNo(latestVersionNo);
   versions.push({
     versionNo: candidateVersionNo,
@@ -1236,10 +1273,13 @@ function createPromptSubmissionInFixtures(
     candidateVersion: {
       versionNo: candidateVersionNo,
       sourceType: "submission",
+      candidateNo,
     },
     submission: {
       id: fixtureSubmissionIdSeed,
       status: "pending",
+      submitter: input.userEmail,
+      revisionIndex,
     },
     currentVersion: {
       versionNo: currentVersionNo,

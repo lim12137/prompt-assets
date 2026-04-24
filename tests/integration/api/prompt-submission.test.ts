@@ -25,9 +25,13 @@ type SubmissionResponse = {
   candidateVersion: {
     versionNo: string;
     sourceType: string;
+    candidateNo: string;
   };
   submission: {
+    id: number;
     status: "pending" | "approved" | "rejected";
+    submitter: string;
+    revisionIndex: number;
   };
   currentVersion: {
     versionNo: string;
@@ -85,7 +89,14 @@ test("POST /api/prompts/[slug]/submissions 创建 pending submission 且不切�
   assert.equal(payload.baseVersion.versionNo, before.currentVersion.versionNo);
   assert.equal(payload.candidateVersion.versionNo, expectedCandidateVersionNo);
   assert.equal(payload.candidateVersion.sourceType, "submission");
+  assert.equal(
+    payload.candidateVersion.candidateNo,
+    `${before.currentVersion.versionNo}-cand-alice-1`,
+  );
+  assert.equal(typeof payload.submission.id, "number");
   assert.equal(payload.submission.status, "pending");
+  assert.equal(payload.submission.submitter, userEmail);
+  assert.equal(payload.submission.revisionIndex, 1);
   assert.equal(payload.currentVersion.versionNo, before.currentVersion.versionNo);
 
   const afterResponse = await getPromptDetail(new Request("http://localhost:3000"), {
