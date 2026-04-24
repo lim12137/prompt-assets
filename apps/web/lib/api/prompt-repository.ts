@@ -48,6 +48,8 @@ export type PendingSubmissionListItem = {
   promptSummary: string;
   baseVersionNo: string;
   candidateVersionNo: string;
+  candidateNo: string;
+  revisionIndex: number;
   submitterEmail: string;
   submittedAt: string;
 };
@@ -87,6 +89,14 @@ export type PromptSubmissionMutationResult = {
   currentVersion: {
     versionNo: string;
   };
+};
+
+type SubmissionCandidateMetadata = {
+  baseVersionNo: string;
+  candidateVersionNo: string;
+  submitter: string;
+  revisionIndex: number;
+  candidateNo: string;
 };
 
 export type PromptSubmissionReviewAction = "approve" | "reject";
@@ -206,6 +216,7 @@ type DbPendingSubmissionRow = {
   base_version_no: string;
   candidate_version_no: string;
   submitter_email: string | null;
+  revision_index: number | string;
   submitted_at: string | Date;
 };
 
@@ -334,6 +345,34 @@ function asNumber(value: number | string | null | undefined): number {
 
 function normalizeUserEmail(input: string): string {
   return input.trim().toLowerCase();
+}
+
+function submissionCandidateScopeKey(input: {
+  promptScope: string;
+  baseVersionNo: string;
+  submitterEmail: string;
+}): string {
+  return `${input.promptScope}::${input.baseVersionNo}::${normalizeUserEmail(input.submitterEmail)}`;
+}
+
+function deriveSubmissionCandidateMetadata(input: {
+  baseVersionNo: string;
+  candidateVersionNo: string;
+  submitterEmail: string;
+  revisionIndex: number;
+}): SubmissionCandidateMetadata {
+  const submitter = normalizeUserEmail(input.submitterEmail);
+  return {
+    baseVersionNo: input.baseVersionNo,
+    candidateVersionNo: input.candidateVersionNo,
+    submitter,
+    revisionIndex: input.revisionIndex,
+    candidateNo: buildSubmissionCandidateNo({
+      baseVersionNo: input.baseVersionNo,
+      submitter,
+      revisionIndex: input.revisionIndex,
+    }),
+  };
 }
 
 function fixtureActorId(email: string): number {
@@ -733,35 +772,64 @@ async function listPendingSubmissionsFromDb(): Promise<PendingSubmissionListItem
   return withPgClient(databaseUrl, async (client) => {
     const result = await client.query<DbPendingSubmissionRow>(
       `
+        WITH ranked_submissions AS (
+          SELECT
+            s.id,
+            s.status,
+            p.slug AS prompt_slug,
+            p.title AS prompt_title,
+            p.summary AS prompt_summary,
+            base_v.version_no AS base_version_no,
+            candidate_v.version_no AS candidate_version_no,
+            u.email AS submitter_email,
+            candidate_v.submitted_at AS submitted_at,
+            ROW_NUMBER() OVER (
+              PARTITION BY s.prompt_id, s.base_version_id, s.submitter_id
+              ORDER BY s.created_at ASC, s.id ASC
+            )::text AS revision_index
+          FROM submissions s
+          INNER JOIN prompts p ON p.id = s.prompt_id
+          INNER JOIN prompt_versions base_v ON base_v.id = s.base_version_id
+          INNER JOIN prompt_versions candidate_v ON candidate_v.id = s.candidate_version_id
+          LEFT JOIN users u ON u.id = s.submitter_id
+        )
         SELECT
-          s.id,
-          p.slug AS prompt_slug,
-          p.title AS prompt_title,
-          p.summary AS prompt_summary,
-          base_v.version_no AS base_version_no,
-          candidate_v.version_no AS candidate_version_no,
-          u.email AS submitter_email,
-          candidate_v.submitted_at AS submitted_at
-        FROM submissions s
-        INNER JOIN prompts p ON p.id = s.prompt_id
-        INNER JOIN prompt_versions base_v ON base_v.id = s.base_version_id
-        INNER JOIN prompt_versions candidate_v ON candidate_v.id = s.candidate_version_id
-        LEFT JOIN users u ON u.id = s.submitter_id
-        WHERE s.status = 'pending'
-        ORDER BY candidate_v.submitted_at ASC, s.id ASC;
+          id,
+          prompt_slug,
+          prompt_title,
+          prompt_summary,
+          base_version_no,
+          candidate_version_no,
+          submitter_email,
+          revision_index,
+          submitted_at
+        FROM ranked_submissions
+        WHERE status = 'pending'
+        ORDER BY submitted_at ASC, id ASC;
       `,
     );
 
-    return result.rows.map((row) => ({
-      id: asNumber(row.id),
-      promptSlug: row.prompt_slug,
-      promptTitle: row.prompt_title,
-      promptSummary: row.prompt_summary,
-      baseVersionNo: row.base_version_no,
-      candidateVersionNo: row.candidate_version_no,
-      submitterEmail: row.submitter_email ?? "",
-      submittedAt: new Date(row.submitted_at).toISOString(),
-    }));
+    return result.rows.map((row) => {
+      const metadata = deriveSubmissionCandidateMetadata({
+        baseVersionNo: row.base_version_no,
+        candidateVersionNo: row.candidate_version_no,
+        submitterEmail: row.submitter_email ?? "",
+        revisionIndex: asNumber(row.revision_index),
+      });
+
+      return {
+        id: asNumber(row.id),
+        promptSlug: row.prompt_slug,
+        promptTitle: row.prompt_title,
+        promptSummary: row.prompt_summary,
+        baseVersionNo: metadata.baseVersionNo,
+        candidateVersionNo: metadata.candidateVersionNo,
+        candidateNo: metadata.candidateNo,
+        revisionIndex: metadata.revisionIndex,
+        submitterEmail: metadata.submitter,
+        submittedAt: new Date(row.submitted_at).toISOString(),
+      };
+    });
   });
 }
 
@@ -991,9 +1059,10 @@ async function createPromptSubmissionInDb(
         [promptId, baseVersionId, userId],
       );
       const revisionIndex = asNumber(revisionCountResult.rows[0]?.count) + 1;
-      const candidateNo = buildSubmissionCandidateNo({
+      const metadata = deriveSubmissionCandidateMetadata({
         baseVersionNo,
-        submitter: input.userEmail,
+        candidateVersionNo,
+        submitterEmail: input.userEmail,
         revisionIndex,
       });
 
@@ -1039,15 +1108,15 @@ async function createPromptSubmissionInDb(
           versionNo: baseVersionNo,
         },
         candidateVersion: {
-          versionNo: candidateVersionNo,
+          versionNo: metadata.candidateVersionNo,
           sourceType: "submission",
-          candidateNo,
+          candidateNo: metadata.candidateNo,
         },
         submission: {
           id: submissionId,
           status: submissionStatus,
-          submitter: input.userEmail,
-          revisionIndex,
+          submitter: metadata.submitter,
+          revisionIndex: metadata.revisionIndex,
         },
         currentVersion: {
           versionNo: baseVersionNo,
@@ -1219,18 +1288,26 @@ function createPromptSubmissionInFixtures(
   }
 
   const revisionIndex =
-    fixtureSubmissions.filter(
-      (item) =>
-        item.promptSlug === slug &&
-        item.baseVersionNo === currentVersionNo &&
-        item.submitterEmail === input.userEmail,
-    ).length + 1;
-  const candidateNo = buildSubmissionCandidateNo({
+    fixtureSubmissions.filter((item) => {
+      const leftKey = submissionCandidateScopeKey({
+        promptScope: item.promptSlug,
+        baseVersionNo: item.baseVersionNo,
+        submitterEmail: item.submitterEmail,
+      });
+      const rightKey = submissionCandidateScopeKey({
+        promptScope: slug,
+        baseVersionNo: currentVersionNo,
+        submitterEmail: input.userEmail,
+      });
+      return leftKey === rightKey;
+    }).length + 1;
+  const candidateVersionNo = nextVersionNo(latestVersionNo);
+  const resolvedMetadata = deriveSubmissionCandidateMetadata({
     baseVersionNo: currentVersionNo,
-    submitter: input.userEmail,
+    candidateVersionNo,
+    submitterEmail: input.userEmail,
     revisionIndex,
   });
-  const candidateVersionNo = nextVersionNo(latestVersionNo);
   versions.push({
     versionNo: candidateVersionNo,
     content: input.content,
@@ -1271,15 +1348,15 @@ function createPromptSubmissionInFixtures(
       versionNo: currentVersionNo,
     },
     candidateVersion: {
-      versionNo: candidateVersionNo,
+      versionNo: resolvedMetadata.candidateVersionNo,
       sourceType: "submission",
-      candidateNo,
+      candidateNo: resolvedMetadata.candidateNo,
     },
     submission: {
       id: fixtureSubmissionIdSeed,
       status: "pending",
-      submitter: input.userEmail,
-      revisionIndex,
+      submitter: resolvedMetadata.submitter,
+      revisionIndex: resolvedMetadata.revisionIndex,
     },
     currentVersion: {
       versionNo: currentVersionNo,
@@ -1288,19 +1365,42 @@ function createPromptSubmissionInFixtures(
 }
 
 function listPendingSubmissionsFromFixtures(): PendingSubmissionListItem[] {
+  const revisionBySubmissionId = new Map<number, number>();
+  const revisionCounter = new Map<string, number>();
+
+  for (const submission of [...fixtureSubmissions].sort((left, right) => left.id - right.id)) {
+    const scopeKey = submissionCandidateScopeKey({
+      promptScope: submission.promptSlug,
+      baseVersionNo: submission.baseVersionNo,
+      submitterEmail: submission.submitterEmail,
+    });
+    const nextRevision = (revisionCounter.get(scopeKey) ?? 0) + 1;
+    revisionCounter.set(scopeKey, nextRevision);
+    revisionBySubmissionId.set(submission.id, nextRevision);
+  }
+
   return fixtureSubmissions
     .filter((item) => item.status === "pending")
     .map((item, index) => {
       const prompt = promptCatalog.find((entry) => entry.slug === item.promptSlug);
+      const revisionIndex = revisionBySubmissionId.get(item.id) ?? 1;
+      const metadata = deriveSubmissionCandidateMetadata({
+        baseVersionNo: item.baseVersionNo,
+        candidateVersionNo: item.candidateVersionNo,
+        submitterEmail: item.submitterEmail,
+        revisionIndex,
+      });
 
       return {
         id: item.id,
         promptSlug: item.promptSlug,
         promptTitle: prompt?.title ?? item.promptSlug,
         promptSummary: prompt?.summary ?? "",
-        baseVersionNo: item.baseVersionNo,
-        candidateVersionNo: item.candidateVersionNo,
-        submitterEmail: item.submitterEmail,
+        baseVersionNo: metadata.baseVersionNo,
+        candidateVersionNo: metadata.candidateVersionNo,
+        candidateNo: metadata.candidateNo,
+        revisionIndex: metadata.revisionIndex,
+        submitterEmail: metadata.submitter,
         submittedAt: buildFixtureTimestamp(index),
       };
     });

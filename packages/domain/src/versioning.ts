@@ -13,12 +13,25 @@ function normalizeSubmitterKey(submitter: string): string {
   const source = normalized.includes("@")
     ? normalized.split("@")[0] ?? ""
     : normalized;
+  const canonicalSource = source.normalize("NFKC");
+  const baseKey = canonicalSource
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
 
-  const key = source.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  if (!key) {
-    throw new Error("Invalid submitter for candidate no");
+  const fallbackKey = baseKey.length > 0 ? baseKey : "user";
+  if (fallbackKey === canonicalSource) {
+    return fallbackKey;
   }
-  return key;
+
+  let hash = 2166136261;
+  const hashInput = canonicalSource.length > 0 ? canonicalSource : normalized;
+  for (const char of hashInput) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  const hashSuffix = (hash >>> 0).toString(36).slice(0, 6);
+  return `${fallbackKey}-${hashSuffix}`;
 }
 
 export function buildSubmissionCandidateNo(
