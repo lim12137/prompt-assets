@@ -15,6 +15,7 @@ export type PromptDetailVersionDto = {
   sourceType: string;
   status: PromptVersionStatus;
   submittedAt: string;
+  submittedBy?: string;
   content?: string;
 };
 
@@ -52,6 +53,7 @@ export type PromptVersionRaw = {
   sourceType: string;
   status: PromptVersionStatus;
   submittedAt: string | Date;
+  submittedBy?: string;
   content: string;
 };
 
@@ -101,6 +103,7 @@ export function mapPromptDetailVersion(
     sourceType: raw.sourceType,
     status: raw.status,
     submittedAt: toIsoString(raw.submittedAt),
+    submittedBy: raw.submittedBy,
   };
 
   if (raw.status !== "rejected") {

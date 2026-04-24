@@ -1,5 +1,6 @@
 import { createElement } from "react";
 import { PromptActions } from "./_prompt-actions.js";
+import { CopyCardButton } from "./_copy-card-button.js";
 
 /**
  * @typedef {"approved" | "pending" | "rejected"} PromptVersionStatus
@@ -10,6 +11,7 @@ import { PromptActions } from "./_prompt-actions.js";
  * @property {string} versionNo
  * @property {string} sourceType
  * @property {string} submittedAt
+ * @property {string | undefined} [submittedBy]
  * @property {PromptVersionStatus} status
  * @property {string | undefined} [content]
  */
@@ -32,6 +34,12 @@ function toVersionNumber(versionNo) {
   return Number.isFinite(numeric) ? numeric : -1;
 }
 
+function toVersionTimestamp(value) {
+  const parsed = new Date(value ?? "");
+  const time = parsed.getTime();
+  return Number.isFinite(time) ? time : -1;
+}
+
 /**
  * @param {PromptDetailVersionView[]} versions
  */
@@ -46,15 +54,46 @@ export function sortVersionsDesc(versions) {
 }
 
 /**
+ * @param {PromptDetailVersionView[]} versions
+ */
+function pickLatestCandidateByEmployee(versions) {
+  const candidates = [...(versions ?? [])]
+    .filter(
+      (item) =>
+        item.sourceType === "submission" &&
+        item.status === "pending" &&
+        typeof item.submittedBy === "string" &&
+        item.submittedBy.length > 0,
+    )
+    .sort((left, right) => {
+      const byTime = toVersionTimestamp(right.submittedAt) - toVersionTimestamp(left.submittedAt);
+      if (byTime !== 0) {
+        return byTime;
+      }
+      return toVersionNumber(right.versionNo) - toVersionNumber(left.versionNo);
+    });
+
+  const latestByEmployee = new Map();
+  for (const candidate of candidates) {
+    const key = String(candidate.submittedBy);
+    if (!latestByEmployee.has(key)) {
+      latestByEmployee.set(key, candidate);
+    }
+  }
+  return [...latestByEmployee.values()];
+}
+
+/**
  * @param {{ detail: PromptDetailView }} props
  */
 export function PromptDetailContent({ detail }) {
   const versions = sortVersionsDesc(detail.versions);
+  const employeeCandidateCards = pickLatestCandidateByEmployee(versions);
 
   return createElement(
     "main",
     { className: "prompt-detail-page" },
-    createElement("h1", { className: "pm-page-title" }, detail.title),
+    createElement("h1", { className: "pm-page-title" }, `提示词详情：${detail.title}`),
     createElement("p", null, `分类：${detail.category.name}`),
     createElement("p", null, detail.summary),
     createElement(PromptActions, {
@@ -64,9 +103,38 @@ export function PromptDetailContent({ detail }) {
     }),
     createElement(
       "section",
-      { "aria-label": "当前版本", className: "prompt-detail-panel" },
-      createElement("h2", null, `当前版本 ${detail.currentVersion.versionNo}`),
+      { "aria-label": "当前版本", className: "prompt-detail-panel", "data-testid": "official-card" },
+      createElement("h2", null, "官方推荐卡"),
+      createElement("p", null, `版本：${detail.currentVersion.versionNo}`),
       createElement("pre", null, detail.currentVersion.content),
+      createElement(CopyCardButton, { content: detail.currentVersion.content }),
+    ),
+    createElement(
+      "section",
+      { "aria-label": "员工候选版本", className: "prompt-detail-panel" },
+      createElement("h2", null, "员工候选卡"),
+      employeeCandidateCards.length === 0
+        ? createElement("p", null, "暂无员工候选卡")
+        : createElement(
+            "div",
+            { style: { display: "grid", gap: "10px" } },
+            ...employeeCandidateCards.map((card) =>
+              createElement(
+                "article",
+                {
+                  key: `${card.submittedBy}-${card.versionNo}`,
+                  className: "pm-card",
+                  "data-testid": "employee-candidate-card",
+                  style: { display: "grid", gap: "8px" },
+                },
+                createElement("h3", { style: { margin: 0 } }, `${card.submittedBy} 的候选卡`),
+                createElement("p", { style: { margin: 0 } }, `版本：${card.versionNo}`),
+                createElement("p", { style: { margin: 0 } }, `状态：${card.status}`),
+                createElement("pre", null, card.content ?? ""),
+                createElement(CopyCardButton, { content: card.content ?? "" }),
+              ),
+            ),
+          ),
     ),
     createElement(
       "section",

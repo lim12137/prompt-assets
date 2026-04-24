@@ -20,12 +20,39 @@ async function mutateLike(slug, liked) {
   return response.json();
 }
 
+async function submitCandidate(slug, content) {
+  const response = await fetch(`/api/prompts/${encodeURIComponent(slug)}/submissions`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-user-email": ACTOR_EMAIL,
+    },
+    body: JSON.stringify({
+      content,
+      changeNote: "员工候选迭代提交",
+    }),
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      typeof payload.error === "string" && payload.error.length > 0
+        ? payload.error
+        : "候选提交失败",
+    );
+  }
+  return payload;
+}
+
 export function PromptActions({ slug, initialLikesCount, currentVersionContent }) {
   const [likesCount, setLikesCount] = useState(initialLikesCount ?? 0);
   const [liked, setLiked] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [copyStatusMessage, setCopyStatusMessage] = useState("");
   const [copyErrorMessage, setCopyErrorMessage] = useState("");
+  const [candidateContent, setCandidateContent] = useState("");
+  const [candidateStatusMessage, setCandidateStatusMessage] = useState("");
+  const [candidateErrorMessage, setCandidateErrorMessage] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const onToggleLike = () => {
@@ -67,9 +94,38 @@ export function PromptActions({ slug, initialLikesCount, currentVersionContent }
       });
   };
 
+  const onSubmitCandidate = () => {
+    startTransition(() => {
+      setCandidateStatusMessage("");
+      setCandidateErrorMessage("");
+
+      const content = candidateContent.trim();
+      if (!content) {
+        setCandidateErrorMessage("候选内容不能为空");
+        return;
+      }
+
+      setCandidateStatusMessage("候选提交中...");
+      void submitCandidate(slug, content)
+        .then((payload) => {
+          const candidateNo = payload?.candidateVersion?.candidateNo;
+          setCandidateStatusMessage(
+            typeof candidateNo === "string" && candidateNo.length > 0
+              ? `提交成功：${candidateNo}`
+              : "提交成功",
+          );
+          setCandidateContent("");
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : "候选提交失败";
+          setCandidateErrorMessage(`提交失败：${message}`);
+        });
+    });
+  };
+
   return createElement(
     "section",
-    { "aria-label": "互动操作", style: { display: "grid", gap: "6px" } },
+    { "aria-label": "互动操作", style: { display: "grid", gap: "10px" } },
     createElement(
       "div",
       { style: { display: "flex", gap: "8px", alignItems: "center" } },
@@ -94,6 +150,48 @@ export function PromptActions({ slug, initialLikesCount, currentVersionContent }
         "复制当前版本",
       ),
     ),
+    createElement(
+      "section",
+      {
+        "aria-label": "候选迭代提交",
+        style: {
+          display: "grid",
+          gap: "8px",
+          padding: "12px",
+          border: "1px solid var(--pm-border)",
+          borderRadius: "10px",
+          background: "var(--pm-surface-soft)",
+        },
+      },
+      createElement("h2", { style: { margin: 0, fontSize: "16px" } }, "提交候选迭代"),
+      createElement(
+        "label",
+        { style: { display: "grid", gap: "6px" } },
+        createElement("span", null, "候选内容"),
+        createElement("textarea", {
+          value: candidateContent,
+          rows: 6,
+          onChange: (event) => setCandidateContent(event.target.value),
+        }),
+      ),
+      createElement(
+        "div",
+        { style: { display: "flex", alignItems: "center", gap: "8px" } },
+        createElement(
+          "button",
+          {
+            type: "button",
+            className: "pm-primary-button",
+            onClick: onSubmitCandidate,
+            disabled: isPending,
+          },
+          isPending ? "提交中..." : "提交候选迭代",
+        ),
+      ),
+    ),
+    candidateStatusMessage
+      ? createElement("p", { role: "status", style: { color: "#0f7b0f", margin: 0 } }, candidateStatusMessage)
+      : null,
     copyStatusMessage
       ? createElement("p", { role: "status", style: { color: "#0f7b0f", margin: 0 } }, copyStatusMessage)
       : null,
@@ -102,6 +200,9 @@ export function PromptActions({ slug, initialLikesCount, currentVersionContent }
       : null,
     copyErrorMessage
       ? createElement("p", { role: "alert", style: { color: "#d1242f", margin: 0 } }, copyErrorMessage)
+      : null,
+    candidateErrorMessage
+      ? createElement("p", { role: "alert", style: { color: "#d1242f", margin: 0 } }, candidateErrorMessage)
       : null,
   );
 }

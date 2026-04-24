@@ -251,6 +251,7 @@ type DbPromptDetailVersionRow = {
   source_type: string;
   submitted_at: string | Date;
   submission_status: PromptVersionStatus | null;
+  submitted_by: string | null;
 };
 
 type DbPromptLookupRow = {
@@ -776,6 +777,7 @@ function getPromptDetailFromFixtures(slug: string): PromptDetailDto | null {
         currentVersionNo,
       ),
       submittedAt: buildFixtureTimestamp(index),
+      submittedBy: version.submittedByEmail,
       content: version.content,
     }));
 
@@ -839,9 +841,12 @@ async function getPromptDetailFromDb(slug: string): Promise<PromptDetailDto | nu
           v.content,
           v.source_type,
           v.submitted_at,
-          s.status AS submission_status
+          s.status AS submission_status,
+          COALESCE(submitter.email, v_submitter.email) AS submitted_by
         FROM prompt_versions v
         LEFT JOIN submissions s ON s.candidate_version_id = v.id
+        LEFT JOIN users submitter ON submitter.id = s.submitter_id
+        LEFT JOIN users v_submitter ON v_submitter.id = v.submitted_by
         WHERE v.prompt_id = $1
         ORDER BY v.created_at DESC, v.id DESC;
       `,
@@ -866,6 +871,7 @@ async function getPromptDetailFromDb(slug: string): Promise<PromptDetailDto | nu
         sourceType: row.source_type,
         status,
         submittedAt: row.submitted_at,
+        submittedBy: row.submitted_by ?? undefined,
         content: row.content,
       };
     });
