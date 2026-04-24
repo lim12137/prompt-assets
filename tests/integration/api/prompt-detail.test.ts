@@ -8,6 +8,10 @@ type PromptDetail = {
   title: string;
   summary: string;
   likesCount: number;
+  categories: Array<{
+    slug: string;
+    name: string;
+  }>;
   category: {
     slug: string;
     name: string;
@@ -35,8 +39,15 @@ test("GET /api/prompts/[slug] 返回最小详情结构", async () => {
   assert.equal(payload.slug, "js-code-reviewer");
   assert.equal(typeof payload.title, "string");
   assert.equal(typeof payload.summary, "string");
+  assert.ok(Array.isArray(payload.categories), "应返回 categories[] 兼容字段");
+  assert.ok(payload.categories.length >= 1, "categories[] 至少包含 1 条");
   assert.equal(typeof payload.category.slug, "string");
   assert.equal(typeof payload.category.name, "string");
+  assert.equal(
+    payload.categories.some((category) => category.slug === payload.category.slug),
+    true,
+    "兼容字段 category 应映射到 categories[]",
+  );
   assert.equal(typeof payload.currentVersion.versionNo, "string");
   assert.equal(typeof payload.currentVersion.content, "string");
   assert.ok(Array.isArray(payload.versions), "versions 应为数组");

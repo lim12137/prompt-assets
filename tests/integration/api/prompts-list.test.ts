@@ -10,6 +10,11 @@ type PromptListItem = {
   likesCount: number;
   updatedAt: string;
   categorySlug: string;
+  categories: Array<{
+    slug: string;
+    name: string;
+  }>;
+  categorySlugs: string[];
 };
 
 test("GET /api/prompts 默认返回最小卡片数组", async () => {
@@ -27,6 +32,14 @@ test("GET /api/prompts 默认返回最小卡片数组", async () => {
   assert.equal(typeof first.summary, "string");
   assert.equal(typeof first.likesCount, "number");
   assert.equal(typeof first.updatedAt, "string");
+  assert.ok(Array.isArray(first.categories), "应返回 categories[] 兼容字段");
+  assert.ok(Array.isArray(first.categorySlugs), "应返回 categorySlugs[] 兼容字段");
+  assert.ok(first.categories.length >= 1, "categories[] 至少应有 1 项");
+  assert.equal(
+    first.categorySlugs.includes(first.categorySlug),
+    true,
+    "categorySlugs[] 应包含兼容字段 categorySlug",
+  );
 });
 
 test("GET /api/prompts 支持按分类过滤", async () => {

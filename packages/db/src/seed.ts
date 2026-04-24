@@ -17,6 +17,16 @@ type SeedUser = {
   role: "user" | "admin";
 };
 
+const SYSTEM_UNCATEGORIZED = {
+  name: "待分类",
+  slug: "uncategorized",
+  sortOrder: 0,
+  status: "active" as const,
+  isSystem: true,
+  isSelectable: false,
+  isCollapsedByDefault: true,
+};
+
 export type SeedSummary = {
   categories: number;
   prompts: number;
@@ -62,7 +72,7 @@ function buildSeedPlan(): SeedSummary {
   ).length;
 
   return {
-    categories: baseCategories.length,
+    categories: baseCategories.length + 1,
     prompts: promptCatalog.length,
     promptVersions,
     submissions: pendingSubmissionFixture.length,
@@ -78,6 +88,7 @@ async function resetSeedTables(client: SqlClient): Promise<void> {
     TRUNCATE TABLE
       "submissions",
       "prompt_likes",
+      "prompt_categories",
       "prompt_versions",
       "prompts",
       "categories",
@@ -114,14 +125,15 @@ async function upsertCategories(client: SqlClient): Promise<Map<string, number>>
   for (const category of baseCategories) {
     const result = await client.query<{ id: number }>(
       `
-        INSERT INTO "categories" ("name", "slug", "sort_order", "status")
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO "categories" ("name", "slug", "sort_order", "status", "updated_at")
+        VALUES ($1, $2, $3, $4, NOW())
         ON CONFLICT ("slug")
         DO UPDATE
         SET
           "name" = EXCLUDED."name",
           "sort_order" = EXCLUDED."sort_order",
-          "status" = EXCLUDED."status"
+          "status" = EXCLUDED."status",
+          "updated_at" = NOW()
         RETURNING "id";
       `,
       [category.name, category.slug, category.sortOrder, category.status ?? "active"],
@@ -129,6 +141,43 @@ async function upsertCategories(client: SqlClient): Promise<Map<string, number>>
 
     categoryIds.set(category.slug, Number(result.rows[0]?.id));
   }
+
+  const uncategorizedResult = await client.query<{ id: number }>(
+    `
+      INSERT INTO "categories" (
+        "name",
+        "slug",
+        "sort_order",
+        "status",
+        "is_system",
+        "is_selectable",
+        "is_collapsed_by_default",
+        "updated_at"
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      ON CONFLICT ("slug")
+      DO UPDATE
+      SET
+        "name" = EXCLUDED."name",
+        "sort_order" = EXCLUDED."sort_order",
+        "status" = EXCLUDED."status",
+        "is_system" = EXCLUDED."is_system",
+        "is_selectable" = EXCLUDED."is_selectable",
+        "is_collapsed_by_default" = EXCLUDED."is_collapsed_by_default",
+        "updated_at" = NOW()
+      RETURNING "id";
+    `,
+    [
+      SYSTEM_UNCATEGORIZED.name,
+      SYSTEM_UNCATEGORIZED.slug,
+      SYSTEM_UNCATEGORIZED.sortOrder,
+      SYSTEM_UNCATEGORIZED.status,
+      SYSTEM_UNCATEGORIZED.isSystem,
+      SYSTEM_UNCATEGORIZED.isSelectable,
+      SYSTEM_UNCATEGORIZED.isCollapsedByDefault,
+    ],
+  );
+  categoryIds.set(SYSTEM_UNCATEGORIZED.slug, Number(uncategorizedResult.rows[0]?.id));
 
   return categoryIds;
 }
@@ -228,6 +277,51 @@ async function upsertPromptVersions(
   }
 
   return versionIds;
+}
+
+async function upsertPromptCategories(
+  client: SqlClient,
+  promptIds: Map<string, number>,
+  categoryIds: Map<string, number>,
+): Promise<void> {
+  for (const prompt of promptCatalog) {
+    const promptId = mustGet(promptIds, prompt.slug, `未找到 Prompt: ${prompt.slug}`);
+    const categoryId = mustGet(
+      categoryIds,
+      prompt.categorySlug,
+      `未找到分类: ${prompt.categorySlug}`,
+    );
+
+    await client.query(
+      `
+        INSERT INTO "prompt_categories" ("prompt_id", "category_id")
+        VALUES ($1, $2)
+        ON CONFLICT ("prompt_id", "category_id") DO NOTHING;
+      `,
+      [promptId, categoryId],
+    );
+  }
+
+  const uncategorizedId = mustGet(
+    categoryIds,
+    SYSTEM_UNCATEGORIZED.slug,
+    `未找到系统分类: ${SYSTEM_UNCATEGORIZED.slug}`,
+  );
+
+  await client.query(
+    `
+      INSERT INTO "prompt_categories" ("prompt_id", "category_id")
+      SELECT p.id, $1
+      FROM "prompts" p
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM "prompt_categories" pc
+        WHERE pc."prompt_id" = p.id
+      )
+      ON CONFLICT ("prompt_id", "category_id") DO NOTHING;
+    `,
+    [uncategorizedId],
+  );
 }
 
 async function updateCurrentVersions(
@@ -373,6 +467,7 @@ export async function seedDatabase(
       const userIds = await upsertUsers(client);
       const categoryIds = await upsertCategories(client);
       const promptIds = await upsertPrompts(client, categoryIds);
+      await upsertPromptCategories(client, promptIds, categoryIds);
       const versionIds = await upsertPromptVersions(client, promptIds, userIds);
 
       await updateCurrentVersions(client, promptIds, versionIds);

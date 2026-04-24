@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -16,10 +16,12 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const migrationSql = readFileSync(
-  path.resolve(__dirname, "../../../packages/db/migrations/0001_init.sql"),
-  "utf-8",
-);
+const migrationsDir = path.resolve(__dirname, "../../../packages/db/migrations");
+const migrationSql = readdirSync(migrationsDir)
+  .filter((fileName) => fileName.endsWith(".sql"))
+  .sort()
+  .map((fileName) => readFileSync(path.join(migrationsDir, fileName), "utf-8"))
+  .join("\n\n");
 
 async function hasUniqueConstraint(
   client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: { exists: boolean }[] }> },
@@ -30,16 +32,16 @@ async function hasUniqueConstraint(
     `
       SELECT EXISTS (
         SELECT 1
-        FROM pg_constraint c
-        JOIN pg_class t ON t.oid = c.conrelid
+        FROM pg_index i
+        JOIN pg_class t ON t.oid = i.indrelid
         JOIN pg_namespace n ON n.oid = t.relnamespace
-        JOIN unnest(c.conkey) WITH ORDINALITY AS ck(attnum, ordinality) ON TRUE
-        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ck.attnum
-        WHERE c.contype = 'u'
+        JOIN unnest(i.indkey) WITH ORDINALITY AS ik(attnum, ordinality) ON TRUE
+        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ik.attnum
+        WHERE i.indisunique = TRUE
           AND n.nspname = 'public'
           AND t.relname = $1
-        GROUP BY c.oid
-        HAVING array_agg(a.attname ORDER BY ck.ordinality) = $2::text[]
+        GROUP BY i.indexrelid
+        HAVING array_agg(a.attname::text ORDER BY ik.ordinality) = $2::text[]
       ) AS exists;
     `,
     [table, columns],
@@ -64,7 +66,7 @@ test("静态断言: 关键唯一约束已在迁移中定义", () => {
     assert.match(
       migrationSql,
       new RegExp(
-        `CREATE UNIQUE INDEX "[^"]+" ON "${unique.table}" USING btree \\(${columnsSql}\\)`,
+        `CREATE UNIQUE INDEX "[^"]+"\\s+ON "${unique.table}"\\s+USING btree\\s*\\(${columnsSql}\\)`,
         "i",
       ),
       `迁移缺少唯一约束: ${unique.table}(${unique.columns.join(", ")})`,
@@ -93,6 +95,44 @@ test("静态断言: submission 仅承载审核关系，正文仅写在版本表"
     /"content"\s+text/i.test(submissionsBlock),
     false,
     "submissions 不应直接承载正文 content",
+  );
+});
+
+test("静态断言: 多分类关系表与系统分类字段已在迁移中定义", () => {
+  assert.match(
+    migrationSql,
+    /CREATE TABLE "prompt_categories"[\s\S]*"prompt_id"\s+integer\s+NOT NULL[\s\S]*"category_id"\s+integer\s+NOT NULL/i,
+    "迁移缺少 prompt_categories 关系表",
+  );
+
+  assert.match(
+    migrationSql,
+    /CREATE UNIQUE INDEX "prompt_categories_prompt_id_category_id_key"\s+ON "prompt_categories"\s+USING btree\s*\("prompt_id", "category_id"\)/i,
+    "迁移缺少 prompt_categories(prompt_id, category_id) 唯一约束",
+  );
+
+  assert.match(
+    migrationSql,
+    /CREATE INDEX "prompt_categories_category_id_prompt_id_idx"\s+ON "prompt_categories"\s+USING btree\s*\("category_id", "prompt_id"\)/i,
+    "迁移缺少 prompt_categories(category_id, prompt_id) 索引",
+  );
+
+  assert.match(
+    migrationSql,
+    /ALTER TABLE "categories"[\s\S]*ADD COLUMN[\s\S]*"is_system"\s+boolean[\s\S]*ADD COLUMN[\s\S]*"is_selectable"\s+boolean[\s\S]*ADD COLUMN[\s\S]*"is_collapsed_by_default"\s+boolean/i,
+    "迁移缺少 categories 系统字段",
+  );
+
+  assert.match(
+    migrationSql,
+    /INSERT INTO "categories"[\s\S]*"slug"[\s\S]*'uncategorized'[\s\S]*ON CONFLICT \("slug"\)/i,
+    "迁移缺少 uncategorized 基线数据",
+  );
+
+  assert.match(
+    migrationSql,
+    /INSERT INTO "prompt_categories"[\s\S]*SELECT[\s\S]*FROM "prompts"/i,
+    "迁移缺少 prompts.category_id 到 prompt_categories 的历史回填",
   );
 });
 
@@ -137,5 +177,49 @@ test("真实DB断言: 关键唯一约束存在", async (t) => {
         `缺少唯一约束: ${unique.table}(${unique.columns.join(", ")})`,
       );
     }
+  });
+});
+
+test("真实DB断言: 分类系统字段与多分类关系表可用", async (t) => {
+  if (!(await isPgReachable(testDatabaseUrl))) {
+    t.skip(`测试库不可达，跳过真实 DB 断言: ${testDatabaseUrl}`);
+    return;
+  }
+
+  await withPgClient(testDatabaseUrl, async (client) => {
+    const tableResult = await client.query<{ exists: boolean }>(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM pg_tables
+          WHERE schemaname = 'public' AND tablename = 'prompt_categories'
+        ) AS exists;
+      `,
+    );
+    assert.equal(tableResult.rows[0]?.exists, true, "缺少表: prompt_categories");
+
+    const columnResult = await client.query<{ column_name: string }>(
+      `
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'categories'
+          AND column_name = ANY($1::text[])
+        ORDER BY column_name ASC;
+      `,
+      [["is_collapsed_by_default", "is_selectable", "is_system"]],
+    );
+    const columns = new Set(columnResult.rows.map((row) => row.column_name));
+    assert.equal(columns.has("is_system"), true, "缺少字段: categories.is_system");
+    assert.equal(
+      columns.has("is_selectable"),
+      true,
+      "缺少字段: categories.is_selectable",
+    );
+    assert.equal(
+      columns.has("is_collapsed_by_default"),
+      true,
+      "缺少字段: categories.is_collapsed_by_default",
+    );
   });
 });

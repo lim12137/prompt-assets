@@ -1,5 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
+  index,
   integer,
   jsonb,
   pgEnum,
@@ -14,6 +16,7 @@ export const coreTableNames = [
   "users",
   "categories",
   "prompts",
+  "prompt_categories",
   "prompt_versions",
   "submissions",
   "prompt_likes",
@@ -22,6 +25,7 @@ export const coreTableNames = [
 
 export const coreUniqueConstraints = [
   { table: "prompts", columns: ["slug"] },
+  { table: "prompt_categories", columns: ["prompt_id", "category_id"] },
   { table: "prompt_versions", columns: ["prompt_id", "version_no"] },
   { table: "prompt_likes", columns: ["prompt_id", "user_id"] },
 ] as const;
@@ -60,7 +64,15 @@ export const categories = pgTable(
     slug: text("slug").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
     status: categoryStatusEnum("status").notNull().default("active"),
+    isSystem: boolean("is_system").notNull().default(false),
+    isSelectable: boolean("is_selectable").notNull().default(true),
+    isCollapsedByDefault: boolean("is_collapsed_by_default")
+      .notNull()
+      .default(false),
     createdAt: timestamp("created_at", { withTimezone: false })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: false })
       .notNull()
       .defaultNow(),
   },
@@ -88,6 +100,32 @@ export const prompts = pgTable(
       .defaultNow(),
   },
   (table) => [uniqueIndex("prompts_slug_key").on(table.slug)],
+);
+
+export const promptCategories = pgTable(
+  "prompt_categories",
+  {
+    id: serial("id").primaryKey(),
+    promptId: integer("prompt_id")
+      .notNull()
+      .references(() => prompts.id, { onDelete: "cascade" }),
+    categoryId: integer("category_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: false })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("prompt_categories_prompt_id_category_id_key").on(
+      table.promptId,
+      table.categoryId,
+    ),
+    index("prompt_categories_category_id_prompt_id_idx").on(
+      table.categoryId,
+      table.promptId,
+    ),
+  ],
 );
 
 export const promptVersions = pgTable(

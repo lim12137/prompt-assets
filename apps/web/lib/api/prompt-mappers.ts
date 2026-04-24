@@ -1,3 +1,8 @@
+export type PromptCategoryDto = {
+  slug: string;
+  name: string;
+};
+
 export type PromptListItemDto = {
   slug: string;
   title: string;
@@ -6,6 +11,8 @@ export type PromptListItemDto = {
   updatedAt: string;
   categorySlug: string;
   categoryName: string;
+  categories: PromptCategoryDto[];
+  categorySlugs: string[];
 };
 
 export type PromptVersionStatus = "approved" | "pending" | "rejected";
@@ -25,6 +32,7 @@ export type PromptDetailDto = {
   summary: string;
   likesCount: number;
   updatedAt: string;
+  categories: PromptCategoryDto[];
   category: {
     slug: string;
     name: string;
@@ -46,6 +54,8 @@ export type PromptListRaw = {
   updatedAt: string | Date;
   categorySlug: string;
   categoryName: string;
+  categories?: PromptCategoryDto[];
+  categorySlugs?: string[];
 };
 
 export type PromptVersionRaw = {
@@ -65,6 +75,7 @@ export type PromptDetailRaw = {
   updatedAt: string | Date;
   categorySlug: string;
   categoryName: string;
+  categories?: PromptCategoryDto[];
   currentVersionNo: string;
   currentVersionSourceType: string;
   currentVersionSubmittedAt: string | Date;
@@ -84,6 +95,15 @@ export function toIsoString(input: string | Date): string {
 }
 
 export function mapPromptListItem(raw: PromptListRaw): PromptListItemDto {
+  const categories =
+    raw.categories && raw.categories.length > 0
+      ? raw.categories
+      : [{ slug: raw.categorySlug, name: raw.categoryName }];
+  const categorySlugs =
+    raw.categorySlugs && raw.categorySlugs.length > 0
+      ? raw.categorySlugs
+      : categories.map((item) => item.slug);
+
   return {
     slug: raw.slug,
     title: raw.title,
@@ -92,6 +112,8 @@ export function mapPromptListItem(raw: PromptListRaw): PromptListItemDto {
     updatedAt: toIsoString(raw.updatedAt),
     categorySlug: raw.categorySlug,
     categoryName: raw.categoryName,
+    categories,
+    categorySlugs,
   };
 }
 
@@ -114,15 +136,21 @@ export function mapPromptDetailVersion(
 }
 
 export function mapPromptDetail(raw: PromptDetailRaw): PromptDetailDto {
+  const categories =
+    raw.categories && raw.categories.length > 0
+      ? raw.categories
+      : [{ slug: raw.categorySlug, name: raw.categoryName }];
+
   return {
     slug: raw.slug,
     title: raw.title,
     summary: raw.summary,
     likesCount: raw.likesCount,
     updatedAt: toIsoString(raw.updatedAt),
+    categories,
     category: {
-      slug: raw.categorySlug,
-      name: raw.categoryName,
+      slug: categories[0]?.slug ?? raw.categorySlug,
+      name: categories[0]?.name ?? raw.categoryName,
     },
     currentVersion: {
       versionNo: raw.currentVersionNo,

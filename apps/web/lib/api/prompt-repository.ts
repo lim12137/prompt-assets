@@ -21,6 +21,7 @@ import { writeAuditLog } from "../audit/write-audit-log.ts";
 import {
   mapPromptDetail,
   mapPromptListItem,
+  type PromptCategoryDto,
   type PromptDetailDto,
   type PromptDetailRaw,
   type PromptListItemDto,
@@ -226,6 +227,7 @@ type DbPromptListRow = {
   updated_at: string | Date;
   category_slug: string;
   category_name: string;
+  categories_json: unknown;
 };
 
 type DbPromptDetailHeadRow = {
@@ -238,6 +240,7 @@ type DbPromptDetailHeadRow = {
   current_version_id: number | string | null;
   category_slug: string;
   category_name: string;
+  categories_json: unknown;
   current_version_no: string | null;
   current_source_type: string | null;
   current_submitted_at: string | Date | null;
@@ -347,6 +350,7 @@ const REQUIRED_TABLES = [
   "users",
   "categories",
   "prompts",
+  "prompt_categories",
   "prompt_versions",
   "submissions",
   "prompt_likes",
@@ -456,6 +460,46 @@ function asNumber(value: number | string | null | undefined): number {
     return Number(value);
   }
   return 0;
+}
+
+function normalizePromptCategories(
+  categoriesInput: unknown,
+  fallback: PromptCategoryDto,
+): {
+  categories: PromptCategoryDto[];
+  categorySlugs: string[];
+} {
+  const categories: PromptCategoryDto[] = [];
+
+  if (Array.isArray(categoriesInput)) {
+    for (const item of categoriesInput) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      const record = item as Record<string, unknown>;
+      const slug = typeof record.slug === "string" ? record.slug : "";
+      const name = typeof record.name === "string" ? record.name : "";
+      if (!slug || !name) {
+        continue;
+      }
+      categories.push({ slug, name });
+    }
+  }
+
+  if (categories.length === 0) {
+    categories.push(fallback);
+  }
+
+  const deduped = new Map<string, PromptCategoryDto>();
+  for (const category of categories) {
+    deduped.set(category.slug, category);
+  }
+  const stableCategories = [...deduped.values()];
+
+  return {
+    categories: stableCategories,
+    categorySlugs: stableCategories.map((item) => item.slug),
+  };
 }
 
 function normalizeUserEmail(input: string): string {
@@ -645,7 +689,25 @@ async function listPromptsFromDb(
 
   if (query.category) {
     params.push(query.category);
-    conditions.push(`c.slug = $${params.length}`);
+    conditions.push(`
+      (
+        EXISTS (
+          SELECT 1
+          FROM prompt_categories pc_filter
+          INNER JOIN categories c_filter ON c_filter.id = pc_filter.category_id
+          WHERE pc_filter.prompt_id = p.id
+            AND c_filter.slug = $${params.length}
+        )
+        OR (
+          NOT EXISTS (
+            SELECT 1
+            FROM prompt_categories pc_any
+            WHERE pc_any.prompt_id = p.id
+          )
+          AND c.slug = $${params.length}
+        )
+      )
+    `);
   }
 
   if (query.keyword) {
@@ -670,26 +732,45 @@ async function listPromptsFromDb(
           p.likes_count,
           p.updated_at,
           c.slug AS category_slug,
-          c.name AS category_name
+          c.name AS category_name,
+          relation_categories.categories_json
         FROM prompts p
         INNER JOIN categories c ON c.id = p.category_id
+        LEFT JOIN LATERAL (
+          SELECT json_agg(
+            json_build_object(
+              'slug', c_rel.slug,
+              'name', c_rel.name
+            )
+            ORDER BY c_rel.sort_order ASC, c_rel.id ASC
+          ) AS categories_json
+          FROM prompt_categories pc_rel
+          INNER JOIN categories c_rel ON c_rel.id = pc_rel.category_id
+          WHERE pc_rel.prompt_id = p.id
+        ) relation_categories ON TRUE
         WHERE ${conditions.join(" AND ")}
         ORDER BY ${orderBy};
       `,
       params,
     );
 
-    return result.rows.map((row) =>
-      mapPromptListItem({
+    return result.rows.map((row) => {
+      const normalizedCategories = normalizePromptCategories(row.categories_json, {
+        slug: row.category_slug,
+        name: row.category_name,
+      });
+      return mapPromptListItem({
         slug: row.slug,
         title: row.title,
         summary: row.summary,
         likesCount: asNumber(row.likes_count),
         updatedAt: row.updated_at,
-        categorySlug: row.category_slug,
-        categoryName: row.category_name,
-      }),
-    );
+        categorySlug: normalizedCategories.categories[0]?.slug ?? row.category_slug,
+        categoryName: normalizedCategories.categories[0]?.name ?? row.category_name,
+        categories: normalizedCategories.categories,
+        categorySlugs: normalizedCategories.categorySlugs,
+      });
+    });
   });
 }
 
@@ -847,12 +928,25 @@ async function getPromptDetailFromDb(slug: string): Promise<PromptDetailDto | nu
           p.current_version_id,
           c.slug AS category_slug,
           c.name AS category_name,
+          relation_categories.categories_json,
           cv.version_no AS current_version_no,
           cv.source_type AS current_source_type,
           cv.submitted_at AS current_submitted_at,
           cv.content AS current_content
         FROM prompts p
         INNER JOIN categories c ON c.id = p.category_id
+        LEFT JOIN LATERAL (
+          SELECT json_agg(
+            json_build_object(
+              'slug', c_rel.slug,
+              'name', c_rel.name
+            )
+            ORDER BY c_rel.sort_order ASC, c_rel.id ASC
+          ) AS categories_json
+          FROM prompt_categories pc_rel
+          INNER JOIN categories c_rel ON c_rel.id = pc_rel.category_id
+          WHERE pc_rel.prompt_id = p.id
+        ) relation_categories ON TRUE
         LEFT JOIN prompt_versions cv ON cv.id = p.current_version_id
         WHERE p.slug = $1 AND p.status = 'published'
         LIMIT 1;
@@ -917,6 +1011,10 @@ async function getPromptDetailFromDb(slug: string): Promise<PromptDetailDto | nu
       head.current_submitted_at ?? currentFallback?.submittedAt ?? new Date(0);
     const currentVersionContent =
       head.current_content ?? currentFallback?.content ?? "";
+    const normalizedCategories = normalizePromptCategories(head.categories_json, {
+      slug: head.category_slug,
+      name: head.category_name,
+    });
 
     return mapPromptDetail({
       slug: head.slug,
@@ -924,8 +1022,9 @@ async function getPromptDetailFromDb(slug: string): Promise<PromptDetailDto | nu
       summary: head.summary,
       likesCount: asNumber(head.likes_count),
       updatedAt: head.updated_at,
-      categorySlug: head.category_slug,
-      categoryName: head.category_name,
+      categorySlug: normalizedCategories.categories[0]?.slug ?? head.category_slug,
+      categoryName: normalizedCategories.categories[0]?.name ?? head.category_name,
+      categories: normalizedCategories.categories,
       currentVersionNo,
       currentVersionSourceType,
       currentVersionSubmittedAt,
