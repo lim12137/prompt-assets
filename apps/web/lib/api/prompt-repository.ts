@@ -40,6 +40,17 @@ type ListPromptsQuery = {
   sort?: string;
 };
 
+export type PendingSubmissionListItem = {
+  id: number;
+  promptSlug: string;
+  promptTitle: string;
+  promptSummary: string;
+  baseVersionNo: string;
+  candidateVersionNo: string;
+  submitterEmail: string;
+  submittedAt: string;
+};
+
 type PromptSort = "latest" | "popular" | "liked";
 
 export type PromptLikeMutationResult = {
@@ -181,6 +192,17 @@ type DbPromptSubmissionHeadRow = {
 
 type DbPromptVersionNoRow = {
   version_no: string;
+};
+
+type DbPendingSubmissionRow = {
+  id: number | string;
+  prompt_slug: string;
+  prompt_title: string;
+  prompt_summary: string;
+  base_version_no: string;
+  candidate_version_no: string;
+  submitter_email: string | null;
+  submitted_at: string | Date;
 };
 
 type DbPromptVersionInsertRow = {
@@ -699,6 +721,42 @@ async function getPromptDetailFromDb(slug: string): Promise<PromptDetailDto | nu
   });
 }
 
+async function listPendingSubmissionsFromDb(): Promise<PendingSubmissionListItem[]> {
+  return withPgClient(databaseUrl, async (client) => {
+    const result = await client.query<DbPendingSubmissionRow>(
+      `
+        SELECT
+          s.id,
+          p.slug AS prompt_slug,
+          p.title AS prompt_title,
+          p.summary AS prompt_summary,
+          base_v.version_no AS base_version_no,
+          candidate_v.version_no AS candidate_version_no,
+          u.email AS submitter_email,
+          candidate_v.submitted_at AS submitted_at
+        FROM submissions s
+        INNER JOIN prompts p ON p.id = s.prompt_id
+        INNER JOIN prompt_versions base_v ON base_v.id = s.base_version_id
+        INNER JOIN prompt_versions candidate_v ON candidate_v.id = s.candidate_version_id
+        LEFT JOIN users u ON u.id = s.submitter_id
+        WHERE s.status = 'pending'
+        ORDER BY candidate_v.submitted_at ASC, s.id ASC;
+      `,
+    );
+
+    return result.rows.map((row) => ({
+      id: asNumber(row.id),
+      promptSlug: row.prompt_slug,
+      promptTitle: row.prompt_title,
+      promptSummary: row.prompt_summary,
+      baseVersionNo: row.base_version_no,
+      candidateVersionNo: row.candidate_version_no,
+      submitterEmail: row.submitter_email ?? "",
+      submittedAt: new Date(row.submitted_at).toISOString(),
+    }));
+  });
+}
+
 async function findPublishedPromptId(
   client: SqlClient,
   slug: string,
@@ -1189,6 +1247,25 @@ function createPromptSubmissionInFixtures(
   };
 }
 
+function listPendingSubmissionsFromFixtures(): PendingSubmissionListItem[] {
+  return fixtureSubmissions
+    .filter((item) => item.status === "pending")
+    .map((item, index) => {
+      const prompt = promptCatalog.find((entry) => entry.slug === item.promptSlug);
+
+      return {
+        id: item.id,
+        promptSlug: item.promptSlug,
+        promptTitle: prompt?.title ?? item.promptSlug,
+        promptSummary: prompt?.summary ?? "",
+        baseVersionNo: item.baseVersionNo,
+        candidateVersionNo: item.candidateVersionNo,
+        submitterEmail: item.submitterEmail,
+        submittedAt: buildFixtureTimestamp(index),
+      };
+    });
+}
+
 function reviewPromptSubmissionInFixtures(
   submissionId: number,
   action: PromptSubmissionReviewAction,
@@ -1539,4 +1616,11 @@ export async function getPromptDetail(slug: string): Promise<PromptDetailDto | n
     return getPromptDetailFromDb(slug);
   }
   return getPromptDetailFromFixtures(slug);
+}
+
+export async function listPendingSubmissions(): Promise<PendingSubmissionListItem[]> {
+  if (await canReadFromDatabase()) {
+    return listPendingSubmissionsFromDb();
+  }
+  return listPendingSubmissionsFromFixtures();
 }

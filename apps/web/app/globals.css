@@ -44,6 +44,13 @@ body {
   box-shadow: var(--pm-shadow-hover);
 }
 
+.pm-primary-button:disabled,
+.pm-secondary-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+  box-shadow: none;
+}
+
 .pm-secondary-button {
   border: 1px solid var(--pm-border);
   border-radius: 8px;
@@ -58,6 +65,13 @@ body {
 .pm-secondary-button:hover {
   border-color: var(--pm-accent);
   color: var(--pm-accent);
+}
+
+.pm-button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
 }
 
 .pm-search-input {
@@ -156,4 +170,29 @@ body {
   border-radius: 10px;
   background-color: var(--pm-card-bg);
   padding: 14px;
+}
+
+.pm-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background-color: var(--pm-accent-light);
+  color: var(--pm-accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pm-meta-term {
+  margin: 0 0 4px 0;
+  color: var(--pm-muted);
+  font-size: 12px;
+}
+
+.pm-meta-value {
+  margin: 0;
+  color: var(--pm-title);
+  font-size: 14px;
 }

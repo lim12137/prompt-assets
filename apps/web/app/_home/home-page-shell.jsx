@@ -19,21 +19,49 @@ function collectCategories(prompts) {
   return categories;
 }
 
-function ActionButtons() {
+function HomeActionButtons() {
+  const [message, setMessage] = useState("");
+
+  function showPendingMessage(actionName) {
+    setMessage(`${actionName}功能暂未实现，请先使用管理页审核现有内容。`);
+  }
+
   return (
-    <div
-      style={{ display: "flex", gap: "10px", alignItems: "center" }}
-      aria-label="首页操作"
-    >
-      <button className="pm-secondary-button" type="button">
-        导入
-      </button>
-      <button className="pm-secondary-button" type="button">
-        管理
-      </button>
-      <button className="pm-primary-button" type="button">
-        创建
-      </button>
+    <div style={{ display: "grid", gap: "8px", justifyItems: "end" }}>
+      <div
+        style={{ display: "flex", gap: "10px", alignItems: "center" }}
+        aria-label="首页操作"
+      >
+        <button
+          className="pm-secondary-button"
+          type="button"
+          onClick={() => showPendingMessage("导入")}
+        >
+          导入
+        </button>
+        <a className="pm-secondary-button pm-button-link" href="/admin">
+          管理
+        </a>
+        <button
+          className="pm-primary-button"
+          type="button"
+          onClick={() => showPendingMessage("创建")}
+        >
+          创建
+        </button>
+      </div>
+      <p
+        role="status"
+        aria-live="polite"
+        style={{
+          minHeight: "20px",
+          margin: 0,
+          color: "var(--pm-muted)",
+          fontSize: "13px",
+        }}
+      >
+        {message}
+      </p>
     </div>
   );
 }
@@ -228,7 +256,7 @@ export function HomePageShell({ prompts }) {
             收录提示词总数：{prompts.length}
           </p>
         </div>
-        <ActionButtons />
+        <HomeActionButtons />
       </header>
 
       <div
