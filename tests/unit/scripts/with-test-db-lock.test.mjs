@@ -46,3 +46,33 @@ test("withTestDbLock: 同一锁文件下并发调用会串行执行", async () =
   await rm(tempDir, { recursive: true, force: true });
 });
 
+test("withTestDbLock: staleMs 大于 timeoutMs 时仍可在超时前回收锁", async () => {
+  const tempDir = mkdtempSync(path.join(os.tmpdir(), "pm-db-lock-timeout-test-"));
+  const lockPath = path.join(tempDir, "db.lock");
+
+  await writeFile(
+    lockPath,
+    JSON.stringify({
+      pid: process.pid,
+      createdAt: Date.now(),
+      ownerToken: "stale-holder",
+    }),
+    "utf-8",
+  );
+
+  let executed = false;
+  await withTestDbLock(
+    async () => {
+      executed = true;
+    },
+    {
+      lockPath,
+      pollIntervalMs: 20,
+      timeoutMs: 300,
+      staleMs: 10_000,
+    },
+  );
+
+  assert.equal(executed, true);
+  await rm(tempDir, { recursive: true, force: true });
+});

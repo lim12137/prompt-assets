@@ -56,7 +56,14 @@ export async function withTestDbLock(task, options = {}) {
     path.join(os.tmpdir(), "prompt-management-real-db-e2e.lock");
   const pollIntervalMs = Number(options.pollIntervalMs ?? 300);
   const timeoutMs = Number(options.timeoutMs ?? 10 * 60 * 1000);
-  const staleMs = Number(options.staleMs ?? 30 * 60 * 1000);
+  const requestedStaleMs = Number(
+    options.staleMs ?? process.env.TEST_DB_LOCK_STALE_MS ?? 5 * 60 * 1000,
+  );
+  const minStaleMs = Math.max(pollIntervalMs * 2, 50);
+  const maxStaleMs = Math.max(minStaleMs, timeoutMs - pollIntervalMs * 2);
+  const staleMs = Number.isFinite(requestedStaleMs)
+    ? Math.min(Math.max(requestedStaleMs, minStaleMs), maxStaleMs)
+    : maxStaleMs;
   const ownerToken = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
   await mkdir(path.dirname(lockPath), { recursive: true });
@@ -82,7 +89,23 @@ export async function withTestDbLock(task, options = {}) {
       const removed = await tryRemoveStaleLock(lockPath, staleMs);
       if (!removed) {
         if (Date.now() - startedAt > timeoutMs) {
-          throw new Error(`等待真实 DB 锁超时: ${lockPath}`);
+          let lockState = "unknown";
+          try {
+            const raw = await readFile(lockPath, "utf-8");
+            const payload = JSON.parse(raw);
+            const createdAt = Number(payload?.createdAt);
+            const ageMs = Number.isFinite(createdAt) ? Date.now() - createdAt : NaN;
+            const pid = Number(payload?.pid ?? 0);
+            lockState = `pid=${pid || "n/a"},ageMs=${
+              Number.isFinite(ageMs) ? ageMs : "n/a"
+            }`;
+          } catch {
+            lockState = "unreadable";
+          }
+
+          throw new Error(
+            `等待真实 DB 锁超时: ${lockPath} (state: ${lockState}, staleMs=${staleMs}, timeoutMs=${timeoutMs})`,
+          );
         }
         await sleep(pollIntervalMs);
       }
