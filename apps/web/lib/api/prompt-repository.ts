@@ -68,6 +68,40 @@ export type PromptSubmissionMutationInput = {
   changeNote?: string;
 };
 
+export type PromptCreateInput = {
+  creatorEmail: string;
+  creatorRole: "user" | "admin";
+  slug: string;
+  title: string;
+  summary: string;
+  categorySlug: string;
+  content: string;
+};
+
+export type PromptCreateSuccess = {
+  prompt: {
+    slug: string;
+    title: string;
+    summary: string;
+    categorySlug: string;
+    currentVersion: {
+      versionNo: string;
+      sourceType: "create";
+    };
+  };
+};
+
+export type PromptCreateResult =
+  | {
+      ok: true;
+      value: PromptCreateSuccess;
+    }
+  | {
+      ok: false;
+      code: "forbidden" | "conflict" | "not_found" | "bad_request";
+      message: string;
+    };
+
 type SubmissionStatus = "pending" | "approved" | "rejected";
 
 export type PromptSubmissionMutationResult = {
@@ -190,6 +224,10 @@ type DbPromptLookupRow = {
   id: number | string;
 };
 
+type DbCategoryLookupRow = {
+  id: number | string;
+};
+
 type DbUserRow = {
   id: number | string;
 };
@@ -261,6 +299,15 @@ type FixtureSubmissionRecord = SubmissionFixture & {
   reviewedByEmail?: string;
 };
 
+type FixturePromptRecord = {
+  slug: string;
+  title: string;
+  summary: string;
+  categorySlug: string;
+  createdAt: string;
+  createdByEmail: string;
+};
+
 const CATEGORY_MAP = new Map(baseCategories.map((item) => [item.slug, item]));
 const REQUIRED_TABLES = [
   "users",
@@ -283,6 +330,7 @@ let fixtureCurrentVersionNoBySlug = createFixtureCurrentVersionState();
 let fixtureSubmissions = createFixtureSubmissionState();
 let fixtureSubmissionIdSeed = fixtureSubmissions.length;
 let fixtureAuditLogs: AuditLogEntry[] = [];
+let fixtureCreatedPrompts = new Map<string, FixturePromptRecord>();
 
 function createFixtureLikeState(): Map<string, Set<string>> {
   return new Map(
@@ -316,6 +364,39 @@ function createFixtureSubmissionState(): FixtureSubmissionRecord[] {
     ...item,
     id: index + 1,
   }));
+}
+
+function findFixturePromptRecord(
+  slug: string,
+): {
+  slug: string;
+  title: string;
+  summary: string;
+  categorySlug: string;
+} | null {
+  const fromCatalog = promptCatalog.find(
+    (item) => item.slug === slug && item.status === "published",
+  );
+  if (fromCatalog) {
+    return {
+      slug: fromCatalog.slug,
+      title: fromCatalog.title,
+      summary: fromCatalog.summary,
+      categorySlug: fromCatalog.categorySlug,
+    };
+  }
+
+  const fromCreated = fixtureCreatedPrompts.get(slug);
+  if (!fromCreated) {
+    return null;
+  }
+
+  return {
+    slug: fromCreated.slug,
+    title: fromCreated.title,
+    summary: fromCreated.summary,
+    categorySlug: fromCreated.categorySlug,
+  };
 }
 
 function getRepositoryDataSourceMode(): "auto" | "fixture" {
@@ -550,7 +631,7 @@ function listPromptsFromFixtures(query: ListPromptsQuery): PromptListItemDto[] {
   const sort = normalizeSort(query.sort);
   const keyword = query.keyword?.trim().toLowerCase();
 
-  const rows = promptCatalog
+  const seededRows = promptCatalog
     .filter((prompt) => prompt.status !== "archived")
     .map((prompt, index) =>
       mapPromptListItem({
@@ -563,6 +644,19 @@ function listPromptsFromFixtures(query: ListPromptsQuery): PromptListItemDto[] {
         categoryName: CATEGORY_MAP.get(prompt.categorySlug)?.name ?? "",
       }),
     )
+    .filter((item) => !fixtureCreatedPrompts.has(item.slug));
+  const createdRows = [...fixtureCreatedPrompts.values()].map((prompt, index) =>
+    mapPromptListItem({
+      slug: prompt.slug,
+      title: prompt.title,
+      summary: prompt.summary,
+      likesCount: getFixtureLikesCount(prompt.slug),
+      updatedAt: buildFixtureTimestamp(promptCatalog.length + index),
+      categorySlug: prompt.categorySlug,
+      categoryName: CATEGORY_MAP.get(prompt.categorySlug)?.name ?? "",
+    }),
+  );
+  const rows = [...seededRows, ...createdRows]
     .filter((item) => {
       if (query.category && item.categorySlug !== query.category) {
         return false;
@@ -620,8 +714,8 @@ function getFixtureVersionStatus(
 }
 
 function getPromptDetailFromFixtures(slug: string): PromptDetailDto | null {
-  const prompt = promptCatalog.find((item) => item.slug === slug);
-  if (!prompt || prompt.status === "archived") {
+  const prompt = findFixturePromptRecord(slug);
+  if (!prompt) {
     return null;
   }
 
@@ -657,7 +751,9 @@ function getPromptDetailFromFixtures(slug: string): PromptDetailDto | null {
     title: prompt.title,
     summary: prompt.summary,
     likesCount: getFixtureLikesCount(prompt.slug),
-    updatedAt: buildFixtureTimestamp(promptCatalog.indexOf(prompt)),
+    updatedAt:
+      fixtureCreatedPrompts.get(prompt.slug)?.createdAt ??
+      buildFixtureTimestamp(Math.max(promptCatalog.findIndex((item) => item.slug === prompt.slug), 0)),
     categorySlug: prompt.categorySlug,
     categoryName: CATEGORY_MAP.get(prompt.categorySlug)?.name ?? "",
     currentVersionNo: currentVersion.versionNo,
@@ -854,6 +950,40 @@ async function findPublishedPromptId(
   return asNumber(row.id);
 }
 
+async function findAnyPromptId(client: SqlClient, slug: string): Promise<number | null> {
+  const result = await client.query<DbPromptLookupRow>(
+    `
+      SELECT id
+      FROM prompts
+      WHERE slug = $1
+      LIMIT 1;
+    `,
+    [slug],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+  return asNumber(row.id);
+}
+
+async function findCategoryId(client: SqlClient, categorySlug: string): Promise<number | null> {
+  const result = await client.query<DbCategoryLookupRow>(
+    `
+      SELECT id
+      FROM categories
+      WHERE slug = $1
+      LIMIT 1;
+    `,
+    [categorySlug],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+  return asNumber(row.id);
+}
+
 async function upsertUserId(client: SqlClient, email: string): Promise<number> {
   const result = await client.query<DbUserRow>(
     `
@@ -885,6 +1015,108 @@ async function upsertAdminReviewerId(
   );
 
   return asNumber(result.rows[0]?.id);
+}
+
+async function createPromptInDb(
+  input: PromptCreateInput,
+): Promise<PromptCreateResult> {
+  if (input.creatorRole !== "admin") {
+    return {
+      ok: false,
+      code: "forbidden",
+      message: "admin role is required",
+    };
+  }
+
+  return withPgClient(databaseUrl, async (client) => {
+    await client.query("BEGIN;");
+    try {
+      const existedPromptId = await findAnyPromptId(client, input.slug);
+      if (existedPromptId) {
+        await client.query("ROLLBACK;");
+        return {
+          ok: false,
+          code: "conflict",
+          message: "prompt slug already exists",
+        };
+      }
+
+      const categoryId = await findCategoryId(client, input.categorySlug);
+      if (!categoryId) {
+        await client.query("ROLLBACK;");
+        return {
+          ok: false,
+          code: "not_found",
+          message: "category not found",
+        };
+      }
+
+      const creatorId = await upsertAdminReviewerId(client, input.creatorEmail);
+      const insertedPrompt = await client.query<DbPromptLookupRow>(
+        `
+          INSERT INTO prompts
+            (slug, title, summary, category_id, status, likes_count, updated_at)
+          VALUES ($1, $2, $3, $4, 'published', 0, NOW())
+          RETURNING id;
+        `,
+        [input.slug, input.title, input.summary, categoryId],
+      );
+      const promptId = asNumber(insertedPrompt.rows[0]?.id);
+
+      const insertedVersion = await client.query<DbPromptVersionInsertRow>(
+        `
+          INSERT INTO prompt_versions
+            (prompt_id, version_no, content, source_type, submitted_by, submitted_at)
+          VALUES ($1, 'v0001', $2, 'create', $3, NOW())
+          RETURNING id, version_no;
+        `,
+        [promptId, input.content, creatorId],
+      );
+      const versionId = asNumber(insertedVersion.rows[0]?.id);
+      const versionNo = insertedVersion.rows[0]?.version_no ?? "v0001";
+
+      await client.query(
+        `
+          UPDATE prompts
+          SET current_version_id = $2, updated_at = NOW()
+          WHERE id = $1;
+        `,
+        [promptId, versionId],
+      );
+
+      await writeAuditLog(client, {
+        actorId: creatorId,
+        action: "prompt.created",
+        targetType: "prompt",
+        targetId: promptId,
+        payload: {
+          promptSlug: input.slug,
+          categorySlug: input.categorySlug,
+          versionNo,
+        },
+      });
+
+      await client.query("COMMIT;");
+      return {
+        ok: true,
+        value: {
+          prompt: {
+            slug: input.slug,
+            title: input.title,
+            summary: input.summary,
+            categorySlug: input.categorySlug,
+            currentVersion: {
+              versionNo,
+              sourceType: "create",
+            },
+          },
+        },
+      };
+    } catch (error) {
+      await client.query("ROLLBACK;");
+      throw error;
+    }
+  });
 }
 
 async function readPromptLikesCount(client: SqlClient, promptId: number): Promise<number> {
@@ -1269,9 +1501,7 @@ function createPromptSubmissionInFixtures(
   slug: string,
   input: PromptSubmissionMutationInput,
 ): PromptSubmissionMutationResult | null {
-  const prompt = promptCatalog.find(
-    (item) => item.slug === slug && item.status === "published",
-  );
+  const prompt = findFixturePromptRecord(slug);
   if (!prompt) {
     return null;
   }
@@ -1491,6 +1721,84 @@ function reviewPromptSubmissionInFixtures(
   };
 }
 
+function createPromptInFixtures(input: PromptCreateInput): PromptCreateResult {
+  if (input.creatorRole !== "admin") {
+    return {
+      ok: false,
+      code: "forbidden",
+      message: "admin role is required",
+    };
+  }
+
+  const existed = findFixturePromptRecord(input.slug);
+  if (existed) {
+    return {
+      ok: false,
+      code: "conflict",
+      message: "prompt slug already exists",
+    };
+  }
+
+  if (!CATEGORY_MAP.has(input.categorySlug)) {
+    return {
+      ok: false,
+      code: "not_found",
+      message: "category not found",
+    };
+  }
+
+  const createdAt = new Date().toISOString();
+  fixtureCreatedPrompts.set(input.slug, {
+    slug: input.slug,
+    title: input.title,
+    summary: input.summary,
+    categorySlug: input.categorySlug,
+    createdAt,
+    createdByEmail: input.creatorEmail,
+  });
+  fixturePromptVersions.set(input.slug, [
+    {
+      versionNo: "v0001",
+      content: input.content,
+      sourceType: "create",
+      submittedByEmail: input.creatorEmail,
+    },
+  ]);
+  fixtureCurrentVersionNoBySlug.set(input.slug, "v0001");
+  fixturePromptLikes.set(input.slug, new Set<string>());
+
+  const promptId = fixturePromptId(input.slug) || promptCatalog.length + fixtureCreatedPrompts.size;
+  fixtureAuditLogs.push(
+    buildAuditLogEntry({
+      actorId: fixtureActorId(input.creatorEmail),
+      action: "prompt.created",
+      targetType: "prompt",
+      targetId: promptId,
+      payload: {
+        promptSlug: input.slug,
+        categorySlug: input.categorySlug,
+        versionNo: "v0001",
+      },
+    }),
+  );
+
+  return {
+    ok: true,
+    value: {
+      prompt: {
+        slug: input.slug,
+        title: input.title,
+        summary: input.summary,
+        categorySlug: input.categorySlug,
+        currentVersion: {
+          versionNo: "v0001",
+          sourceType: "create",
+        },
+      },
+    },
+  };
+}
+
 async function listAdminSubmissionsFromDb(
   query: AdminSubmissionListQuery,
 ): Promise<AdminSubmissionListItem[]> {
@@ -1644,6 +1952,7 @@ export function __resetPromptLikeFixtureStateForTests(): void {
   fixtureSubmissions = createFixtureSubmissionState();
   fixtureSubmissionIdSeed = fixtureSubmissions.length;
   fixtureAuditLogs = [];
+  fixtureCreatedPrompts = new Map<string, FixturePromptRecord>();
   cachedDbReadable = undefined;
 }
 
@@ -1705,6 +2014,29 @@ export async function createPromptSubmission(
     return createPromptSubmissionInDb(slug, normalizedInput);
   }
   return createPromptSubmissionInFixtures(slug, normalizedInput);
+}
+
+export async function createPrompt(
+  input: PromptCreateInput,
+): Promise<PromptCreateResult> {
+  const normalizedEmail = normalizeUserEmail(input.creatorEmail);
+  if (!normalizedEmail) {
+    return {
+      ok: false,
+      code: "bad_request",
+      message: "creator email is required",
+    };
+  }
+
+  const normalizedInput: PromptCreateInput = {
+    ...input,
+    creatorEmail: normalizedEmail,
+  };
+
+  if (await canReadFromDatabase()) {
+    return createPromptInDb(normalizedInput);
+  }
+  return createPromptInFixtures(normalizedInput);
 }
 
 export async function reviewPromptSubmission(
