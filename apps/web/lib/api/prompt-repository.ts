@@ -966,6 +966,22 @@ async function canReadFromDatabase(): Promise<boolean> {
   }
 }
 
+async function canWriteToDatabase(): Promise<boolean> {
+  if (getRepositoryDataSourceMode() === "fixture") {
+    return false;
+  }
+
+  if (!(await isPgReachable(databaseUrl, 400))) {
+    return false;
+  }
+
+  try {
+    return withPgClient(databaseUrl, async (client) => hasPromptTables(client));
+  } catch {
+    return false;
+  }
+}
+
 async function listPromptsFromDb(
   query: ListPromptsQuery,
 ): Promise<PromptListItemDto[]> {
@@ -3410,7 +3426,7 @@ export async function createPrompt(
       : undefined,
   };
 
-  if (await canReadFromDatabase()) {
+  if ((await canReadFromDatabase()) || (await canWriteToDatabase())) {
     return createPromptInDb(normalizedInput);
   }
   return createPromptInFixtures(normalizedInput);

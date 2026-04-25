@@ -26,6 +26,28 @@ let seedModule: {
 };
 let repositoryModule: {
   __resetPromptLikeFixtureStateForTests: () => void;
+  createAdminCategory: (input: {
+    creatorEmail: string;
+    creatorRole: "admin" | "user";
+    name: string;
+    slug: string;
+  }) => Promise<
+    | {
+        ok: true;
+        value: {
+          category: {
+            slug: string;
+            name: string;
+          };
+        };
+      }
+    | {
+        ok: false;
+        code: string;
+        reason: string;
+        message: string;
+      }
+  >;
   createPrompt: (input: {
     creatorEmail: string;
     creatorRole: "admin" | "user";
@@ -146,6 +168,29 @@ async function resetDbSeed(): Promise<void> {
   repositoryModule.__resetPromptLikeFixtureStateForTests();
 }
 
+async function clearPublishedPromptData(): Promise<void> {
+  await clientModule.withPgClient(testDbUrl, async (client) => {
+    await client.query("BEGIN;");
+    try {
+      await client.query(
+        `
+          DELETE FROM submissions;
+          DELETE FROM prompt_likes;
+          DELETE FROM prompt_versions;
+          DELETE FROM prompt_categories;
+          UPDATE prompts SET current_version_id = NULL;
+          DELETE FROM prompts;
+        `,
+      );
+      await client.query("COMMIT;");
+    } catch (error) {
+      await client.query("ROLLBACK;");
+      throw error;
+    }
+  });
+  repositoryModule.__resetPromptLikeFixtureStateForTests();
+}
+
 async function queryPromptCategorySlugs(promptSlug: string): Promise<string[]> {
   return clientModule.withPgClient(testDbUrl, async (client) => {
     const result = await client.query<{ slug: string }>(
@@ -212,6 +257,44 @@ test("真实DB写路径: createPrompt 会双写 prompts.category_id 与 prompt_c
 
   const legacyCategorySlug = await queryLegacyCategorySlug(slug);
   assert.equal(legacyCategorySlug, "programming");
+});
+
+test("真实DB写路径: 新增分类后可立即创建首条 prompt（无历史发布数据）", async (t) => {
+  if (!(await ensureDbReady(t))) {
+    return;
+  }
+  await resetDbSeed();
+  await clearPublishedPromptData();
+
+  const marker = Date.now();
+  const categorySlug = `db-empty-first-category-${marker}`;
+  const categoryResult = await repositoryModule.createAdminCategory({
+    creatorEmail: "admin@example.com",
+    creatorRole: "admin",
+    name: `空库新分类-${marker}`,
+    slug: categorySlug,
+  });
+  assert.equal(categoryResult.ok, true);
+
+  const slug = `db-empty-first-prompt-${marker}`;
+  const created = await repositoryModule.createPrompt({
+    creatorEmail: "admin@example.com",
+    creatorRole: "admin",
+    slug,
+    title: "空库首条 Prompt",
+    summary: "验证新增分类后可立即创建 Prompt",
+    categorySlugs: [categorySlug],
+    content: "first prompt after creating category in empty prompt set",
+  });
+
+  assert.equal(created.ok, true);
+  if (!created.ok) {
+    return;
+  }
+  assert.deepEqual(created.value.prompt.categorySlugs, [categorySlug]);
+  assert.equal(created.value.prompt.categorySlug, categorySlug);
+  assert.deepEqual(await queryPromptCategorySlugs(slug), [categorySlug]);
+  assert.equal(await queryLegacyCategorySlug(slug), categorySlug);
 });
 
 test("真实DB写路径: importPrompts 会为每条记录写入 prompt_categories", async (t) => {
