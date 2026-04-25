@@ -47,6 +47,8 @@ importers:
         specifier: ^0.31.7
         version: 0.31.10
 
+  packages/domain: {}
+
 packages:
 
   '@drizzle-team/brocli@0.10.2':
