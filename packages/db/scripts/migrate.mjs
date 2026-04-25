@@ -9,9 +9,28 @@ const { Client } = pg;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const migrationsDir = path.resolve(__dirname, "../migrations");
-const databaseUrl =
-  process.env.DATABASE_URL ??
-  "postgres://postgres:postgres@127.0.0.1:5432/prompt_management";
+
+function toNonEmptyString(value) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+  return normalized || undefined;
+}
+
+function resolveDatabaseUrl() {
+  const explicitUrl = toNonEmptyString(process.env.DATABASE_URL);
+  if (explicitUrl) {
+    return explicitUrl;
+  }
+
+  const host = toNonEmptyString(process.env.POSTGRES_HOST) ?? "127.0.0.1";
+  const port = toNonEmptyString(process.env.POSTGRES_PORT) ?? "5432";
+  const database = toNonEmptyString(process.env.POSTGRES_DB) ?? "prompt_management";
+  const user = toNonEmptyString(process.env.POSTGRES_USER) ?? "postgres";
+  const password = toNonEmptyString(process.env.POSTGRES_PASSWORD) ?? "postgres";
+
+  return `postgres://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
+}
+
+const databaseUrl = resolveDatabaseUrl();
 
 const migrationFiles = readdirSync(migrationsDir)
   .filter((file) => file.endsWith(".sql"))

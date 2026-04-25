@@ -2,10 +2,9 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Client } from "pg";
 
 import * as schema from "./schema.ts";
+import { resolveDatabaseUrl } from "./resolve-database-url.ts";
 
-export const databaseUrl =
-  process.env.DATABASE_URL ??
-  "postgres://postgres:postgres@127.0.0.1:5432/prompt_management";
+export const databaseUrl = resolveDatabaseUrl();
 
 export const testDatabaseUrl =
   process.env.TEST_DATABASE_URL ??
