@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 
 const testDbUrl =
   process.env.TEST_DATABASE_URL ??
@@ -17,9 +16,10 @@ type DbClient = {
 };
 
 let modulesLoaded = false;
-const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+let dbReachabilityChecked = false;
+let dbReachable = false;
 let clientModule: {
-  isPgReachable: (url: string) => Promise<boolean>;
+  isPgReachable: (url: string, timeoutMs?: number) => Promise<boolean>;
   withPgClient: <T>(url: string, run: (client: DbClient) => Promise<T>) => Promise<T>;
 };
 let seedModule: {
@@ -125,30 +125,14 @@ function adminDeleteCategoryRequest(
 
 async function ensureDbReady(t: test.TestContext): Promise<boolean> {
   await loadModules();
-  if (await clientModule.isPgReachable(testDbUrl)) {
-    return true;
+  if (!dbReachabilityChecked) {
+    dbReachable = await clientModule.isPgReachable(testDbUrl, 5000);
+    dbReachabilityChecked = true;
   }
-
-  const result = spawnSync(pnpmCommand, ["db:test:prepare"], {
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      TEST_DB_PREPARE_SKIP_LOCK: "1",
-    },
-    shell: process.platform === "win32",
-  });
-
-  if (result.error || result.status !== 0) {
+  if (!dbReachable) {
     t.skip(`测试库不可达，跳过 admin categories 测试: ${testDbUrl}`);
     return false;
   }
-
-  const ready = await clientModule.isPgReachable(testDbUrl);
-  if (!ready) {
-    t.skip(`测试库不可达，跳过 admin categories 测试: ${testDbUrl}`);
-    return false;
-  }
-
   return true;
 }
 
