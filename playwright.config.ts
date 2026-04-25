@@ -7,7 +7,7 @@ if (!process.env.PLAYWRIGHT_WEB_PORT) {
   process.env.PLAYWRIGHT_WEB_PORT = selectedPort;
 }
 const port = Number(selectedPort);
-const distDir = process.env.PLAYWRIGHT_WEB_DIST ?? `.next-e2e-${port}`;
+const distDir = process.env.PLAYWRIGHT_WEB_DIST ?? ".next-e2e";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -19,7 +19,7 @@ export default defineConfig({
     command:
       `pnpm --filter @prompt-management/web exec node ./scripts/prebuild-clean.mjs --target ${distDir} && pnpm --filter @prompt-management/web exec node ./scripts/run-next.mjs dev --dist ${distDir} --hostname ${host} --port ${port}`,
     port,
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });

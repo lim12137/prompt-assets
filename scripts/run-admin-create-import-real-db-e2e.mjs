@@ -7,6 +7,8 @@ const testDatabaseUrl =
   "postgres://postgres:postgres@127.0.0.1:55432/prompt_management_test";
 const testSpecPath = "tests/e2e/admin/create-import-real-db.spec.ts";
 const playwrightWebPort = process.env.PLAYWRIGHT_WEB_PORT ?? "3110";
+const playwrightWebDist =
+  process.env.PLAYWRIGHT_WEB_DIST ?? ".next-e2e-real-db-create-import";
 
 function runStep(args, label, env = process.env, allowFailure = false) {
   console.log(`==> ${label}`);
@@ -39,6 +41,7 @@ await withTestDbLock(async () => {
         DATABASE_URL: testDatabaseUrl,
         PROMPT_REPOSITORY_DATA_SOURCE: "auto",
         PLAYWRIGHT_WEB_PORT: playwrightWebPort,
+        PLAYWRIGHT_WEB_DIST: playwrightWebDist,
       },
     );
   } finally {

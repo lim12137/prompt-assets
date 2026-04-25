@@ -9,6 +9,7 @@ const testSpecPath =
   process.env.ADMIN_E2E_SPEC_PATH ??
   "tests/e2e/admin/management-flow.spec.ts";
 const playwrightWebPort = process.env.PLAYWRIGHT_WEB_PORT ?? "3112";
+const playwrightWebDist = process.env.PLAYWRIGHT_WEB_DIST ?? ".next-e2e-real-db-admin";
 
 function runStep(args, label, env = process.env, allowFailure = false) {
   console.log(`==> ${label}`);
@@ -41,6 +42,7 @@ await withTestDbLock(async () => {
         DATABASE_URL: testDatabaseUrl,
         PROMPT_REPOSITORY_DATA_SOURCE: "auto",
         PLAYWRIGHT_WEB_PORT: playwrightWebPort,
+        PLAYWRIGHT_WEB_DIST: playwrightWebDist,
       },
     );
   } finally {
