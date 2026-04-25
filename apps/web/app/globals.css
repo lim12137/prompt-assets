@@ -196,3 +196,168 @@ body {
   color: var(--pm-title);
   font-size: 14px;
 }
+
+.pm-code-block {
+  background-color: #1e293b;
+  color: #e2e8f0;
+  padding: 16px;
+  border-radius: 10px;
+  overflow-x: auto;
+  font-family: "Fira Code", "Consolas", "Monaco", monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pm-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--pm-muted);
+}
+
+.pm-breadcrumb a {
+  color: var(--pm-accent);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.pm-breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.pm-detail-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pm-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pm-detail-section {
+  border: 1px solid var(--pm-border);
+  border-radius: 12px;
+  background-color: var(--pm-card-bg);
+  padding: 20px;
+  box-shadow: var(--pm-shadow);
+}
+
+.pm-detail-section h2 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  color: var(--pm-title);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pm-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--pm-border);
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: var(--pm-text);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+}
+
+.pm-back-button:hover {
+  border-color: var(--pm-accent);
+  color: var(--pm-accent);
+  box-shadow: var(--pm-shadow-hover);
+}
+
+.pm-version-list {
+  display: grid;
+  gap: 12px;
+}
+
+.pm-version-item {
+  padding: 14px;
+  border: 1px solid var(--pm-border);
+  border-radius: 10px;
+  background-color: var(--pm-bg);
+  transition: box-shadow 0.2s ease;
+}
+
+.pm-version-item:hover {
+  box-shadow: var(--pm-shadow-hover);
+}
+
+.pm-version-item.current {
+  border-color: var(--pm-accent);
+  background-color: var(--pm-accent-light);
+}
+
+.pm-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pm-status-badge.approved {
+  background-color: #dcfce7;
+  color: #15803d;
+}
+
+.pm-status-badge.pending {
+  background-color: #fef9c3;
+  color: #a16207;
+}
+
+.pm-status-badge.rejected {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.pm-employee-card {
+  border: 1px solid var(--pm-border);
+  border-radius: 10px;
+  padding: 16px;
+  background-color: var(--pm-card-bg);
+  box-shadow: var(--pm-shadow);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.pm-employee-card:hover {
+  box-shadow: var(--pm-shadow-hover);
+  transform: translateY(-1px);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.pm-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.pm-card--official {
+  border: 1px solid var(--pm-accent);
+  background: linear-gradient(135deg, #ffffff 0%, #fff5f7 100%);
+}
+
+.pm-card--candidate {
+  border: 1px solid #dbeafe;
+  background: linear-gradient(135deg, #ffffff 0%, #f5f9ff 100%);
+}
