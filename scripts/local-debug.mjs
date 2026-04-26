@@ -397,6 +397,12 @@ function parseWindowsProcessInfoOutput(output) {
       name: String(item?.Name ?? item?.name ?? "").trim(),
       commandLine: String(item?.CommandLine ?? item?.commandLine ?? "").trim(),
       executablePath: String(item?.ExecutablePath ?? item?.executablePath ?? "").trim(),
+      parentPid: String(item?.ParentProcessId ?? item?.parentPid ?? "").trim(),
+      parentName: String(item?.ParentName ?? item?.parentName ?? "").trim(),
+      parentCommandLine: String(item?.ParentCommandLine ?? item?.parentCommandLine ?? "").trim(),
+      parentExecutablePath: String(
+        item?.ParentExecutablePath ?? item?.parentExecutablePath ?? "",
+      ).trim(),
     }))
     .filter((item) => item.pid);
 }
@@ -411,12 +417,30 @@ function isLookupCommandUnavailable(message) {
   );
 }
 
+function isProcessAlreadyStoppedError(message) {
+  const normalizedMessage = String(message || "").toLowerCase();
+  return (
+    normalizedMessage.includes("no running instance of the task") ||
+    normalizedMessage.includes("no such process") ||
+    normalizedMessage.includes("not found") ||
+    normalizedMessage.includes("esrch")
+  );
+}
+
 export function listListeningProcesses(port) {
   if (process.platform === "win32") {
+    const lookupCommand =
+      `[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; $OutputEncoding=[System.Text.Encoding]::UTF8; ` +
+      `$pids = @(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique); if (-not $pids -or $pids.Count -eq 0) { return }; ` +
+      `$procs = @(Get-CimInstance Win32_Process | Where-Object { $pids -contains $_.ProcessId }); ` +
+      `$parentPids = @($procs | Select-Object -ExpandProperty ParentProcessId -Unique); ` +
+      `$parentMap = @{}; ` +
+      `if ($parentPids -and $parentPids.Count -gt 0) { @(Get-CimInstance Win32_Process | Where-Object { $parentPids -contains $_.ProcessId }) | ForEach-Object { $parentMap[$_.ProcessId] = $_ } }; ` +
+      `$procs | ForEach-Object { $parent = $parentMap[$_.ParentProcessId]; [PSCustomObject]@{ ProcessId = $_.ProcessId; Name = $_.Name; CommandLine = $_.CommandLine; ExecutablePath = $_.ExecutablePath; ParentProcessId = $_.ParentProcessId; ParentName = if ($parent) { $parent.Name } else { $null }; ParentCommandLine = if ($parent) { $parent.CommandLine } else { $null }; ParentExecutablePath = if ($parent) { $parent.ExecutablePath } else { $null } } } | ConvertTo-Json -Compress`;
     const output = runCommandCapture("powershell", [
       "-NoProfile",
       "-Command",
-      `$pids = @(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique); if (-not $pids -or $pids.Count -eq 0) { return }; Get-CimInstance Win32_Process | Where-Object { $pids -contains $_.ProcessId } | Select-Object ProcessId, Name, CommandLine, ExecutablePath | ConvertTo-Json -Compress`,
+      lookupCommand,
     ]);
     return parseWindowsProcessInfoOutput(output);
   }
@@ -457,18 +481,65 @@ export function listListeningProcesses(port) {
 }
 
 export function isProjectWebProcess(processInfo, config, root = workspaceRoot) {
-  const cmd = String(processInfo?.commandLine || "").toLowerCase();
-  const executablePath = String(processInfo?.executablePath || "").toLowerCase();
+  const cmd = String(processInfo?.commandLine || "")
+    .replaceAll("/", "\\")
+    .toLowerCase();
+  const executablePath = String(processInfo?.executablePath || "")
+    .replaceAll("/", "\\")
+    .toLowerCase();
+  const parentCmd = String(processInfo?.parentCommandLine || "")
+    .replaceAll("/", "\\")
+    .toLowerCase();
   const normalizedRoot = String(root || workspaceRoot).replaceAll("/", "\\").toLowerCase();
-  const normalizedPort = String(config.webPort || "");
+  const normalizedPort = String(config?.webPort || "");
 
-  const hasProjectMarker =
-    cmd.includes("@prompt-management/web") ||
-    cmd.includes(`${normalizedRoot}\\apps\\web`) ||
-    executablePath.startsWith(normalizedRoot + "\\");
-  const hasPortMarker = cmd.includes(`--port ${normalizedPort}`) || cmd.includes(`:${normalizedPort}`);
+  const hasWorkspaceWebPath = cmd.includes(`${normalizedRoot}\\apps\\web`);
+  const hasPnpmWebMarker =
+    cmd.includes("@prompt-management\\web") || cmd.includes("@prompt-management/web");
+  const hasWebMarker = hasPnpmWebMarker || hasWorkspaceWebPath;
+  const hasNextMarker =
+    cmd.includes("\\next\\dist\\bin\\next") || cmd.includes("\\apps\\web\\scripts\\run-next.mjs");
+  const isRepoNextProcess = hasWorkspaceWebPath && hasNextMarker;
+  const isRepoNextDevProcess =
+    cmd.includes(`${normalizedRoot}\\`) &&
+    cmd.includes("\\next\\dist\\bin\\next") &&
+    /\sdev(\s|$)/.test(cmd) &&
+    (!normalizedPort || !cmd.includes("--port") || cmd.includes(`--port ${normalizedPort}`));
+  const isRepoNextStartServerProcess =
+    cmd.includes(`${normalizedRoot}\\node_modules\\`) &&
+    cmd.includes("\\next\\dist\\server\\lib\\start-server.js");
+  const isRepoStartServerWithRepoNextDevParent =
+    cmd.includes(`${normalizedRoot}\\`) &&
+    cmd.includes("\\next\\dist\\server\\lib\\start-server.js") &&
+    parentCmd.includes(`${normalizedRoot}\\`) &&
+    parentCmd.includes("\\next\\dist\\bin\\next") &&
+    /\sdev(\s|$)/.test(parentCmd) &&
+    (!normalizedPort || parentCmd.includes(`--port ${normalizedPort}`));
+  const isWorkspaceLaunchedWebProcess =
+    executablePath.startsWith(normalizedRoot + "\\") && hasWebMarker;
 
-  return hasProjectMarker && hasPortMarker;
+  return (
+    hasWebMarker ||
+    isRepoNextProcess ||
+    isRepoNextDevProcess ||
+    isRepoNextStartServerProcess ||
+    isRepoStartServerWithRepoNextDevParent ||
+    isWorkspaceLaunchedWebProcess
+  );
+}
+
+function buildParentProcessInfo(processInfo) {
+  const parentPid = String(processInfo?.parentPid ?? "").trim();
+  if (!parentPid) {
+    return null;
+  }
+
+  return {
+    pid: parentPid,
+    name: String(processInfo?.parentName ?? "").trim(),
+    commandLine: String(processInfo?.parentCommandLine ?? "").trim(),
+    executablePath: String(processInfo?.parentExecutablePath ?? "").trim(),
+  };
 }
 
 export function planSafeStop(listeners, config, root = workspaceRoot) {
@@ -488,6 +559,10 @@ export function planSafeStop(listeners, config, root = workspaceRoot) {
 
     if (isProjectWebProcess(normalizedItem, config, root)) {
       killPids.push(normalizedItem.pid);
+      const parentProcessInfo = buildParentProcessInfo(normalizedItem);
+      if (parentProcessInfo && isProjectWebProcess(parentProcessInfo, config, root)) {
+        killPids.push(parentProcessInfo.pid);
+      }
     } else {
       blocked.push(normalizedItem);
     }
@@ -499,7 +574,7 @@ export function planSafeStop(listeners, config, root = workspaceRoot) {
 const defaultReclaimDeps = {
   listListeners: (port) => listListeningProcesses(port),
   killPid: (pid) =>
-    runCommand(
+    runCommandCapture(
       process.platform === "win32" ? "taskkill" : "kill",
       process.platform === "win32" ? ["/PID", String(pid), "/F"] : ["-TERM", String(pid)],
     ),
@@ -526,12 +601,19 @@ export async function reclaimWebPortIfNeeded(config, deps = defaultReclaimDeps) 
   if (plan.blocked.length > 0) {
     const blockedPid = plan.blocked[0]?.pid ? `PID ${plan.blocked[0].pid}` : "PID unknown";
     throw new Error(
-      `Refusing to stop unknown process on port ${config.webPort}: ${blockedPid}. Only previous @prompt-management/web process can be stopped automatically.`,
+      `Refusing to stop unknown process on port ${config.webPort}: ${blockedPid}. Only repository web/Next process can be stopped automatically.`,
     );
   }
 
   for (const pid of plan.killPids) {
-    await Promise.resolve(deps.killPid(pid));
+    try {
+      await Promise.resolve(deps.killPid(pid));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!isProcessAlreadyStoppedError(message)) {
+        throw error;
+      }
+    }
   }
 }
 
