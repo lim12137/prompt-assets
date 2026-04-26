@@ -382,61 +382,161 @@ function startPersistentWeb(config) {
   });
 }
 
-function findListeningProcessIds(port) {
+function parseWindowsProcessInfoOutput(output) {
+  const trimmed = String(output || "").trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const parsed = JSON.parse(trimmed);
+  const items = Array.isArray(parsed) ? parsed : [parsed];
+
+  return items
+    .map((item) => ({
+      pid: String(item?.ProcessId ?? item?.pid ?? "").trim(),
+      name: String(item?.Name ?? item?.name ?? "").trim(),
+      commandLine: String(item?.CommandLine ?? item?.commandLine ?? "").trim(),
+      executablePath: String(item?.ExecutablePath ?? item?.executablePath ?? "").trim(),
+    }))
+    .filter((item) => item.pid);
+}
+
+function isLookupCommandUnavailable(message) {
+  const normalizedMessage = String(message || "").toLowerCase();
+  return (
+    normalizedMessage.includes("cannot find path") ||
+    normalizedMessage.includes("no such file") ||
+    normalizedMessage.includes("not recognized") ||
+    normalizedMessage.includes("not found")
+  );
+}
+
+export function listListeningProcesses(port) {
   if (process.platform === "win32") {
     const output = runCommandCapture("powershell", [
       "-NoProfile",
       "-Command",
-      `(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique) -join "\\n"`,
+      `$pids = @(Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique); if (-not $pids -or $pids.Count -eq 0) { return }; Get-CimInstance Win32_Process | Where-Object { $pids -contains $_.ProcessId } | Select-Object ProcessId, Name, CommandLine, ExecutablePath | ConvertTo-Json -Compress`,
     ]);
-    return output
-      .split(/\r?\n/)
-      .map((value) => value.trim())
-      .filter(Boolean);
+    return parseWindowsProcessInfoOutput(output);
   }
 
-  const output = runCommandCapture("lsof", ["-ti", `tcp:${port}`]);
-  return output
+  const output = runCommandCapture("lsof", ["-iTCP:" + String(port), "-sTCP:LISTEN", "-n", "-P", "-F", "pc"]);
+  const lines = output
     .split(/\r?\n/)
     .map((value) => value.trim())
     .filter(Boolean);
-}
+  const listeners = [];
+  let currentPid = "";
 
-function stopWebProcess(config) {
-  let processIds = [];
-
-  try {
-    processIds = findListeningProcessIds(config.webPort);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!message) {
-      throw error;
+  for (const line of lines) {
+    if (line.startsWith("p")) {
+      if (currentPid) {
+        listeners.push({ pid: currentPid, name: "", commandLine: "", executablePath: "" });
+      }
+      currentPid = line.slice(1);
+      continue;
     }
 
-    const normalizedMessage = message.toLowerCase();
-    if (
-      normalizedMessage.includes("cannot find path") ||
-      normalizedMessage.includes("no such file") ||
-      normalizedMessage.includes("not recognized") ||
-      normalizedMessage.includes("not found")
-    ) {
-      processIds = [];
-    } else {
-      throw error;
+    if (line.startsWith("c") && currentPid) {
+      listeners.push({
+        pid: currentPid,
+        name: "",
+        commandLine: line.slice(1),
+        executablePath: "",
+      });
+      currentPid = "";
     }
   }
 
-  if (processIds.length === 0) {
+  if (currentPid) {
+    listeners.push({ pid: currentPid, name: "", commandLine: "", executablePath: "" });
+  }
+
+  return listeners;
+}
+
+export function isProjectWebProcess(processInfo, config, root = workspaceRoot) {
+  const cmd = String(processInfo?.commandLine || "").toLowerCase();
+  const executablePath = String(processInfo?.executablePath || "").toLowerCase();
+  const normalizedRoot = String(root || workspaceRoot).replaceAll("/", "\\").toLowerCase();
+  const normalizedPort = String(config.webPort || "");
+
+  const hasProjectMarker =
+    cmd.includes("@prompt-management/web") ||
+    cmd.includes(`${normalizedRoot}\\apps\\web`) ||
+    executablePath.startsWith(normalizedRoot + "\\");
+  const hasPortMarker = cmd.includes(`--port ${normalizedPort}`) || cmd.includes(`:${normalizedPort}`);
+
+  return hasProjectMarker && hasPortMarker;
+}
+
+export function planSafeStop(listeners, config, root = workspaceRoot) {
+  const killPids = [];
+  const blocked = [];
+
+  for (const item of listeners || []) {
+    const normalizedItem = {
+      ...item,
+      pid: String(item?.pid ?? "").trim(),
+    };
+
+    if (!normalizedItem.pid) {
+      blocked.push(normalizedItem);
+      continue;
+    }
+
+    if (isProjectWebProcess(normalizedItem, config, root)) {
+      killPids.push(normalizedItem.pid);
+    } else {
+      blocked.push(normalizedItem);
+    }
+  }
+
+  return { killPids: [...new Set(killPids)], blocked };
+}
+
+const defaultReclaimDeps = {
+  listListeners: (port) => listListeningProcesses(port),
+  killPid: (pid) =>
+    runCommand(
+      process.platform === "win32" ? "taskkill" : "kill",
+      process.platform === "win32" ? ["/PID", String(pid), "/F"] : ["-TERM", String(pid)],
+    ),
+};
+
+export async function reclaimWebPortIfNeeded(config, deps = defaultReclaimDeps) {
+  let listeners = [];
+
+  try {
+    listeners = deps.listListeners(config.webPort) || [];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message || !isLookupCommandUnavailable(message)) {
+      throw error;
+    }
+    listeners = [];
+  }
+
+  if (listeners.length === 0) {
     return;
   }
 
-  const uniqueProcessIds = [...new Set(processIds)];
-  for (const processId of uniqueProcessIds) {
-    runCommand(
-      process.platform === "win32" ? "taskkill" : "kill",
-      process.platform === "win32" ? ["/PID", processId, "/F"] : ["-TERM", processId],
+  const plan = planSafeStop(listeners, config, workspaceRoot);
+  if (plan.blocked.length > 0) {
+    const blockedPid = plan.blocked[0]?.pid ? `PID ${plan.blocked[0].pid}` : "PID unknown";
+    throw new Error(
+      `Refusing to stop unknown process on port ${config.webPort}: ${blockedPid}. Only previous @prompt-management/web process can be stopped automatically.`,
     );
   }
+
+  for (const pid of plan.killPids) {
+    await Promise.resolve(deps.killPid(pid));
+  }
+}
+
+async function stopWebProcess(config) {
+  await reclaimWebPortIfNeeded(config);
 }
 
 async function executePlan(plan, config) {
@@ -468,7 +568,7 @@ async function executePlan(plan, config) {
     }
 
     if (step === "stop-web") {
-      stopWebProcess(config);
+      await stopWebProcess(config);
       continue;
     }
 
@@ -483,6 +583,7 @@ async function executePlan(plan, config) {
     }
 
     if (step === "web") {
+      await reclaimWebPortIfNeeded(config);
       startPersistentWeb(config);
       return;
     }

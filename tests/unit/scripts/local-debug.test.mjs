@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { createServer } from "node:net";
 
 import {
   buildDatabaseUrl,
@@ -201,5 +202,47 @@ test(
     const output = `${run.stdout}\n${run.stderr}`;
     assert.equal(run.status, 1);
     assert.match(output, /\[local-debug\]\s+Node\.js was not found in PATH/i);
+  },
+);
+
+test(
+  "local-debug web exits non-zero when web port is already occupied",
+  { skip: process.platform !== "win32" },
+  async (t) => {
+    const holder = createServer();
+    const holderReady = await new Promise((resolve) => {
+      holder.once("error", (error) => resolve({ ok: false, error }));
+      holder.listen(3010, "127.0.0.1", () => resolve({ ok: true }));
+    });
+
+    if (!holderReady.ok) {
+      if (holderReady.error?.code === "EADDRINUSE") {
+        t.skip("port 3010 already occupied by external process");
+        return;
+      }
+      throw holderReady.error;
+    }
+
+    try {
+      const run = spawnSync(process.execPath, ["scripts/local-debug.mjs", "web"], {
+        cwd: path.resolve("."),
+        encoding: "utf-8",
+      });
+
+      const output = `${run.stdout}\n${run.stderr}`;
+      assert.notEqual(run.status, 0);
+      assert.match(output, /Refusing to stop unknown process on port 3010:\s*PID\s*\d+/i);
+
+      const probe = createServer();
+      await assert.rejects(
+        () =>
+          new Promise((resolve, reject) => {
+            probe.listen(3010, "127.0.0.1", resolve).once("error", reject);
+          }),
+        /EADDRINUSE|address already in use/i,
+      );
+    } finally {
+      await new Promise((resolve) => holder.close(resolve));
+    }
   },
 );
