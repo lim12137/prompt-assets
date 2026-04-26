@@ -4,7 +4,7 @@ setlocal
 set "SCRIPT=%~dp0scripts\local-debug.mjs"
 set "ACTION=%~1"
 
-if "%ACTION%"=="" goto help
+if "%ACTION%"=="" goto help_interactive
 if /I "%ACTION%"=="help" goto help
 if /I "%ACTION%"=="prepare" goto prepare
 if /I "%ACTION%"=="db-up" goto db_up
@@ -69,6 +69,19 @@ echo   db-down      Stop and remove local Docker database.
 echo   status       Show local Docker database status.
 echo   logs         Show local Docker database logs.
 echo   dev          Prepare database, then start web.
+exit /b 0
+
+:help_interactive
+call :help
+echo.
+echo No action specified. Choose what to run:
+echo   [1] dev
+echo   [2] web
+echo   [Q] quit
+choice /C 12Q /N /M "Select [1/2/Q]: "
+if errorlevel 3 exit /b 0
+if errorlevel 2 goto web
+if errorlevel 1 goto dev
 exit /b 0
 
 :help_error
