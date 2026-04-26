@@ -15,10 +15,10 @@ docker inspect --format "{{.Name}}\t{{.State.Status}}\t{{if .State.Health}}{{.St
 
 ### 2) 再检查本地镜像
 ```powershell
-docker image inspect postgres:16-alpine --format "{{.Id}}"
+docker image inspect ghcr.io/lim12137/prompt-assets-postgres --format "{{.Id}}"
 ```
 - 结果摘要：
-- 报错：`No such image: postgres:16-alpine`。
+- 报错：`No such image: ghcr.io/lim12137/prompt-assets-postgres`。
 
 ### 3) 当前 db-up 是否会触发拉取（实现层）
 - 调整前行为：`db-up` 直接执行 `docker compose -f docker-compose.local-debug.yml up -d postgres`，缺镜像时会触发 compose 默认拉取。
@@ -33,5 +33,5 @@ node ./scripts/local-debug.mjs db-up
 ## 验证结果摘要
 - 单元测试：`12/12` 通过（含新增 `resolveDbUpMode` 三条策略用例）。
 - 脚本实测：`node ./scripts/local-debug.mjs db-up` 在当前“无容器+无镜像”环境下直接失败，提示：
-  `Local PostgreSQL image is missing: postgres:16-alpine ... Please run: docker pull postgres:16-alpine`
+  `Local PostgreSQL image is missing: ghcr.io/lim12137/prompt-assets-postgres ... Please run: docker pull ghcr.io/lim12137/prompt-assets-postgres`
 - 未观察到自动拉取行为。

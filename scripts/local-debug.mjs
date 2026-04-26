@@ -19,7 +19,7 @@ const defaultConfig = {
   webHost: "127.0.0.1",
   webPort: "13000",
   postgresHost: "127.0.0.1",
-  postgresImageTag: "16-alpine",
+  postgresImage: "ghcr.io/lim12137/prompt-assets-postgres",
   healthTimeoutMs: 30000,
   healthIntervalMs: 1000,
 };
@@ -45,10 +45,7 @@ export function resolveLocalDebugConfig(env = process.env) {
     webHost: toNonEmptyString(env.LOCAL_WEB_HOST, defaultConfig.webHost),
     webPort: toNonEmptyString(env.LOCAL_WEB_PORT, defaultConfig.webPort),
     postgresHost: toNonEmptyString(env.POSTGRES_HOST, defaultConfig.postgresHost),
-    postgresImageTag: toNonEmptyString(
-      env.LOCAL_POSTGRES_IMAGE_TAG,
-      defaultConfig.postgresImageTag,
-    ),
+    postgresImage: toNonEmptyString(env.LOCAL_POSTGRES_IMAGE, defaultConfig.postgresImage),
     healthTimeoutMs: Number(
       toNonEmptyString(env.LOCAL_DB_HEALTH_TIMEOUT_MS, String(defaultConfig.healthTimeoutMs)),
     ),
@@ -136,7 +133,7 @@ export function buildWebDevArgs(config) {
 }
 
 export function buildPostgresImageRef(config) {
-  return `postgres:${config.postgresImageTag}`;
+  return config.postgresImage;
 }
 
 function isDockerNoSuchImageError(message) {
@@ -256,7 +253,7 @@ function buildRuntimeEnv(config) {
     POSTGRES_PASSWORD: config.databasePassword,
     LOCAL_WEB_HOST: config.webHost,
     LOCAL_WEB_PORT: config.webPort,
-    LOCAL_POSTGRES_IMAGE_TAG: config.postgresImageTag,
+    LOCAL_POSTGRES_IMAGE: config.postgresImage,
   };
 }
 

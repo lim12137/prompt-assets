@@ -66,28 +66,28 @@ test("buildWebDevArgs starts only the local web service with resolved host and p
   ]);
 });
 
-test("buildPostgresImageRef uses local postgres image tag", () => {
+test("buildPostgresImageRef uses local postgres image ref", () => {
   const config = resolveLocalDebugConfig({
-    LOCAL_POSTGRES_IMAGE_TAG: "15-alpine",
+    LOCAL_POSTGRES_IMAGE: "ghcr.io/lim12137/prompt-assets-postgres:test",
   });
 
-  assert.equal(buildPostgresImageRef(config), "postgres:15-alpine");
+  assert.equal(buildPostgresImageRef(config), "ghcr.io/lim12137/prompt-assets-postgres:test");
 });
 
 test("ensureLocalPostgresImageAvailable fails fast when local image is missing", () => {
   const config = resolveLocalDebugConfig({
-    LOCAL_POSTGRES_IMAGE_TAG: "16-alpine",
+    LOCAL_POSTGRES_IMAGE: "ghcr.io/lim12137/prompt-assets-postgres",
   });
 
   assert.throws(
     () => ensureLocalPostgresImageAvailable(config, () => false),
-    /Local PostgreSQL image is missing:\s+postgres:16-alpine/i,
+    /Local PostgreSQL image is missing:\s+ghcr\.io\/lim12137\/prompt-assets-postgres/i,
   );
 });
 
 test("ensureLocalPostgresImageAvailable passes when local image exists", () => {
   const config = resolveLocalDebugConfig({
-    LOCAL_POSTGRES_IMAGE_TAG: "16-alpine",
+    LOCAL_POSTGRES_IMAGE: "ghcr.io/lim12137/prompt-assets-postgres",
   });
 
   assert.doesNotThrow(() => ensureLocalPostgresImageAvailable(config, () => true));
@@ -127,7 +127,7 @@ test("resolveDbUpMode starts existing stopped container before checking image", 
 
 test("resolveDbUpMode requires local image only when container does not exist", () => {
   const config = resolveLocalDebugConfig({
-    LOCAL_POSTGRES_IMAGE_TAG: "16-alpine",
+    LOCAL_POSTGRES_IMAGE: "ghcr.io/lim12137/prompt-assets-postgres",
   });
 
   const mode = resolveDbUpMode(

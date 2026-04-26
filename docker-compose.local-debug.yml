@@ -2,7 +2,7 @@ name: prompt-assets-local-debug
 
 services:
   postgres:
-    image: postgres:${LOCAL_POSTGRES_IMAGE_TAG:-16-alpine}
+    image: ${LOCAL_POSTGRES_IMAGE:-ghcr.io/lim12137/prompt-assets-postgres}
     container_name: ${LOCAL_DB_CONTAINER_NAME:-prompt-assets-local-db}
     restart: unless-stopped
     environment:
