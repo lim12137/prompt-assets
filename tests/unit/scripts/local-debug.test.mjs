@@ -142,14 +142,17 @@ test("resolveDbUpMode requires local image only when container does not exist", 
 test("local-debug.bat maps Windows shortcuts to local debug actions", async () => {
   const bat = await readFile(path.resolve("local-debug.bat"), "utf-8");
 
-  assert.match(bat, /node\s+"%SCRIPT%"\s+prepare/i);
-  assert.match(bat, /node\s+"%SCRIPT%"\s+db-up/i);
-  assert.match(bat, /node\s+"%SCRIPT%"\s+web/i);
-  assert.match(bat, /node\s+"%SCRIPT%"\s+restart-web/i);
-  assert.match(bat, /node\s+"%SCRIPT%"\s+stop-web/i);
-  assert.match(bat, /node\s+"%SCRIPT%"\s+db-down/i);
-  assert.match(bat, /node\s+"%SCRIPT%"\s+db-status/i);
-  assert.match(bat, /node\s+"%SCRIPT%"\s+db-logs/i);
+  assert.match(bat, /call\s+:run_action\s+prepare/i);
+  assert.match(bat, /call\s+:run_action\s+db-up/i);
+  assert.match(bat, /call\s+:run_action\s+web/i);
+  assert.match(bat, /call\s+:run_action\s+restart-web/i);
+  assert.match(bat, /call\s+:run_action\s+stop-web/i);
+  assert.match(bat, /call\s+:run_action\s+db-down/i);
+  assert.match(bat, /call\s+:run_action\s+db-status/i);
+  assert.match(bat, /call\s+:run_action\s+db-logs/i);
+  assert.match(bat, /if\s+"%ACTION%"\s*==\s*""\s*\(\s*set\s+"ACTION=dev"/i);
+  assert.match(bat, /\[local-debug\]\s+Node\.js was not found in PATH/i);
+  assert.match(bat, /\[local-debug\]\s+Startup failed\. Press any key to close this window/i);
 });
 
 test(
@@ -173,5 +176,29 @@ test(
     assert.equal(unknown.status, 1);
     assert.match(unknown.stdout, /Unknown action:\s+unknown-action/i);
     assert.match(unknown.stdout, /Usage:\s+local-debug\.bat/i);
+  },
+);
+
+test(
+  "local-debug.bat default dev prints clear reason when node is missing",
+  { skip: process.platform !== "win32" },
+  () => {
+    const run = spawnSync(
+      "cmd.exe",
+      [
+        "/d",
+        "/s",
+        "/c",
+        "set LOCAL_DEBUG_NO_PAUSE=1&&set PATH=C:\\Windows\\System32&&local-debug.bat",
+      ],
+      {
+        cwd: path.resolve("."),
+        encoding: "utf-8",
+      },
+    );
+
+    const output = `${run.stdout}\n${run.stderr}`;
+    assert.equal(run.status, 1);
+    assert.match(output, /\[local-debug\]\s+Node\.js was not found in PATH/i);
   },
 );

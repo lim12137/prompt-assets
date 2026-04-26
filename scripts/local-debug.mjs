@@ -317,6 +317,12 @@ function startPersistentWeb(config) {
   process.on("SIGINT", () => stopChild("SIGINT"));
   process.on("SIGTERM", () => stopChild("SIGTERM"));
 
+  child.on("error", (error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[local-debug] Failed to launch web process: ${message}`);
+    process.exit(1);
+  });
+
   child.on("exit", (code, signal) => {
     if (signal) {
       process.kill(process.pid, signal);
@@ -440,6 +446,24 @@ async function main() {
   await executePlan(plan, config);
 }
 
+function normalizeCliErrorMessage(error) {
+  if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+    const command = "path" in error && typeof error.path === "string" ? error.path : "command";
+    return `Command not found in PATH: ${command}`;
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return String(error || "Unknown error");
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  await main();
+  try {
+    await main();
+  } catch (error) {
+    console.error(`[local-debug] ${normalizeCliErrorMessage(error)}`);
+    process.exit(1);
+  }
 }
