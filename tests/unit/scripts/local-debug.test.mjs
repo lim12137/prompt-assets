@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 
 import {
   buildDatabaseUrl,
@@ -58,4 +60,17 @@ test("buildWebDevArgs starts only the local web service with resolved host and p
     "--port",
     "14000",
   ]);
+});
+
+test("local-debug.bat maps Windows shortcuts to local debug actions", async () => {
+  const bat = await readFile(path.resolve("local-debug.bat"), "utf-8");
+
+  assert.match(bat, /node\s+"%SCRIPT%"\s+prepare/i);
+  assert.match(bat, /node\s+"%SCRIPT%"\s+db-up/i);
+  assert.match(bat, /node\s+"%SCRIPT%"\s+web/i);
+  assert.match(bat, /node\s+"%SCRIPT%"\s+restart-web/i);
+  assert.match(bat, /node\s+"%SCRIPT%"\s+stop-web/i);
+  assert.match(bat, /node\s+"%SCRIPT%"\s+db-down/i);
+  assert.match(bat, /node\s+"%SCRIPT%"\s+db-status/i);
+  assert.match(bat, /node\s+"%SCRIPT%"\s+db-logs/i);
 });
