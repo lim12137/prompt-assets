@@ -4,9 +4,11 @@ import { createElement, useState, useTransition } from "react";
 
 const DEFAULT_ACTOR_EMAIL = "alice@example.com";
 
-async function mutateLike(slug, liked, actorEmail) {
+async function mutateVersionLike(slug, versionNo, liked, actorEmail) {
   const method = liked ? "DELETE" : "POST";
-  const response = await fetch(`/api/prompts/${encodeURIComponent(slug)}/like`, {
+  const response = await fetch(
+    `/api/prompts/${encodeURIComponent(slug)}/like?versionNo=${encodeURIComponent(versionNo)}`,
+    {
     method,
     headers: { "x-user-email": actorEmail },
   });
@@ -86,11 +88,81 @@ function AlertIcon() {
   }, createElement("circle", { cx: "12", cy: "12", r: "10" }), createElement("line", { x1: "12", y1: "8", x2: "12", y2: "12" }), createElement("line", { x1: "12", y1: "16", x2: "12.01", y2: "16" }));
 }
 
-export function PromptActions({ slug, initialLikesCount, currentVersionContent }) {
-  const [actorEmail, setActorEmail] = useState(DEFAULT_ACTOR_EMAIL);
-  const [likesCount, setLikesCount] = useState(initialLikesCount ?? 0);
-  const [liked, setLiked] = useState(false);
+export function VersionLikeAction({
+  slug,
+  versionNo,
+  initialLikesCount,
+  initialLiked,
+  actorEmail = DEFAULT_ACTOR_EMAIL,
+}) {
+  const [likesCount, setLikesCount] = useState(Number(initialLikesCount ?? 0));
+  const [liked, setLiked] = useState(Boolean(initialLiked));
   const [errorMessage, setErrorMessage] = useState("");
+  const [isPending, startTransition] = useTransition();
+
+  const onToggleLike = () => {
+    startTransition(() => {
+      setErrorMessage("");
+      const normalizedActor = String(actorEmail ?? "").trim();
+      void mutateVersionLike(
+        slug,
+        versionNo,
+        liked,
+        normalizedActor && normalizedActor.includes("@")
+          ? normalizedActor
+          : DEFAULT_ACTOR_EMAIL,
+      )
+        .then((payload) => {
+          setLiked(Boolean(payload?.liked));
+          setLikesCount(Number(payload?.likesCount ?? 0));
+        })
+        .catch(() => {
+          setErrorMessage("点赞失败，请稍后重试");
+        });
+    });
+  };
+
+  return createElement(
+    "div",
+    { style: { display: "grid", gap: "6px" } },
+    createElement(
+      "div",
+      { style: { display: "inline-flex", alignItems: "center", gap: "8px" } },
+      createElement(
+        "button",
+        {
+          type: "button",
+          onClick: onToggleLike,
+          "aria-pressed": liked,
+          disabled: isPending,
+          className: liked ? "pm-primary-button" : "pm-secondary-button",
+          style: { display: "inline-flex", alignItems: "center", gap: "6px" },
+          "data-testid": "version-like-button",
+        },
+        createElement(LikeIcon, { filled: liked }),
+        isPending ? "处理中..." : liked ? "取消点赞" : "点赞",
+      ),
+      createElement(
+        "span",
+        {
+          style: { fontSize: "14px", color: "var(--pm-muted)", minWidth: "50px" },
+          "data-testid": "version-like-count",
+        },
+        `${likesCount} 赞`,
+      ),
+    ),
+    errorMessage
+      ? createElement(
+          "span",
+          { style: { fontSize: "13px", color: "#b91c1c" } },
+          errorMessage,
+        )
+      : null,
+  );
+}
+
+export function PromptActions({ slug, currentVersionContent }) {
+  const [actorEmail, setActorEmail] = useState(DEFAULT_ACTOR_EMAIL);
   const [copyStatusMessage, setCopyStatusMessage] = useState("");
   const [copyErrorMessage, setCopyErrorMessage] = useState("");
 
@@ -100,15 +172,6 @@ export function PromptActions({ slug, initialLikesCount, currentVersionContent }
   const [candidateErrorMessage, setCandidateErrorMessage] = useState("");
   const [isPending, startTransition] = useTransition();
 
-  const onToggleLike = () => {
-    startTransition(() => {
-      setErrorMessage("");
-      void mutateLike(slug, liked, actorEmail.trim())
-        .then((payload) => { setLiked(Boolean(payload?.liked)); setLikesCount(Number(payload?.likesCount ?? 0)); })
-        .catch(() => { setErrorMessage("点赞失败，请稍后重试"); });
-    });
-  };
-
   const copyCurrentVersion = () => {
     setCopyStatusMessage(""); setCopyErrorMessage("");
     const content = String(currentVersionContent ?? "");
@@ -116,7 +179,7 @@ export function PromptActions({ slug, initialLikesCount, currentVersionContent }
     const clipboard = globalThis.navigator?.clipboard;
     if (!clipboard?.writeText) { setCopyErrorMessage("复制失败，请手动复制"); return; }
     void clipboard.writeText(content)
-      .then(() => { setCopyStatusMessage("已复制当前版本正文"); })
+      .then(() => { setCopyStatusMessage("复制成功：已复制当前版本正文"); })
       .catch(() => { setCopyErrorMessage("复制失败，请稍后重试"); });
   };
 
@@ -155,12 +218,6 @@ export function PromptActions({ slug, initialLikesCount, currentVersionContent }
         ),
         createElement("div", { style: { display: "flex", gap: "8px", alignItems: "center" } },
           createElement("button", {
-            type: "button", onClick: onToggleLike, "aria-pressed": liked, disabled: isPending,
-            className: liked ? "pm-primary-button" : "pm-secondary-button",
-            style: { display: "inline-flex", alignItems: "center", gap: "6px" },
-          }, createElement(LikeIcon, { filled: liked }), isPending ? "处理中..." : liked ? "取消点赞" : "点赞"),
-          createElement("span", { style: { fontSize: "14px", color: "var(--pm-muted)", minWidth: "50px" } }, `${likesCount} 赞`),
-          createElement("button", {
             type: "button", onClick: copyCurrentVersion, className: "pm-secondary-button",
             style: { display: "inline-flex", alignItems: "center", gap: "6px" },
           }, createElement(CopyIcon), "复制当前版本"),
@@ -169,7 +226,6 @@ export function PromptActions({ slug, initialLikesCount, currentVersionContent }
       createElement("div", { style: { display: "grid", gap: "8px", marginTop: "10px" } },
         copyStatusMessage ? createElement(Message, { type: "success" }, createElement(CheckIcon), copyStatusMessage) : null,
         copyErrorMessage ? createElement(Message, { type: "error" }, createElement(AlertIcon), copyErrorMessage) : null,
-        errorMessage ? createElement(Message, { type: "error" }, createElement(AlertIcon), errorMessage) : null,
       ),
     ),
 

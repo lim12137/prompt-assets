@@ -1,5 +1,5 @@
 import { createElement } from "react";
-import { PromptActions } from "./_prompt-actions.js";
+import { PromptActions, VersionLikeAction } from "./_prompt-actions.js";
 import { CopyCardButton } from "./_copy-card-button.js";
 
 /**
@@ -13,6 +13,8 @@ import { CopyCardButton } from "./_copy-card-button.js";
  * @property {string} submittedAt
  * @property {string | undefined} [submittedBy]
  * @property {PromptVersionStatus} status
+ * @property {number} likesCount
+ * @property {boolean} liked
  * @property {string | undefined} [content]
  */
 
@@ -21,8 +23,9 @@ import { CopyCardButton } from "./_copy-card-button.js";
  * @property {string} slug
  * @property {string} title
  * @property {string} summary
+ * @property {number} likesCount
  * @property {{ slug: string; name: string }} category
- * @property {{ versionNo: string; sourceType: string; submittedAt: string; content: string }} currentVersion
+ * @property {{ versionNo: string; sourceType: string; submittedAt: string; likesCount: number; liked: boolean; content: string }} currentVersion
  * @property {PromptDetailVersionView[]} versions
  */
 
@@ -145,7 +148,13 @@ export function PromptDetailContent({ detail }) {
           createElement("div", { style: { marginLeft: "auto" } }, createElement(StatusBadge, { status: "approved" })),
         ),
         createElement("div", { className: "pm-code-block" }, detail.currentVersion.content),
-        createElement("div", { style: { marginTop: "12px", display: "flex", justifyContent: "flex-end" } },
+        createElement("div", { style: { marginTop: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
+          createElement(VersionLikeAction, {
+            slug: detail.slug,
+            versionNo: detail.currentVersion.versionNo,
+            initialLikesCount: detail.currentVersion.likesCount ?? detail.likesCount ?? 0,
+            initialLiked: detail.currentVersion.liked ?? false,
+          }),
           createElement(CopyCardButton, { content: detail.currentVersion.content }),
         ),
       ),
@@ -167,7 +176,13 @@ export function PromptDetailContent({ detail }) {
             createElement(StatusBadge, { status: card.status }),
           ),
           createElement("div", { className: "pm-code-block" }, card.content ?? ""),
-          createElement("div", { style: { marginTop: "12px", display: "flex", justifyContent: "flex-end" } },
+          createElement("div", { style: { marginTop: "12px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" } },
+            createElement(VersionLikeAction, {
+              slug: detail.slug,
+              versionNo: card.versionNo,
+              initialLikesCount: card.likesCount ?? 0,
+              initialLiked: card.liked ?? false,
+            }),
             createElement(CopyCardButton, { content: card.content ?? "" }),
           ),
         ),
@@ -186,7 +201,6 @@ export function PromptDetailContent({ detail }) {
 
     createElement(PromptActions, {
       slug: detail.slug,
-      initialLikesCount: detail.likesCount,
       currentVersionContent: detail.currentVersion.content,
     }),
 

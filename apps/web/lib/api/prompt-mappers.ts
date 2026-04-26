@@ -24,6 +24,8 @@ export type PromptDetailVersionDto = {
   status: PromptVersionStatus;
   submittedAt: string;
   submittedBy?: string;
+  likesCount: number;
+  liked: boolean;
   content?: string;
 };
 
@@ -43,6 +45,8 @@ export type PromptDetailDto = {
     versionNo: string;
     sourceType: string;
     submittedAt: string;
+    likesCount: number;
+    liked: boolean;
     content: string;
   };
   versions: PromptDetailVersionDto[];
@@ -67,6 +71,8 @@ export type PromptVersionRaw = {
   status: PromptVersionStatus;
   submittedAt: string | Date;
   submittedBy?: string;
+  likesCount?: number;
+  liked?: boolean;
   content: string;
 };
 
@@ -83,6 +89,8 @@ export type PromptDetailRaw = {
   currentVersionNo: string;
   currentVersionSourceType: string;
   currentVersionSubmittedAt: string | Date;
+  currentVersionLikesCount?: number;
+  currentVersionLiked?: boolean;
   currentVersionContent: string;
   versions: PromptVersionRaw[];
 };
@@ -131,6 +139,8 @@ export function mapPromptDetailVersion(
     status: raw.status,
     submittedAt: toIsoString(raw.submittedAt),
     submittedBy: raw.submittedBy,
+    likesCount: Number(raw.likesCount ?? 0),
+    liked: Boolean(raw.liked),
   };
 
   if (raw.status !== "rejected") {
@@ -150,6 +160,11 @@ export function mapPromptDetail(raw: PromptDetailRaw): PromptDetailDto {
       ? raw.categorySlugs
       : categories.map((item) => item.slug);
 
+  const versions = raw.versions.map(mapPromptDetailVersion);
+  const currentVersionFromList = versions.find(
+    (version) => version.versionNo === raw.currentVersionNo,
+  );
+
   return {
     slug: raw.slug,
     title: raw.title,
@@ -166,8 +181,15 @@ export function mapPromptDetail(raw: PromptDetailRaw): PromptDetailDto {
       versionNo: raw.currentVersionNo,
       sourceType: raw.currentVersionSourceType,
       submittedAt: toIsoString(raw.currentVersionSubmittedAt),
+      likesCount: Number(
+        raw.currentVersionLikesCount ??
+          currentVersionFromList?.likesCount ??
+          raw.likesCount ??
+          0,
+      ),
+      liked: Boolean(raw.currentVersionLiked ?? currentVersionFromList?.liked),
       content: raw.currentVersionContent,
     },
-    versions: raw.versions.map(mapPromptDetailVersion),
+    versions,
   };
 }
