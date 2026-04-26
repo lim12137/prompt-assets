@@ -135,6 +135,114 @@ export function buildWebDevArgs(config) {
   ];
 }
 
+export function buildPostgresImageRef(config) {
+  return `postgres:${config.postgresImageTag}`;
+}
+
+function isDockerNoSuchImageError(message) {
+  const normalized = String(message || "").toLowerCase();
+  return normalized.includes("no such image");
+}
+
+function isDockerNoSuchContainerError(message) {
+  const normalized = String(message || "").toLowerCase();
+  return normalized.includes("no such object");
+}
+
+function inspectDbContainerState(containerName) {
+  const result = spawnSync(
+    "docker",
+    [
+      "inspect",
+      "--format",
+      "{{.State.Status}}\t{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}",
+      containerName,
+    ],
+    {
+      encoding: "utf-8",
+      cwd: workspaceRoot,
+      shell: false,
+    },
+  );
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status === 0) {
+    const [status = "unknown", health = "none"] = (result.stdout || "")
+      .trim()
+      .split("\t")
+      .map((item) => item.trim());
+    return {
+      exists: true,
+      status,
+      health,
+    };
+  }
+
+  const output = `${result.stderr || ""}\n${result.stdout || ""}`.trim();
+  if (isDockerNoSuchContainerError(output)) {
+    return {
+      exists: false,
+      status: "missing",
+      health: "none",
+    };
+  }
+
+  throw new Error(output || `docker inspect ${containerName} failed with exit code ${result.status ?? 1}`);
+}
+
+function inspectLocalDockerImageExists(imageRef) {
+  const result = spawnSync("docker", ["image", "inspect", imageRef], {
+    encoding: "utf-8",
+    cwd: workspaceRoot,
+    shell: false,
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status === 0) {
+    return true;
+  }
+
+  const output = `${result.stderr || ""}\n${result.stdout || ""}`.trim();
+  if (isDockerNoSuchImageError(output)) {
+    return false;
+  }
+
+  throw new Error(output || `docker image inspect ${imageRef} failed with exit code ${result.status ?? 1}`);
+}
+
+export function ensureLocalPostgresImageAvailable(config, inspectImage = inspectLocalDockerImageExists) {
+  const imageRef = buildPostgresImageRef(config);
+  const exists = inspectImage(imageRef);
+
+  if (exists) {
+    return;
+  }
+
+  throw new Error(
+    `Local PostgreSQL image is missing: ${imageRef}. Refusing to auto-pull in local debug mode. Please run: docker pull ${imageRef}`,
+  );
+}
+
+export function resolveDbUpMode(
+  config,
+  inspectContainer = inspectDbContainerState,
+  inspectImage = inspectLocalDockerImageExists,
+) {
+  const containerState = inspectContainer(config.containerName);
+  if (containerState.exists) {
+    return containerState.status === "running" ? "reuse-running-container" : "start-existing-container";
+  }
+
+  ensureLocalPostgresImageAvailable(config, inspectImage);
+  return "compose-up-new-container";
+}
+
 function buildRuntimeEnv(config) {
   const databaseUrl = buildDatabaseUrl(config);
   return {
@@ -281,7 +389,12 @@ function stopWebProcess(config) {
 async function executePlan(plan, config) {
   for (const step of plan) {
     if (step === "db-up") {
-      runDockerCompose(config, ["up", "-d", "postgres"]);
+      const dbUpMode = resolveDbUpMode(config);
+      if (dbUpMode === "compose-up-new-container") {
+        runDockerCompose(config, ["up", "-d", "postgres"]);
+      } else if (dbUpMode === "start-existing-container") {
+        runCommand("docker", ["start", config.containerName]);
+      }
       await waitForDatabaseHealthy(config);
       continue;
     }

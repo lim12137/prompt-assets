@@ -7,7 +7,10 @@ import { spawnSync } from "node:child_process";
 import {
   buildDatabaseUrl,
   buildExecutionPlan,
+  buildPostgresImageRef,
   buildWebDevArgs,
+  ensureLocalPostgresImageAvailable,
+  resolveDbUpMode,
   resolveLocalDebugConfig,
 } from "../../../scripts/local-debug.mjs";
 
@@ -63,6 +66,79 @@ test("buildWebDevArgs starts only the local web service with resolved host and p
   ]);
 });
 
+test("buildPostgresImageRef uses local postgres image tag", () => {
+  const config = resolveLocalDebugConfig({
+    LOCAL_POSTGRES_IMAGE_TAG: "15-alpine",
+  });
+
+  assert.equal(buildPostgresImageRef(config), "postgres:15-alpine");
+});
+
+test("ensureLocalPostgresImageAvailable fails fast when local image is missing", () => {
+  const config = resolveLocalDebugConfig({
+    LOCAL_POSTGRES_IMAGE_TAG: "16-alpine",
+  });
+
+  assert.throws(
+    () => ensureLocalPostgresImageAvailable(config, () => false),
+    /Local PostgreSQL image is missing:\s+postgres:16-alpine/i,
+  );
+});
+
+test("ensureLocalPostgresImageAvailable passes when local image exists", () => {
+  const config = resolveLocalDebugConfig({
+    LOCAL_POSTGRES_IMAGE_TAG: "16-alpine",
+  });
+
+  assert.doesNotThrow(() => ensureLocalPostgresImageAvailable(config, () => true));
+});
+
+test("resolveDbUpMode reuses running container before checking image", () => {
+  const config = resolveLocalDebugConfig({
+    LOCAL_DB_CONTAINER_NAME: "prompt-assets-local-db",
+  });
+
+  const mode = resolveDbUpMode(
+    config,
+    () => ({ exists: true, status: "running", health: "healthy" }),
+    () => {
+      throw new Error("image check should not be called");
+    },
+  );
+
+  assert.equal(mode, "reuse-running-container");
+});
+
+test("resolveDbUpMode starts existing stopped container before checking image", () => {
+  const config = resolveLocalDebugConfig({
+    LOCAL_DB_CONTAINER_NAME: "prompt-assets-local-db",
+  });
+
+  const mode = resolveDbUpMode(
+    config,
+    () => ({ exists: true, status: "exited", health: "none" }),
+    () => {
+      throw new Error("image check should not be called");
+    },
+  );
+
+  assert.equal(mode, "start-existing-container");
+});
+
+test("resolveDbUpMode requires local image only when container does not exist", () => {
+  const config = resolveLocalDebugConfig({
+    LOCAL_POSTGRES_IMAGE_TAG: "16-alpine",
+  });
+
+  const mode = resolveDbUpMode(
+    config,
+    () => ({ exists: false, status: "missing", health: "none" }),
+    () => true,
+  );
+
+  assert.equal(mode, "compose-up-new-container");
+});
+
 test("local-debug.bat maps Windows shortcuts to local debug actions", async () => {
   const bat = await readFile(path.resolve("local-debug.bat"), "utf-8");
 
@@ -77,7 +153,7 @@ test("local-debug.bat maps Windows shortcuts to local debug actions", async () =
 });
 
 test(
-  "local-debug.bat uses safe defaults for empty action and unknown action",
+  "local-debug.bat help and unknown action are deterministic",
   { skip: process.platform !== "win32" },
   () => {
     const runBat = (rawArgs) =>
@@ -86,12 +162,12 @@ test(
         encoding: "utf-8",
       });
 
-    const noArgs = runBat("");
-    assert.equal(noArgs.status, 0);
-    assert.match(noArgs.stdout, /Usage:\s+local-debug\.bat/i);
-    assert.match(noArgs.stdout, /prepare/i);
-    assert.match(noArgs.stdout, /status/i);
-    assert.match(noArgs.stdout, /logs/i);
+    const help = runBat("help");
+    assert.equal(help.status, 0);
+    assert.match(help.stdout, /Usage:\s+local-debug\.bat/i);
+    assert.match(help.stdout, /prepare/i);
+    assert.match(help.stdout, /status/i);
+    assert.match(help.stdout, /logs/i);
 
     const unknown = runBat("unknown-action");
     assert.equal(unknown.status, 1);
