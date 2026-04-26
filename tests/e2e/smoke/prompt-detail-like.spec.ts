@@ -5,16 +5,16 @@ test("详情页官方卡支持版本级点赞", async ({ page }) => {
     ["v0001", { likesCount: 0, liked: false }],
   ]);
 
-  await page.route("**/api/prompts/js-code-reviewer/like?**", async (route) => {
+  await page.route("**/api/prompts/js-code-reviewer/versions/*/like", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    const versionNo = url.searchParams.get("versionNo");
+    const versionNo = url.pathname.split("/").at(-2);
 
     if (!versionNo || !versionLikes.has(versionNo)) {
       await route.fulfill({
         status: 400,
         contentType: "application/json",
-        body: JSON.stringify({ error: "missing versionNo" }),
+        body: JSON.stringify({ error: "invalid versionNo" }),
       });
       return;
     }

@@ -7,11 +7,12 @@ const DEFAULT_ACTOR_EMAIL = "alice@example.com";
 async function mutateVersionLike(slug, versionNo, liked, actorEmail) {
   const method = liked ? "DELETE" : "POST";
   const response = await fetch(
-    `/api/prompts/${encodeURIComponent(slug)}/like?versionNo=${encodeURIComponent(versionNo)}`,
+    `/api/prompts/${encodeURIComponent(slug)}/versions/${encodeURIComponent(versionNo)}/like`,
     {
-    method,
-    headers: { "x-user-email": actorEmail },
-  });
+      method,
+      headers: { "x-user-email": actorEmail },
+    },
+  );
   if (!response.ok) throw new Error("点赞操作失败");
   return response.json();
 }
