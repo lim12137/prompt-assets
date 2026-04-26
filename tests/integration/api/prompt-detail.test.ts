@@ -21,11 +21,13 @@ type PromptDetail = {
     versionNo: string;
     content: string;
     sourceType: string;
+    likesCount: number;
   };
   versions: Array<{
     versionNo: string;
     sourceType: string;
     status: "approved" | "pending" | "rejected";
+    likesCount: number;
     content?: string;
   }>;
 };
@@ -53,8 +55,14 @@ test("GET /api/prompts/[slug] 返回最小详情结构", async () => {
   );
   assert.equal(typeof payload.currentVersion.versionNo, "string");
   assert.equal(typeof payload.currentVersion.content, "string");
+  assert.equal(typeof payload.currentVersion.likesCount, "number");
   assert.ok(Array.isArray(payload.versions), "versions 应为数组");
   assert.ok(payload.versions.length >= 1, "versions 至少包含 1 条");
+  assert.equal(
+    payload.versions.every((version) => typeof version.likesCount === "number"),
+    true,
+    "versions 中每个版本都应返回 likesCount",
+  );
 });
 
 test("GET /api/prompts/[slug] 不暴露 rejected 版本正文", async () => {

@@ -136,6 +136,26 @@ test("静态断言: 多分类关系表与系统分类字段已在迁移中定义
   );
 });
 
+test("静态断言: 版本级点赞表、唯一约束与版本计数字段已在迁移中定义", () => {
+  assert.match(
+    migrationSql,
+    /CREATE TABLE "prompt_version_likes"[\s\S]*"prompt_version_id"\s+integer\s+NOT NULL[\s\S]*"user_id"\s+integer\s+NOT NULL/i,
+    "迁移缺少 prompt_version_likes 表",
+  );
+
+  assert.match(
+    migrationSql,
+    /CREATE UNIQUE INDEX "prompt_version_likes_prompt_version_id_user_id_key"\s+ON "prompt_version_likes"\s+USING btree\s*\("prompt_version_id", "user_id"\)/i,
+    "迁移缺少 prompt_version_likes(prompt_version_id, user_id) 唯一约束",
+  );
+
+  assert.match(
+    migrationSql,
+    /CREATE TABLE "prompt_versions"[\s\S]*"likes_count"\s+integer\s+DEFAULT 0\s+NOT NULL/i,
+    "迁移缺少 prompt_versions.likes_count 字段",
+  );
+});
+
 test("真实DB断言: 核心业务表存在", async (t) => {
   if (!(await isPgReachable(testDatabaseUrl))) {
     t.skip(`测试库不可达，跳过真实 DB 断言: ${testDatabaseUrl}`);
@@ -220,6 +240,57 @@ test("真实DB断言: 分类系统字段与多分类关系表可用", async (t) 
       columns.has("is_collapsed_by_default"),
       true,
       "缺少字段: categories.is_collapsed_by_default",
+    );
+  });
+});
+
+test("真实DB断言: 版本级点赞表、唯一约束与版本计数字段可用", async (t) => {
+  if (!(await isPgReachable(testDatabaseUrl))) {
+    t.skip(`测试库不可达，跳过真实 DB 断言: ${testDatabaseUrl}`);
+    return;
+  }
+
+  await withPgClient(testDatabaseUrl, async (client) => {
+    const tableResult = await client.query<{ exists: boolean }>(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM pg_tables
+          WHERE schemaname = 'public' AND tablename = 'prompt_version_likes'
+        ) AS exists;
+      `,
+    );
+    assert.equal(
+      tableResult.rows[0]?.exists,
+      true,
+      "缺少表: prompt_version_likes",
+    );
+
+    assert.equal(
+      await hasUniqueConstraint(
+        client,
+        "prompt_version_likes",
+        ["prompt_version_id", "user_id"],
+      ),
+      true,
+      "缺少唯一约束: prompt_version_likes(prompt_version_id, user_id)",
+    );
+
+    const columnResult = await client.query<{ exists: boolean }>(
+      `
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'prompt_versions'
+            AND column_name = 'likes_count'
+        ) AS exists;
+      `,
+    );
+    assert.equal(
+      columnResult.rows[0]?.exists,
+      true,
+      "缺少字段: prompt_versions.likes_count",
     );
   });
 });
