@@ -4,7 +4,7 @@ setlocal
 set "SCRIPT=%~dp0scripts\local-debug.mjs"
 set "ACTION=%~1"
 
-if "%ACTION%"=="" goto help_interactive
+if "%ACTION%"=="" goto dev
 if /I "%ACTION%"=="help" goto help
 if /I "%ACTION%"=="prepare" goto prepare
 if /I "%ACTION%"=="db-up" goto db_up
