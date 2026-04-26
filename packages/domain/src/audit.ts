@@ -2,11 +2,13 @@ export type AuditAction =
   | "prompt.created"
   | "prompt.liked"
   | "prompt.unliked"
+  | "prompt.version.liked"
+  | "prompt.version.unliked"
   | "submission.created"
   | "submission.approved"
   | "submission.rejected";
 
-export type AuditTargetType = "prompt" | "submission";
+export type AuditTargetType = "prompt" | "prompt_version" | "submission";
 
 export type AuditPayload = Record<string, unknown>;
 

@@ -20,6 +20,7 @@ export const coreTableNames = [
   "prompt_versions",
   "submissions",
   "prompt_likes",
+  "prompt_version_likes",
   "audit_logs",
 ] as const;
 
@@ -28,6 +29,7 @@ export const coreUniqueConstraints = [
   { table: "prompt_categories", columns: ["prompt_id", "category_id"] },
   { table: "prompt_versions", columns: ["prompt_id", "version_no"] },
   { table: "prompt_likes", columns: ["prompt_id", "user_id"] },
+  { table: "prompt_version_likes", columns: ["prompt_version_id", "user_id"] },
 ] as const;
 
 export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
@@ -137,6 +139,7 @@ export const promptVersions = pgTable(
       .references(() => prompts.id, { onDelete: "cascade" }),
     versionNo: text("version_no").notNull(),
     content: text("content").notNull(),
+    likesCount: integer("likes_count").notNull().default(0),
     changeNote: text("change_note"),
     sourceType: versionSourceTypeEnum("source_type").notNull().default("edit"),
     submittedBy: integer("submitted_by").references(() => users.id, {
@@ -204,6 +207,28 @@ export const promptLikes = pgTable(
       .defaultNow(),
   },
   (table) => [uniqueIndex("prompt_likes_prompt_id_user_id_key").on(table.promptId, table.userId)],
+);
+
+export const promptVersionLikes = pgTable(
+  "prompt_version_likes",
+  {
+    id: serial("id").primaryKey(),
+    promptVersionId: integer("prompt_version_id")
+      .notNull()
+      .references(() => promptVersions.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: false })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("prompt_version_likes_prompt_version_id_user_id_key").on(
+      table.promptVersionId,
+      table.userId,
+    ),
+  ],
 );
 
 export const auditLogs = pgTable("audit_logs", {
