@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 
 import {
   buildDatabaseUrl,
@@ -74,3 +75,27 @@ test("local-debug.bat maps Windows shortcuts to local debug actions", async () =
   assert.match(bat, /node\s+"%SCRIPT%"\s+db-status/i);
   assert.match(bat, /node\s+"%SCRIPT%"\s+db-logs/i);
 });
+
+test(
+  "local-debug.bat uses safe defaults for empty action and unknown action",
+  { skip: process.platform !== "win32" },
+  () => {
+    const runBat = (rawArgs) =>
+      spawnSync("cmd.exe", ["/d", "/s", "/c", `local-debug.bat ${rawArgs}`], {
+        cwd: path.resolve("."),
+        encoding: "utf-8",
+      });
+
+    const noArgs = runBat("");
+    assert.equal(noArgs.status, 0);
+    assert.match(noArgs.stdout, /Usage:\s+local-debug\.bat/i);
+    assert.match(noArgs.stdout, /prepare/i);
+    assert.match(noArgs.stdout, /status/i);
+    assert.match(noArgs.stdout, /logs/i);
+
+    const unknown = runBat("unknown-action");
+    assert.equal(unknown.status, 1);
+    assert.match(unknown.stdout, /Unknown action:\s+unknown-action/i);
+    assert.match(unknown.stdout, /Usage:\s+local-debug\.bat/i);
+  },
+);
