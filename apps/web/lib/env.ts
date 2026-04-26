@@ -16,7 +16,7 @@ export function parseAppEnv(input: AppEnvInput = process.env): AppEnv {
     throw new Error("DATABASE_URL is required");
   }
 
-  const appBaseUrlRaw = input.APP_BASE_URL ?? "http://localhost:13000";
+  const appBaseUrlRaw = input.APP_BASE_URL ?? "http://localhost:3010";
   const appBaseUrl = new URL(appBaseUrlRaw);
 
   return {

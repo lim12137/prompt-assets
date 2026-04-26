@@ -5,7 +5,7 @@
   "packageManager": "pnpm@10.11.0",
   "scripts": {
     "test:runtime": "node --test --experimental-strip-types tests/unit/smoke/runtime.test.ts",
-    "dev:web": "pnpm --filter @prompt-management/web dev --hostname 127.0.0.1 --port 13000",
+    "dev:web": "pnpm --filter @prompt-management/web dev --hostname 127.0.0.1 --port 3010",
     "local:dev": "node ./scripts/local-debug.mjs dev",
     "local:prepare": "node ./scripts/local-debug.mjs prepare",
     "local:web": "node ./scripts/local-debug.mjs web",
@@ -15,7 +15,7 @@
     "local:db:status": "node ./scripts/local-debug.mjs db-status",
     "local:db:logs": "node ./scripts/local-debug.mjs db-logs",
     "build:web": "pnpm --filter @prompt-management/web build",
-    "start:web": "pnpm --filter @prompt-management/web start --hostname 127.0.0.1 --port 13000",
+    "start:web": "pnpm --filter @prompt-management/web start --hostname 127.0.0.1 --port 3010",
     "test:e2e": "playwright test tests/e2e/smoke/home.spec.ts",
     "db:generate": "pnpm --filter @prompt-management/db db:generate",
     "db:migrate": "pnpm --filter @prompt-management/db db:migrate",

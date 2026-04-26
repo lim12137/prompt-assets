@@ -23,9 +23,10 @@ test("resolveLocalDebugConfig returns local debug defaults", () => {
   assert.equal(config.databaseName, "prompt_management");
   assert.equal(config.databaseUser, "postgres");
   assert.equal(config.databasePassword, "postgres");
-  assert.equal(config.appBaseUrl, "http://127.0.0.1:13000");
+  assert.equal(config.appBaseUrl, "http://127.0.0.1:3010");
   assert.equal(config.webHost, "127.0.0.1");
-  assert.equal(config.webPort, "13000");
+  assert.equal(config.webPort, "3010");
+  assert.equal(config.postgresImage, "ghcr.io/lim12137/prompt-assets-postgres:16-alpine");
 });
 
 test("buildDatabaseUrl prefers resolved config values", () => {

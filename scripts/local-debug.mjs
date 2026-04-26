@@ -15,11 +15,11 @@ const defaultConfig = {
   databaseName: "prompt_management",
   databaseUser: "postgres",
   databasePassword: "postgres",
-  appBaseUrl: "http://127.0.0.1:13000",
+  appBaseUrl: "http://127.0.0.1:3010",
   webHost: "127.0.0.1",
-  webPort: "13000",
+  webPort: "3010",
   postgresHost: "127.0.0.1",
-  postgresImage: "ghcr.io/lim12137/prompt-assets-postgres",
+  postgresImage: "ghcr.io/lim12137/prompt-assets-postgres:16-alpine",
   healthTimeoutMs: 30000,
   healthIntervalMs: 1000,
 };
@@ -146,6 +146,53 @@ function isDockerNoSuchContainerError(message) {
   return normalized.includes("no such object");
 }
 
+function hasExplicitImageTagOrDigest(imageRef) {
+  if (imageRef.includes("@")) {
+    return true;
+  }
+
+  const lastSegment = imageRef.split("/").pop() ?? imageRef;
+  return lastSegment.includes(":");
+}
+
+function inspectLocalDockerRepositoryHasAnyTaggedImage(imageRef) {
+  const result = spawnSync(
+    "docker",
+    ["image", "ls", "--format", "{{.Repository}}\t{{.Tag}}", "--filter", `reference=${imageRef}:*`],
+    {
+      encoding: "utf-8",
+      cwd: workspaceRoot,
+      shell: false,
+    },
+  );
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  if (result.status !== 0) {
+    const output = `${result.stderr || ""}\n${result.stdout || ""}`.trim();
+    throw new Error(
+      output || `docker image ls reference=${imageRef}:* failed with exit code ${result.status ?? 1}`,
+    );
+  }
+
+  const lines = (result.stdout || "")
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    const [repository = "", tag = ""] = line.split("\t").map((item) => item.trim());
+    if (repository === imageRef && tag && tag !== "<none>") {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function inspectDbContainerState(containerName) {
   const result = spawnSync(
     "docker",
@@ -207,6 +254,9 @@ function inspectLocalDockerImageExists(imageRef) {
 
   const output = `${result.stderr || ""}\n${result.stdout || ""}`.trim();
   if (isDockerNoSuchImageError(output)) {
+    if (!hasExplicitImageTagOrDigest(imageRef)) {
+      return inspectLocalDockerRepositoryHasAnyTaggedImage(imageRef);
+    }
     return false;
   }
 

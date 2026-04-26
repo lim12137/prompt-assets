@@ -124,7 +124,7 @@ echo.
 echo Actions:
 echo   prepare      Start local Docker database, run migrations, seed data.
 echo   db-up        Start local Docker database only.
-echo   web          Start local web service on 127.0.0.1:13000.
+echo   web          Start local web service on 127.0.0.1:3010.
 echo   restart-web  Stop local web listener and start it again.
 echo   stop-web     Stop process listening on the local web port.
 echo   db-down      Stop and remove local Docker database.
