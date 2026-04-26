@@ -21,6 +21,27 @@ async function createPromptByApi(
   expect(response.status()).toBe(201);
 }
 
+async function getPromptListByApi(
+  request: Parameters<typeof test>[0]["request"],
+): Promise<Array<{
+  slug: string;
+  title: string;
+  currentVersionContent: string;
+}>> {
+  const response = await request.get("/api/prompts", {
+    headers: {
+      "x-user-email": "admin@example.com",
+      "x-user-role": "admin",
+    },
+  });
+  expect(response.status()).toBe(200);
+  return (await response.json()) as Array<{
+    slug: string;
+    title: string;
+    currentVersionContent: string;
+  }>;
+}
+
 test("home page task4: 页面名称为公司提示词库", async ({ page }) => {
   const response = await page.goto("/");
   expect(response?.status()).toBe(200);
@@ -88,4 +109,61 @@ test("home page task4: 卡片与列表都展示多分类标签", async ({ page }
   await expect(listItem.getByTestId("prompt-category-tag")).toHaveCount(2);
   await expect(listItem.getByText("编程")).toBeVisible();
   await expect(listItem.getByText("设计")).toBeVisible();
+});
+
+test("home page ux: 点击卡片非链接区域也可跳转详情页", async ({ page }) => {
+  const slug = "js-code-reviewer";
+  const title = "JavaScript 代码审查助手";
+
+  await page.goto("/");
+  await page.getByLabel("关键词搜索").fill(title);
+
+  const card = page.locator("[data-testid='prompt-card']").filter({ hasText: title }).first();
+  await expect(card).toBeVisible();
+
+  // 点击卡片左上区域，避免命中“查看详情”文本链接本身。
+  await card.click({ position: { x: 12, y: 12 } });
+  await expect(page).toHaveURL(new RegExp(`/prompts/${slug}$`));
+  await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();
+});
+
+test("home page ux: 点击查看详情行右侧复制按钮时不跳转且复制默认版本正文", async ({ page }) => {
+  const slug = "js-code-reviewer";
+  const title = "JavaScript 代码审查助手";
+  const promptList = await getPromptListByApi(page.request);
+  const seedPrompt = promptList.find((item) => item.slug === slug);
+  expect(seedPrompt).toBeTruthy();
+  const defaultContent = seedPrompt?.currentVersionContent ?? "";
+  expect(defaultContent).not.toBe("");
+
+  await page.addInitScript(() => {
+    (window as typeof window & { __copiedText?: string }).__copiedText = "";
+    Object.defineProperty(window.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          (window as typeof window & { __copiedText?: string }).__copiedText = text;
+        },
+      },
+    });
+  });
+
+  await page.goto("/");
+  await page.getByLabel("关键词搜索").fill(title);
+  await page.getByRole("button", { name: "列表视图" }).click();
+
+  const listItem = page.locator("[data-testid='prompt-card']").filter({ hasText: title }).first();
+  await expect(listItem).toBeVisible();
+
+  const copyButton = listItem.getByRole("button", { name: /复制/ }).first();
+  await expect(copyButton).toBeVisible();
+
+  const beforeUrl = page.url();
+  await copyButton.click();
+
+  await expect(page).toHaveURL(beforeUrl);
+  const copiedText = await page.evaluate(() => {
+    return (window as typeof window & { __copiedText?: string }).__copiedText ?? "";
+  });
+  expect(copiedText).toBe(defaultContent);
 });
