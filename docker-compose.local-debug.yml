@@ -1,0 +1,28 @@
+name: prompt-assets-local-debug
+
+services:
+  postgres:
+    image: postgres:${LOCAL_POSTGRES_IMAGE_TAG:-16-alpine}
+    container_name: ${LOCAL_DB_CONTAINER_NAME:-prompt-assets-local-db}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${LOCAL_POSTGRES_DB:-prompt_management}
+      POSTGRES_USER: ${LOCAL_POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "${LOCAL_POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - prompt_assets_local_debug_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${LOCAL_POSTGRES_USER:-postgres} -d ${LOCAL_POSTGRES_DB:-prompt_management}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  prompt_assets_local_debug_postgres_data:
+    name: prompt_assets_local_debug_postgres_data
