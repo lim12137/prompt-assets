@@ -7,6 +7,7 @@ export type PromptListItemDto = {
   slug: string;
   title: string;
   summary: string;
+  currentVersionContent: string;
   likesCount: number;
   updatedAt: string;
   categorySlug: string;
@@ -51,6 +52,7 @@ export type PromptListRaw = {
   slug: string;
   title: string;
   summary: string;
+  currentVersionContent: string;
   likesCount: number;
   updatedAt: string | Date;
   categorySlug: string;
@@ -110,6 +112,7 @@ export function mapPromptListItem(raw: PromptListRaw): PromptListItemDto {
     slug: raw.slug,
     title: raw.title,
     summary: raw.summary,
+    currentVersionContent: raw.currentVersionContent,
     likesCount: raw.likesCount,
     updatedAt: toIsoString(raw.updatedAt),
     categorySlug: raw.categorySlug,

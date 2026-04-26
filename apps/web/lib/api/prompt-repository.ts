@@ -311,6 +311,7 @@ type DbPromptListRow = {
   category_slug: string;
   category_name: string;
   categories_json: unknown;
+  current_version_content: string | null;
 };
 
 type DbPromptDetailHeadRow = {
@@ -868,6 +869,23 @@ function getFixtureCurrentVersionNo(slug: string): string | null {
   return currentVersionNo ?? null;
 }
 
+function getFixtureCurrentVersionContent(slug: string): string {
+  const currentVersionNo = getFixtureCurrentVersionNo(slug);
+  if (!currentVersionNo) {
+    return "";
+  }
+
+  const versions = getFixturePromptVersions(slug);
+  if (!versions || versions.length === 0) {
+    return "";
+  }
+
+  const matchedVersion = versions.find(
+    (version) => version.versionNo === currentVersionNo,
+  );
+  return matchedVersion?.content ?? "";
+}
+
 function toVersionNoNumber(versionNo: string): number {
   const matched = /^v(\d+)$/i.exec(versionNo.trim());
   if (!matched) {
@@ -1036,7 +1054,8 @@ async function listPromptsFromDb(
           p.updated_at,
           c.slug AS category_slug,
           c.name AS category_name,
-          relation_categories.categories_json
+          relation_categories.categories_json,
+          cv.content AS current_version_content
         FROM prompts p
         INNER JOIN categories c ON c.id = p.category_id
         LEFT JOIN LATERAL (
@@ -1051,6 +1070,7 @@ async function listPromptsFromDb(
           INNER JOIN categories c_rel ON c_rel.id = pc_rel.category_id
           WHERE pc_rel.prompt_id = p.id
         ) relation_categories ON TRUE
+        LEFT JOIN prompt_versions cv ON cv.id = p.current_version_id
         WHERE ${conditions.join(" AND ")}
         ORDER BY ${orderBy};
       `,
@@ -1066,6 +1086,7 @@ async function listPromptsFromDb(
         slug: row.slug,
         title: row.title,
         summary: row.summary,
+        currentVersionContent: row.current_version_content ?? "",
         likesCount: asNumber(row.likes_count),
         updatedAt: row.updated_at,
         categorySlug: row.category_slug,
@@ -1089,6 +1110,7 @@ function listPromptsFromFixtures(query: ListPromptsQuery): PromptListItemDto[] {
         slug: prompt.slug,
         title: prompt.title,
         summary: prompt.summary,
+        currentVersionContent: getFixtureCurrentVersionContent(prompt.slug),
         likesCount: getFixtureLikesCount(prompt.slug),
         updatedAt: buildFixtureTimestamp(index),
         categorySlug: prompt.categorySlug,
@@ -1103,6 +1125,7 @@ function listPromptsFromFixtures(query: ListPromptsQuery): PromptListItemDto[] {
       slug: prompt.slug,
       title: prompt.title,
       summary: prompt.summary,
+      currentVersionContent: getFixtureCurrentVersionContent(prompt.slug),
       likesCount: getFixtureLikesCount(prompt.slug),
       updatedAt: buildFixtureTimestamp(promptCatalog.length + index),
       categorySlug: prompt.categorySlug,
