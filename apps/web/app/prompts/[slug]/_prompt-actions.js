@@ -1,8 +1,10 @@
 "use client";
 
-import { createElement, useState, useTransition } from "react";
+import { createElement, useEffect, useState, useTransition } from "react";
 
 const DEFAULT_ACTOR_EMAIL = "alice@example.com";
+const DEFAULT_SCORE_SCENE = "detail_page";
+const SCORE_CHOICES = [1, 2, 3, 4, 5];
 
 async function mutateVersionLike(slug, versionNo, liked, actorEmail) {
   const method = liked ? "DELETE" : "POST";
@@ -15,6 +17,100 @@ async function mutateVersionLike(slug, versionNo, liked, actorEmail) {
   );
   if (!response.ok) throw new Error("点赞操作失败");
   return response.json();
+}
+
+function normalizeScore(value) {
+  if (!Number.isInteger(value)) return null;
+  if (value < 1 || value > 5) return null;
+  return value;
+}
+
+function normalizeScoreStats(payload) {
+  const totalScores = Number(payload?.totalScores ?? 0);
+  const averageScore = Number(payload?.averageScore ?? 0);
+  const lowScoreRate = Number(payload?.lowScoreRate ?? 0);
+
+  return {
+    totalScores: Number.isFinite(totalScores) && totalScores > 0 ? totalScores : 0,
+    averageScore: Number.isFinite(averageScore) ? averageScore : 0,
+    lowScoreRate: Number.isFinite(lowScoreRate) ? lowScoreRate : 0,
+  };
+}
+
+function createTraceId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+  return `trace-${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
+}
+
+export function formatScoreStatsSummary(stats) {
+  const totalScores = Number(stats?.totalScores ?? 0);
+  if (!Number.isFinite(totalScores) || totalScores <= 0) {
+    return "暂无评分";
+  }
+
+  const averageScore = Number(stats?.averageScore ?? 0);
+  const lowScoreRate = Number(stats?.lowScoreRate ?? 0);
+  const lowScorePercent = Math.max(0, Math.min(100, Math.round(lowScoreRate * 100)));
+  return `均分 ${averageScore.toFixed(2)} · ${totalScores} 人评分 · 低分率 ${lowScorePercent}%`;
+}
+
+export async function fetchVersionScoreStats(
+  slug,
+  versionNo,
+  scene = DEFAULT_SCORE_SCENE,
+) {
+  const normalizedScene = String(scene ?? "").trim() || DEFAULT_SCORE_SCENE;
+  const response = await fetch(
+    `/api/prompts/${encodeURIComponent(slug)}/versions/${encodeURIComponent(versionNo)}/score-stats?scene=${encodeURIComponent(normalizedScene)}`,
+    { method: "GET" },
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error("评分统计加载失败");
+  }
+  return normalizeScoreStats(payload);
+}
+
+export async function mutateVersionScore(
+  slug,
+  versionNo,
+  { score, scene = DEFAULT_SCORE_SCENE, actorEmail = DEFAULT_ACTOR_EMAIL, traceId } = {},
+) {
+  const normalizedScore = normalizeScore(score);
+  if (normalizedScore === null) {
+    throw new Error("评分必须为 1-5 的整数");
+  }
+
+  const normalizedScene = String(scene ?? "").trim() || DEFAULT_SCORE_SCENE;
+  const normalizedActor = String(actorEmail ?? "").trim();
+  const response = await fetch(
+    `/api/prompts/${encodeURIComponent(slug)}/versions/${encodeURIComponent(versionNo)}/score`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-user-email":
+          normalizedActor && normalizedActor.includes("@")
+            ? normalizedActor
+            : DEFAULT_ACTOR_EMAIL,
+      },
+      body: JSON.stringify({
+        score: normalizedScore,
+        scene: normalizedScene,
+        traceId:
+          typeof traceId === "string" && traceId.trim().length > 0
+            ? traceId.trim()
+            : createTraceId(),
+      }),
+    },
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error("评分提交失败");
+  }
+  return payload;
 }
 
 async function submitCandidate(slug, content, actorEmail) {
@@ -99,10 +195,42 @@ export function VersionLikeAction({
   const [likesCount, setLikesCount] = useState(Number(initialLikesCount ?? 0));
   const [liked, setLiked] = useState(Boolean(initialLiked));
   const [errorMessage, setErrorMessage] = useState("");
-  const [isPending, startTransition] = useTransition();
+  const [isLikePending, startLikeTransition] = useTransition();
+  const [isScorePending, startScoreTransition] = useTransition();
+  const [scoreStats, setScoreStats] = useState({
+    totalScores: 0,
+    averageScore: 0,
+    lowScoreRate: 0,
+  });
+  const [scoreStatusMessage, setScoreStatusMessage] = useState("");
+  const [scoreErrorMessage, setScoreErrorMessage] = useState("");
+  const [selectedScore, setSelectedScore] = useState(0);
+  const [isScoreStatsLoading, setIsScoreStatsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsScoreStatsLoading(true);
+    setScoreErrorMessage("");
+
+    void fetchVersionScoreStats(slug, versionNo, DEFAULT_SCORE_SCENE)
+      .then((stats) => {
+        if (cancelled) return;
+        setScoreStats(stats);
+        setIsScoreStatsLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setIsScoreStatsLoading(false);
+        setScoreErrorMessage("评分统计加载失败");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [slug, versionNo]);
 
   const onToggleLike = () => {
-    startTransition(() => {
+    startLikeTransition(() => {
       setErrorMessage("");
       const normalizedActor = String(actorEmail ?? "").trim();
       void mutateVersionLike(
@@ -123,9 +251,42 @@ export function VersionLikeAction({
     });
   };
 
+  const onSubmitScore = (score) => {
+    startScoreTransition(() => {
+      setScoreErrorMessage("");
+      setScoreStatusMessage("评分提交中...");
+      const normalizedActor = String(actorEmail ?? "").trim();
+
+      void mutateVersionScore(slug, versionNo, {
+        score,
+        scene: DEFAULT_SCORE_SCENE,
+        actorEmail:
+          normalizedActor && normalizedActor.includes("@")
+            ? normalizedActor
+            : DEFAULT_ACTOR_EMAIL,
+      })
+        .then((payload) => {
+          const submittedScore = Number(payload?.score ?? score);
+          const nextSelectedScore = Number.isFinite(submittedScore)
+            ? submittedScore
+            : score;
+          setSelectedScore(nextSelectedScore);
+          setScoreStatusMessage(`评分已提交：${nextSelectedScore} 分`);
+          return fetchVersionScoreStats(slug, versionNo, DEFAULT_SCORE_SCENE);
+        })
+        .then((stats) => {
+          setScoreStats(stats);
+        })
+        .catch(() => {
+          setScoreStatusMessage("");
+          setScoreErrorMessage("评分失败，请稍后重试");
+        });
+    });
+  };
+
   return createElement(
     "div",
-    { style: { display: "grid", gap: "6px" } },
+    { style: { display: "grid", gap: "8px" } },
     createElement(
       "div",
       { style: { display: "inline-flex", alignItems: "center", gap: "8px" } },
@@ -135,13 +296,13 @@ export function VersionLikeAction({
           type: "button",
           onClick: onToggleLike,
           "aria-pressed": liked,
-          disabled: isPending,
+          disabled: isLikePending,
           className: liked ? "pm-primary-button" : "pm-secondary-button",
           style: { display: "inline-flex", alignItems: "center", gap: "6px" },
           "data-testid": "version-like-button",
         },
         createElement(LikeIcon, { filled: liked }),
-        isPending ? "处理中..." : liked ? "取消点赞" : "点赞",
+        isLikePending ? "处理中..." : liked ? "取消点赞" : "点赞",
       ),
       createElement(
         "span",
@@ -151,6 +312,63 @@ export function VersionLikeAction({
         },
         `${likesCount} 赞`,
       ),
+    ),
+    createElement(
+      "div",
+      { style: { display: "grid", gap: "6px" } },
+      createElement(
+        "div",
+        { style: { display: "inline-flex", alignItems: "center", gap: "6px", flexWrap: "wrap" } },
+        ...SCORE_CHOICES.map((score) =>
+          createElement(
+            "button",
+            {
+              key: `score-${score}`,
+              type: "button",
+              onClick: () => onSubmitScore(score),
+              disabled: isScorePending,
+              className:
+                selectedScore === score
+                  ? "pm-primary-button"
+                  : "pm-secondary-button",
+              style: { minWidth: "42px", padding: "4px 8px", fontSize: "13px" },
+              "data-testid": `version-score-button-${score}`,
+              "aria-label": `评分 ${score} 分`,
+            },
+            `${score}分`,
+          ),
+        ),
+      ),
+      createElement(
+        "span",
+        {
+          style: { fontSize: "13px", color: "var(--pm-muted)" },
+          "data-testid": "version-score-stats",
+        },
+        isScoreStatsLoading
+          ? "评分统计加载中..."
+          : formatScoreStatsSummary(scoreStats),
+      ),
+      scoreStatusMessage
+        ? createElement(
+            "span",
+            {
+              style: { fontSize: "13px", color: "var(--pm-muted)" },
+              "data-testid": "version-score-status",
+            },
+            scoreStatusMessage,
+          )
+        : null,
+      scoreErrorMessage
+        ? createElement(
+            "span",
+            {
+              style: { fontSize: "13px", color: "#b91c1c" },
+              "data-testid": "version-score-error",
+            },
+            scoreErrorMessage,
+          )
+        : null,
     ),
     errorMessage
       ? createElement(
