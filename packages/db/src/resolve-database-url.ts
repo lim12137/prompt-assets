@@ -1,4 +1,5 @@
 type DatabaseEnvInput = {
+  [key: string]: string | undefined;
   DATABASE_URL?: string;
   POSTGRES_USER?: string;
   POSTGRES_PASSWORD?: string;
@@ -28,4 +29,3 @@ export function resolveDatabaseUrl(
 
   return `postgres://${encodeURIComponent(user)}:${encodeURIComponent(password)}@${host}:${port}/${database}`;
 }
-
