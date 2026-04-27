@@ -10,6 +10,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const migrationsDir = path.resolve(__dirname, "../migrations");
 const migrationsTable = "__prompt_management_migrations";
+const driftRepairs = [
+  {
+    migrationFile: "0003_prompt_version_likes.sql",
+    checkSql: `SELECT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'prompt_versions'
+        AND column_name = 'likes_count'
+    ) AS has_column`,
+    repairSql: `ALTER TABLE "prompt_versions"
+      ADD COLUMN IF NOT EXISTS "likes_count" integer DEFAULT 0 NOT NULL`,
+    description: "prompt_versions.likes_count",
+  },
+];
 
 export function toNonEmptyString(value) {
   const normalized = typeof value === "string" ? value.trim() : "";
@@ -35,6 +50,28 @@ export function listMigrationFiles(targetDir = migrationsDir, readDir = readdirS
   return readDir(targetDir)
     .filter((file) => file.endsWith(".sql"))
     .sort();
+}
+
+async function repairMigrationDrift(client, appliedSet, logger = console.log) {
+  const repaired = [];
+
+  for (const candidate of driftRepairs) {
+    if (!appliedSet.has(candidate.migrationFile)) {
+      continue;
+    }
+
+    const checkResult = await client.query(candidate.checkSql);
+    const hasColumn = Boolean(checkResult.rows?.[0]?.has_column);
+    if (hasColumn) {
+      continue;
+    }
+
+    await client.query(candidate.repairSql);
+    repaired.push(candidate.migrationFile);
+    logger(`Repaired migration drift: ${candidate.migrationFile} (${candidate.description}).`);
+  }
+
+  return repaired;
 }
 
 export async function runMigrations(
@@ -69,6 +106,7 @@ export async function runMigrations(
 
   const applied = [];
   const skipped = [];
+  const repaired = await repairMigrationDrift(client, appliedSet, logger);
 
   if (appliedSet.size === 0) {
     const legacySchemaCheck = await client.query(
@@ -114,11 +152,11 @@ export async function runMigrations(
     logger(`Applied migration: ${migrationFile}`);
   }
 
-  if (applied.length === 0) {
+  if (applied.length === 0 && repaired.length === 0) {
     logger("No pending migrations.");
   }
 
-  return { applied, skipped };
+  return { applied, skipped, repaired };
 }
 
 export async function main({

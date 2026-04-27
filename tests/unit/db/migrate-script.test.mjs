@@ -4,7 +4,11 @@ import test from "node:test";
 
 import { runMigrations } from "../../../packages/db/scripts/migrate.mjs";
 
-function createMockClient({ appliedFilenames = [], hasLegacySchema = false } = {}) {
+function createMockClient({
+  appliedFilenames = [],
+  hasLegacySchema = false,
+  hasPromptVersionsLikesCount = true,
+} = {}) {
   const calls = [];
 
   return {
@@ -25,6 +29,18 @@ function createMockClient({ appliedFilenames = [], hasLegacySchema = false } = {
       ) {
         return {
           rows: [{ has_tables: hasLegacySchema }],
+          rowCount: 1,
+        };
+      }
+
+      if (
+        typeof sql === "string" &&
+        sql.includes("information_schema.columns") &&
+        sql.includes("prompt_versions") &&
+        sql.includes("likes_count")
+      ) {
+        return {
+          rows: [{ has_column: hasPromptVersionsLikesCount }],
           rowCount: 1,
         };
       }
@@ -120,6 +136,38 @@ test("runMigrations 对旧库首次升级应回填迁移记录并跳过全量 SQ
   );
   assert.equal(
     logs.some((line) => line.includes("Backfilled migration records for legacy schema")),
+    true,
+  );
+});
+
+test("runMigrations 在迁移记录存在但 prompt_versions.likes_count 缺失时应执行补偿", async () => {
+  const readDir = () => ["0001_init.sql", "0003_prompt_version_likes.sql"];
+  const readFile = (filePath) => `-- SQL ${path.basename(filePath)}`;
+  const client = createMockClient({
+    appliedFilenames: ["0001_init.sql", "0003_prompt_version_likes.sql"],
+    hasPromptVersionsLikesCount: false,
+  });
+  const logs = [];
+
+  const result = await runMigrations(client, {
+    migrationsDir: "/virtual/migrations",
+    readDir,
+    readFile,
+    logger: (message) => logs.push(message),
+  });
+
+  assert.deepEqual(result.applied, []);
+  assert.deepEqual(result.skipped, ["0001_init.sql", "0003_prompt_version_likes.sql"]);
+
+  const driftRepairCall = client.calls.find(
+    (call) =>
+      typeof call.sql === "string" &&
+      call.sql.includes('ALTER TABLE "prompt_versions"') &&
+      call.sql.includes('ADD COLUMN IF NOT EXISTS "likes_count"'),
+  );
+  assert.ok(driftRepairCall, "应执行 prompt_versions.likes_count 缺失补偿 SQL");
+  assert.equal(
+    logs.some((line) => line.includes("Repaired migration drift: 0003_prompt_version_likes.sql")),
     true,
   );
 });
