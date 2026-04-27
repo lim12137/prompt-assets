@@ -1117,7 +1117,9 @@ async function listPromptsFromDb(
           INNER JOIN categories c_rel ON c_rel.id = pc_rel.category_id
           WHERE pc_rel.prompt_id = p.id
         ) relation_categories ON TRUE
-        LEFT JOIN prompt_versions cv ON cv.id = p.current_version_id
+        LEFT JOIN prompt_versions cv
+          ON cv.id = p.current_version_id
+          AND cv.prompt_id = p.id
         WHERE ${conditions.join(" AND ")}
         ORDER BY ${orderBy};
       `,
@@ -1413,15 +1415,19 @@ async function getPromptDetailFromDb(slug: string): Promise<PromptDetailDto | nu
       };
     });
 
-    const currentFallback = versions.find((item) => item.status === "approved");
+    const currentFromVersions = versions.find(
+      (item) => item.versionNo === head.current_version_no,
+    );
+    const currentFallback =
+      currentFromVersions ?? versions.find((item) => item.status === "approved") ?? versions[0];
     const currentVersionNo =
-      head.current_version_no ?? currentFallback?.versionNo ?? "v0001";
+      currentFallback?.versionNo ?? head.current_version_no ?? "v0001";
     const currentVersionSourceType =
-      head.current_source_type ?? currentFallback?.sourceType ?? "edit";
+      currentFallback?.sourceType ?? head.current_source_type ?? "edit";
     const currentVersionSubmittedAt =
-      head.current_submitted_at ?? currentFallback?.submittedAt ?? new Date(0);
+      currentFallback?.submittedAt ?? head.current_submitted_at ?? new Date(0);
     const currentVersionContent =
-      head.current_content ?? currentFallback?.content ?? "";
+      currentFallback?.content ?? head.current_content ?? "";
     const normalizedCategories = normalizePromptCategories(head.categories_json, {
       slug: head.category_slug,
       name: head.category_name,

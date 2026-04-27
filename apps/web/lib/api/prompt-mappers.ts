@@ -164,6 +164,13 @@ export function mapPromptDetail(raw: PromptDetailRaw): PromptDetailDto {
   const currentVersionFromList = versions.find(
     (version) => version.versionNo === raw.currentVersionNo,
   );
+  const approvedVersionFromList = versions.find(
+    (version) => version.status === "approved",
+  );
+  const resolvedCurrentVersion =
+    currentVersionFromList ?? approvedVersionFromList ?? versions[0];
+  const fallbackContentFromVersions =
+    versions.find((version) => typeof version.content === "string")?.content ?? "";
 
   return {
     slug: raw.slug,
@@ -178,17 +185,21 @@ export function mapPromptDetail(raw: PromptDetailRaw): PromptDetailDto {
       name: raw.categoryName || categories[0]?.name || "",
     },
     currentVersion: {
-      versionNo: raw.currentVersionNo,
-      sourceType: raw.currentVersionSourceType,
-      submittedAt: toIsoString(raw.currentVersionSubmittedAt),
+      versionNo: resolvedCurrentVersion?.versionNo ?? raw.currentVersionNo,
+      sourceType: resolvedCurrentVersion?.sourceType ?? raw.currentVersionSourceType,
+      submittedAt:
+        resolvedCurrentVersion?.submittedAt ?? toIsoString(raw.currentVersionSubmittedAt),
       likesCount: Number(
         raw.currentVersionLikesCount ??
-          currentVersionFromList?.likesCount ??
+          resolvedCurrentVersion?.likesCount ??
           raw.likesCount ??
           0,
       ),
-      liked: Boolean(raw.currentVersionLiked ?? currentVersionFromList?.liked),
-      content: raw.currentVersionContent,
+      liked: Boolean(raw.currentVersionLiked ?? resolvedCurrentVersion?.liked),
+      content:
+        resolvedCurrentVersion?.content ??
+        fallbackContentFromVersions ??
+        raw.currentVersionContent,
     },
     versions,
   };

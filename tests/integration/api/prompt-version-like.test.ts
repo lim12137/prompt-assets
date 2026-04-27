@@ -37,6 +37,8 @@ type PromptDetail = {
 const slug = "api-debug-assistant";
 const currentVersionNo = "v0002";
 const previousVersionNo = "v0001";
+const uxResearchPlanSlug = "ux-research-plan";
+const uxCandidateVersionNo = "v0003";
 const missingVersionNo = "v9999";
 const userEmail = "alice@example.com";
 
@@ -46,9 +48,13 @@ async function loadRouteModule(): Promise<VersionLikeRouteModule> {
   ) as Promise<VersionLikeRouteModule>;
 }
 
-function createLikeRequest(method: "POST" | "DELETE", versionNo: string): Request {
+function createLikeRequest(
+  method: "POST" | "DELETE",
+  versionNo: string,
+  targetSlug: string = slug,
+): Request {
   return new Request(
-    `http://localhost:3000/api/prompts/${slug}/versions/${versionNo}/like`,
+    `http://localhost:3000/api/prompts/${targetSlug}/versions/${versionNo}/like`,
     {
       method,
       headers: { "x-user-email": userEmail },
@@ -172,4 +178,21 @@ test("POST /api/prompts/[slug]/versions/[versionNo]/like 在 versionNo 不存在
 
   assert.equal(response.status, 404);
   assert.equal(typeof payload.error, "string");
+});
+
+test("POST /api/prompts/ux-research-plan/versions/v0003/like 候选版本可点赞", async () => {
+  const route = await loadRouteModule();
+
+  const response = await route.POST(
+    createLikeRequest("POST", uxCandidateVersionNo, uxResearchPlanSlug),
+    {
+      params: { slug: uxResearchPlanSlug, versionNo: uxCandidateVersionNo },
+    },
+  );
+  const payload = (await response.json()) as VersionLikeResponse | { error: string };
+
+  assert.equal(response.status, 200);
+  assert.equal((payload as VersionLikeResponse).slug, uxResearchPlanSlug);
+  assert.equal((payload as VersionLikeResponse).versionNo, uxCandidateVersionNo);
+  assert.equal((payload as VersionLikeResponse).liked, true);
 });
