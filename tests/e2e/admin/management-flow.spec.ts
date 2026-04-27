@@ -1,17 +1,32 @@
 import { expect, test } from "@playwright/test";
 
-test("首页管理入口跳转到真实管理页，未实现按钮给出明确反馈", async ({
-  page,
-}) => {
+test("首页创建/导入/管理入口均为可直达链接", async ({ page }) => {
   await page.goto("/");
 
-  await page.getByRole("button", { name: "导入" }).click();
-  await expect(page.getByRole("status")).toContainText("导入功能暂未实现");
+  const importEntry = page.getByRole("link", { name: "导入" });
+  const manageEntry = page.getByRole("link", { name: "管理" });
+  const createEntry = page.getByRole("link", { name: "创建" });
 
-  await page.getByRole("button", { name: "创建" }).click();
-  await expect(page.getByRole("status")).toContainText("创建功能暂未实现");
+  await expect(importEntry).toHaveAttribute("href", "/admin/import");
+  await expect(manageEntry).toHaveAttribute("href", "/admin");
+  await expect(createEntry).toHaveAttribute("href", "/admin/create");
+  await expect(page.getByRole("status")).not.toContainText("暂未实现");
 
-  await page.getByRole("link", { name: "管理" }).click();
+  await importEntry.click();
+  await expect(page).toHaveURL(/\/admin\/import$/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "批量导入提示词" }),
+  ).toBeVisible();
+
+  await page.goto("/");
+  await createEntry.click();
+  await expect(page).toHaveURL(/\/admin\/create$/);
+  await expect(
+    page.getByRole("heading", { level: 1, name: "创建提示词" }),
+  ).toBeVisible();
+
+  await page.goto("/");
+  await manageEntry.click();
   await expect(page).toHaveURL(/\/admin$/);
   await expect(
     page.getByRole("heading", { level: 1, name: "待审核管理" }),

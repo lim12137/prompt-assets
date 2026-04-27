@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import {
+  HOME_ACTION_ENTRIES,
+  HOME_ACTION_STATUS_TEXT,
+} from "./home-actions.ts";
 
 const INTERACTIVE_SELECTOR =
   "a,button,input,textarea,select,summary,label,[role='button'],[data-interactive='true']";
@@ -89,35 +93,17 @@ function splitCategories(categories) {
 }
 
 function HomeActionButtons() {
-  const [message, setMessage] = useState("");
-
-  function showPendingMessage(actionName) {
-    setMessage(`${actionName}功能暂未实现，请先使用管理页审核现有内容。`);
-  }
-
   return (
     <div style={{ display: "grid", gap: "8px", justifyItems: "end" }}>
       <div
         style={{ display: "flex", gap: "10px", alignItems: "center" }}
         aria-label="首页操作"
       >
-        <button
-          className="pm-secondary-button"
-          type="button"
-          onClick={() => showPendingMessage("导入")}
-        >
-          导入
-        </button>
-        <a className="pm-secondary-button pm-button-link" href="/admin">
-          管理
-        </a>
-        <button
-          className="pm-primary-button"
-          type="button"
-          onClick={() => showPendingMessage("创建")}
-        >
-          创建
-        </button>
+        {HOME_ACTION_ENTRIES.map((entry) => (
+          <a key={entry.label} className={entry.className} href={entry.href}>
+            {entry.label}
+          </a>
+        ))}
       </div>
       <p
         role="status"
@@ -129,7 +115,7 @@ function HomeActionButtons() {
           fontSize: "13px",
         }}
       >
-        {message}
+        {HOME_ACTION_STATUS_TEXT}
       </p>
     </div>
   );
