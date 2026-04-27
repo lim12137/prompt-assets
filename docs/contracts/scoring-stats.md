@@ -2,47 +2,23 @@
 
 基线日期：2026-04-27  
 来源实现：
-- `apps/web/app/api/prompts/route.ts`
-- `apps/web/lib/api/prompt-repository.ts`（`normalizeSort` 与列表排序逻辑）
-- `tests/integration/api/prompts-list.test.ts`
+- `apps/web/app/api/prompts/[slug]/versions/[versionNo]/score-stats/route.ts`
+- `apps/web/lib/api/prompt-repository.ts`（评分聚合逻辑）
+- `tests/integration/api/prompt-version-score.test.ts`
 
-## 1. `GET /api/prompts?sort=popular`
+## 1. 指标定义
 
-- 说明：返回 Prompt 列表，并按评分热度（`likesCount`）降序。
-- Query 参数：
-  - `sort`：支持 `popular` / `liked`，其余值按 `latest` 处理。
-  - 可叠加 `category`、`categories`、`keyword` 过滤。
+- `totalScores`：当前统计范围内评分条数。
+- `averageScore`：平均分，保留至最多 4 位小数；无数据时为 `0`。
+- `distribution`：1-5 各分值计数。
+- `lowScoreRate`：低分率，定义为 `(score <= 2) / totalScores`；无数据时为 `0`。
 
-### 1.1 成功响应 `200`
+## 2. 过滤口径
 
-```json
-[
-  {
-    "slug": "api-debug-assistant",
-    "title": "API 调试助手",
-    "summary": "自动生成调试清单",
-    "currentVersionContent": "...",
-    "likesCount": 18,
-    "updatedAt": "2026-04-27T00:00:00.000Z",
-    "categorySlug": "programming",
-    "categoryName": "编程",
-    "categories": [{ "slug": "programming", "name": "编程" }],
-    "categorySlugs": ["programming"]
-  }
-]
-```
+- 不传 `scene`：聚合该版本全部评分。
+- 传 `scene=<value>`：只聚合该场景评分。
 
-## 2. 统计口径约束
+## 3. 一致性约束
 
-- 排序口径：
-  - `sort=popular` 或 `sort=liked`：按 `likesCount` 降序。
-  - 评分相同：按 `updatedAt`（新到旧）稳定排序。
-  - 其他值或缺省：按 `latest`（更新时间降序）。
-- 过滤口径：
-  - `categories` 支持逗号分隔与多值，按 OR 语义匹配。
-  - `categories=` 空值视为“不过滤”，与不传参数等价。
-
-## 3. 与写入契约的关系
-
-- 评分写入成功后，统计接口会在后续读取中体现最新 `likesCount` 排序。
-- 该契约只定义当前“列表统计读模型”，不新增独立统计接口。
+- 写入 `POST /score` 成功后，后续读取 `GET /score-stats` 可见。
+- 同一 `(prompt_version_id, scene, trace_id)` 视为同一采样键，重复写入走 upsert，不会新增重复采样点。

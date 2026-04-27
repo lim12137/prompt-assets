@@ -72,6 +72,36 @@ export type PromptVersionLikeMutationResult = {
   liked: boolean;
 };
 
+export type PromptVersionScoreMutationInput = {
+  scene: string;
+  traceId?: string;
+  score: number;
+};
+
+export type PromptVersionScoreMutationResult = {
+  slug: string;
+  versionNo: string;
+  scene: string;
+  traceId: string;
+  score: number;
+};
+
+export type PromptVersionScoreStatsResult = {
+  slug: string;
+  versionNo: string;
+  scene?: string;
+  totalScores: number;
+  averageScore: number;
+  lowScoreRate: number;
+  distribution: {
+    "1": number;
+    "2": number;
+    "3": number;
+    "4": number;
+    "5": number;
+  };
+};
+
 export type PromptSubmissionMutationInput = {
   userEmail: string;
   content: string;
@@ -398,6 +428,17 @@ type DbPromptVersionLikeTargetRow = {
   likes_count: number | string;
 };
 
+type DbPromptVersionScoreStatsRow = {
+  total_scores: number | string;
+  average_score: number | string | null;
+  count_1: number | string;
+  count_2: number | string;
+  count_3: number | string;
+  count_4: number | string;
+  count_5: number | string;
+  low_score_count: number | string;
+};
+
 type DbPromptSubmissionHeadRow = {
   id: number | string;
   current_version_id: number | string | null;
@@ -471,6 +512,15 @@ type FixturePromptRecord = {
   createdByEmail: string;
 };
 
+type FixturePromptVersionScoreRecord = {
+  slug: string;
+  versionNo: string;
+  scene: string;
+  traceId: string;
+  score: number;
+  userEmail: string;
+};
+
 type CategoryDeleteTokenPayload = {
   slug: string;
   impactedPromptCount: number;
@@ -511,6 +561,7 @@ let cachedDbReadable:
   | undefined;
 let fixturePromptLikes = createFixtureLikeState();
 let fixturePromptVersionLikes = createFixturePromptVersionLikeState();
+let fixturePromptVersionScores = createFixturePromptVersionScoreState();
 let fixturePromptVersions = createFixturePromptVersionState();
 let fixtureCurrentVersionNoBySlug = createFixtureCurrentVersionState();
 let fixtureSubmissions = createFixtureSubmissionState();
@@ -536,6 +587,10 @@ function createFixturePromptVersionLikeState(): Map<string, Set<string>> {
   }
 
   return state;
+}
+
+function createFixturePromptVersionScoreState(): Map<string, FixturePromptVersionScoreRecord> {
+  return new Map<string, FixturePromptVersionScoreRecord>();
 }
 
 function createFixturePromptVersionState(): Map<string, PromptVersionFixture[]> {
@@ -879,6 +934,80 @@ function buildFixturePromptVersionLikeKey(slug: string, versionNo: string): stri
   return `${slug}::${versionNo}`;
 }
 
+function buildFixturePromptVersionScoreKey(
+  slug: string,
+  versionNo: string,
+  scene: string,
+  traceId: string,
+): string {
+  return `${slug}::${versionNo}::${scene}::${traceId}`;
+}
+
+function normalizeScene(input: string): string {
+  return input.trim();
+}
+
+function normalizeTraceId(input?: string): string {
+  const normalized = typeof input === "string" ? input.trim() : "";
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  return `generated-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function isValidScore(score: number): boolean {
+  return Number.isInteger(score) && score >= 1 && score <= 5;
+}
+
+function roundToFourDecimals(value: number): number {
+  return Math.round(value * 10_000) / 10_000;
+}
+
+function createEmptyScoreDistribution(): PromptVersionScoreStatsResult["distribution"] {
+  return {
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0,
+    "5": 0,
+  };
+}
+
+function buildScoreStatsResult(input: {
+  slug: string;
+  versionNo: string;
+  scene?: string;
+  scores: number[];
+}): PromptVersionScoreStatsResult {
+  const distribution = createEmptyScoreDistribution();
+  let lowScoreCount = 0;
+
+  for (const score of input.scores) {
+    if (score === 1 || score === 2 || score === 3 || score === 4 || score === 5) {
+      distribution[String(score) as keyof typeof distribution] += 1;
+    }
+    if (score <= 2) {
+      lowScoreCount += 1;
+    }
+  }
+
+  const totalScores = input.scores.length;
+  const scoreSum = input.scores.reduce((acc, score) => acc + score, 0);
+  const averageScore = totalScores > 0 ? roundToFourDecimals(scoreSum / totalScores) : 0;
+  const lowScoreRate =
+    totalScores > 0 ? roundToFourDecimals(lowScoreCount / totalScores) : 0;
+
+  return {
+    slug: input.slug,
+    versionNo: input.versionNo,
+    scene: input.scene,
+    totalScores,
+    averageScore,
+    lowScoreRate,
+    distribution,
+  };
+}
+
 function toReviewStatus(action: PromptSubmissionReviewAction): SubmissionStatus {
   return action === "approve" ? "approved" : "rejected";
 }
@@ -904,6 +1033,27 @@ function getFixturePromptVersionLikes(
 
 function getFixturePromptVersionLikesCount(slug: string, versionNo: string): number {
   return getFixturePromptVersionLikes(slug, versionNo)?.size ?? 0;
+}
+
+function listFixturePromptVersionScores(
+  slug: string,
+  versionNo: string,
+  scene?: string,
+): FixturePromptVersionScoreRecord[] {
+  const normalizedScene = scene ? normalizeScene(scene) : undefined;
+  const list: FixturePromptVersionScoreRecord[] = [];
+
+  for (const record of fixturePromptVersionScores.values()) {
+    if (record.slug !== slug || record.versionNo !== versionNo) {
+      continue;
+    }
+    if (normalizedScene && record.scene !== normalizedScene) {
+      continue;
+    }
+    list.push({ ...record });
+  }
+
+  return list;
 }
 
 function getFixturePromptVersions(slug: string): PromptVersionFixture[] | null {
@@ -2836,6 +2986,164 @@ async function unlikePromptVersionInDb(
   });
 }
 
+async function hasPromptVersionScoreInfrastructure(
+  client: SqlClient,
+): Promise<boolean> {
+  const tableResult = await client.query<{ exists: boolean }>(
+    `
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_tables
+        WHERE schemaname = 'public' AND tablename = 'prompt_version_scores'
+      ) AS exists;
+    `,
+  );
+  if (!tableResult.rows[0]?.exists) {
+    return false;
+  }
+
+  const columnsResult = await client.query<{ count: number | string }>(
+    `
+      SELECT COUNT(*)::text AS count
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'prompt_version_scores'
+        AND column_name = ANY($1::text[]);
+    `,
+    [["prompt_version_id", "user_id", "scene", "trace_id", "score"]],
+  );
+  return asNumber(columnsResult.rows[0]?.count) >= 5;
+}
+
+async function scorePromptVersionInDb(
+  slug: string,
+  versionNo: string,
+  userEmail: string,
+  input: PromptVersionScoreMutationInput,
+): Promise<PromptVersionScoreMutationResult | null> {
+  return withPgClient(databaseUrl, async (client) => {
+    if (!(await hasPromptVersionScoreInfrastructure(client))) {
+      return scorePromptVersionInFixtures(slug, versionNo, userEmail, input);
+    }
+
+    const target = await findPublishedPromptVersionLikeTarget(client, slug, versionNo);
+    if (!target) {
+      return null;
+    }
+    const userId = await upsertUserId(client, userEmail);
+    const scene = normalizeScene(input.scene);
+    const traceId = normalizeTraceId(input.traceId);
+
+    await client.query(
+      `
+        INSERT INTO prompt_version_scores (
+          prompt_version_id,
+          user_id,
+          scene,
+          trace_id,
+          score
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (prompt_version_id, scene, trace_id)
+        DO UPDATE
+        SET
+          user_id = EXCLUDED.user_id,
+          score = EXCLUDED.score,
+          created_at = NOW();
+      `,
+      [target.versionId, userId, scene, traceId, input.score],
+    );
+
+    await writeAuditLog(client, {
+      actorId: userId,
+      action: "prompt.version.scored",
+      targetType: "prompt_version",
+      targetId: target.versionId,
+      payload: {
+        promptSlug: target.promptSlug,
+        versionNo: target.versionNo,
+        scene,
+        traceId,
+        score: input.score,
+      },
+    });
+
+    return {
+      slug: target.promptSlug,
+      versionNo: target.versionNo,
+      scene,
+      traceId,
+      score: input.score,
+    };
+  });
+}
+
+async function getPromptVersionScoreStatsFromDb(
+  slug: string,
+  versionNo: string,
+  scene?: string,
+): Promise<PromptVersionScoreStatsResult | null> {
+  return withPgClient(databaseUrl, async (client) => {
+    if (!(await hasPromptVersionScoreInfrastructure(client))) {
+      return getPromptVersionScoreStatsFromFixtures(slug, versionNo, scene);
+    }
+
+    const target = await findPublishedPromptVersionLikeTarget(client, slug, versionNo);
+    if (!target) {
+      return null;
+    }
+
+    const normalizedScene = scene ? normalizeScene(scene) : undefined;
+    const params: unknown[] = [target.versionId];
+    let whereClause = "WHERE prompt_version_id = $1";
+    if (normalizedScene) {
+      params.push(normalizedScene);
+      whereClause = `${whereClause} AND scene = $2`;
+    }
+
+    const result = await client.query<DbPromptVersionScoreStatsRow>(
+      `
+        SELECT
+          COUNT(*)::text AS total_scores,
+          AVG(score)::numeric(10,4) AS average_score,
+          COUNT(*) FILTER (WHERE score = 1)::text AS count_1,
+          COUNT(*) FILTER (WHERE score = 2)::text AS count_2,
+          COUNT(*) FILTER (WHERE score = 3)::text AS count_3,
+          COUNT(*) FILTER (WHERE score = 4)::text AS count_4,
+          COUNT(*) FILTER (WHERE score = 5)::text AS count_5,
+          COUNT(*) FILTER (WHERE score <= 2)::text AS low_score_count
+        FROM prompt_version_scores
+        ${whereClause};
+      `,
+      params,
+    );
+    const row = result.rows[0];
+    const totalScores = asNumber(row?.total_scores);
+    const lowScoreCount = asNumber(row?.low_score_count);
+    const averageFromDb =
+      row?.average_score === null || row?.average_score === undefined
+        ? 0
+        : Number(row.average_score);
+
+    return {
+      slug: target.promptSlug,
+      versionNo: target.versionNo,
+      scene: normalizedScene,
+      totalScores,
+      averageScore: totalScores > 0 ? roundToFourDecimals(averageFromDb) : 0,
+      lowScoreRate:
+        totalScores > 0 ? roundToFourDecimals(lowScoreCount / totalScores) : 0,
+      distribution: {
+        "1": asNumber(row?.count_1),
+        "2": asNumber(row?.count_2),
+        "3": asNumber(row?.count_3),
+        "4": asNumber(row?.count_4),
+        "5": asNumber(row?.count_5),
+      },
+    };
+  });
+}
+
 async function createPromptSubmissionInDb(
   slug: string,
   input: PromptSubmissionMutationInput,
@@ -2853,7 +3161,8 @@ async function createPromptSubmissionInDb(
           FROM prompts p
           LEFT JOIN prompt_versions cv ON cv.id = p.current_version_id
           WHERE p.slug = $1 AND p.status = 'published'
-          LIMIT 1;
+          LIMIT 1
+          FOR UPDATE OF p;
         `,
         [slug],
       );
@@ -3735,9 +4044,81 @@ function unlikePromptVersionInFixtures(
   };
 }
 
+function scorePromptVersionInFixtures(
+  slug: string,
+  versionNo: string,
+  userEmail: string,
+  input: PromptVersionScoreMutationInput,
+): PromptVersionScoreMutationResult | null {
+  const prompt = findFixturePromptRecord(slug);
+  const versions = getFixturePromptVersions(slug);
+  if (!prompt || !versions?.some((version) => version.versionNo === versionNo)) {
+    return null;
+  }
+
+  const scene = normalizeScene(input.scene);
+  const traceId = normalizeTraceId(input.traceId);
+  const normalizedEmail = normalizeUserEmail(userEmail);
+  const key = buildFixturePromptVersionScoreKey(slug, versionNo, scene, traceId);
+  fixturePromptVersionScores.set(key, {
+    slug,
+    versionNo,
+    scene,
+    traceId,
+    score: input.score,
+    userEmail: normalizedEmail,
+  });
+
+  fixtureAuditLogs.push(
+    buildAuditLogEntry({
+      actorId: fixtureActorId(normalizedEmail),
+      action: "prompt.version.scored",
+      targetType: "prompt_version",
+      targetId: versions.findIndex((version) => version.versionNo === versionNo) + 1,
+      payload: {
+        promptSlug: slug,
+        versionNo,
+        scene,
+        traceId,
+        score: input.score,
+      },
+    }),
+  );
+
+  return {
+    slug,
+    versionNo,
+    scene,
+    traceId,
+    score: input.score,
+  };
+}
+
+function getPromptVersionScoreStatsFromFixtures(
+  slug: string,
+  versionNo: string,
+  scene?: string,
+): PromptVersionScoreStatsResult | null {
+  const prompt = findFixturePromptRecord(slug);
+  const versions = getFixturePromptVersions(slug);
+  if (!prompt || !versions?.some((version) => version.versionNo === versionNo)) {
+    return null;
+  }
+
+  const normalizedScene = scene ? normalizeScene(scene) : undefined;
+  const records = listFixturePromptVersionScores(slug, versionNo, normalizedScene);
+  return buildScoreStatsResult({
+    slug,
+    versionNo,
+    scene: normalizedScene,
+    scores: records.map((record) => record.score),
+  });
+}
+
 export function __resetPromptLikeFixtureStateForTests(): void {
   fixturePromptLikes = createFixtureLikeState();
   fixturePromptVersionLikes = createFixturePromptVersionLikeState();
+  fixturePromptVersionScores = createFixturePromptVersionScoreState();
   fixturePromptVersions = createFixturePromptVersionState();
   fixtureCurrentVersionNoBySlug = createFixtureCurrentVersionState();
   fixtureSubmissions = createFixtureSubmissionState();
@@ -3820,6 +4201,56 @@ export async function unlikePromptVersion(
   }
 
   return unlikePromptVersionInFixtures(slug, normalizedVersionNo, normalizedEmail);
+}
+
+export async function scorePromptVersion(
+  slug: string,
+  versionNo: string,
+  userEmail: string,
+  input: PromptVersionScoreMutationInput,
+): Promise<PromptVersionScoreMutationResult | null> {
+  const normalizedEmail = normalizeUserEmail(userEmail);
+  const normalizedVersionNo = versionNo.trim();
+  const normalizedScene = normalizeScene(input.scene);
+  if (!normalizedEmail || !normalizedVersionNo || !normalizedScene || !isValidScore(input.score)) {
+    return null;
+  }
+
+  const normalizedInput: PromptVersionScoreMutationInput = {
+    score: input.score,
+    scene: normalizedScene,
+    traceId: normalizeTraceId(input.traceId),
+  };
+
+  if (await canReadFromDatabase()) {
+    return scorePromptVersionInDb(slug, normalizedVersionNo, normalizedEmail, normalizedInput);
+  }
+
+  return scorePromptVersionInFixtures(
+    slug,
+    normalizedVersionNo,
+    normalizedEmail,
+    normalizedInput,
+  );
+}
+
+export async function getPromptVersionScoreStats(
+  slug: string,
+  versionNo: string,
+  scene?: string,
+): Promise<PromptVersionScoreStatsResult | null> {
+  const normalizedVersionNo = versionNo.trim();
+  if (!normalizedVersionNo) {
+    return null;
+  }
+
+  const normalizedScene = typeof scene === "string" ? normalizeScene(scene) : undefined;
+
+  if (await canReadFromDatabase()) {
+    return getPromptVersionScoreStatsFromDb(slug, normalizedVersionNo, normalizedScene);
+  }
+
+  return getPromptVersionScoreStatsFromFixtures(slug, normalizedVersionNo, normalizedScene);
 }
 
 export async function createPromptSubmission(

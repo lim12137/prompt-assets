@@ -21,6 +21,7 @@ export const coreTableNames = [
   "submissions",
   "prompt_likes",
   "prompt_version_likes",
+  "prompt_version_scores",
   "audit_logs",
 ] as const;
 
@@ -30,6 +31,10 @@ export const coreUniqueConstraints = [
   { table: "prompt_versions", columns: ["prompt_id", "version_no"] },
   { table: "prompt_likes", columns: ["prompt_id", "user_id"] },
   { table: "prompt_version_likes", columns: ["prompt_version_id", "user_id"] },
+  {
+    table: "prompt_version_scores",
+    columns: ["prompt_version_id", "scene", "trace_id"],
+  },
 ] as const;
 
 export const userRoleEnum = pgEnum("user_role", ["user", "admin"]);
@@ -228,6 +233,35 @@ export const promptVersionLikes = pgTable(
       table.promptVersionId,
       table.userId,
     ),
+  ],
+);
+
+export const promptVersionScores = pgTable(
+  "prompt_version_scores",
+  {
+    id: serial("id").primaryKey(),
+    promptVersionId: integer("prompt_version_id")
+      .notNull()
+      .references(() => promptVersions.id, { onDelete: "cascade" }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    scene: text("scene").notNull(),
+    traceId: text("trace_id").notNull(),
+    score: integer("score").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex(
+      "prompt_version_scores_prompt_version_id_scene_trace_id_key",
+    ).on(table.promptVersionId, table.scene, table.traceId),
+    index("prompt_version_scores_prompt_version_id_scene_idx").on(
+      table.promptVersionId,
+      table.scene,
+    ),
+    index("prompt_version_scores_prompt_version_id_idx").on(table.promptVersionId),
   ],
 );
 
