@@ -12,27 +12,27 @@
   2. 临时将 `prompt_version_daily_interactions` 改名为 `prompt_version_daily_interactions_disabled_for_test`。
   3. 调用点赞/评分 API，断言返回 `500` 且 `code=missing_infrastructure`。
   4. 测试结束恢复表名并重置种子。
-- 本次环境现状：`TEST_DATABASE_URL` 不可达，因此两条 RED 用例在执行时 `SKIP`（非失败）。
+- 在 `55433` 测试库复现到 RED：两条 fail-closed 用例断言失败，实际返回 `200`（预期 `500`）。
 
 ## 实现修改
 - `apps/web/lib/api/prompt-repository.ts`
-  - 新增返回类型 `PromptVersionDailyInteractionResult`，包含 `missing_infrastructure`。
-  - `markPromptVersionDailyInteractionInDb` 在基础设施缺失时由原 `ok` 改为 `missing_infrastructure`。
-  - `REQUIRED_TABLES` 纳入 `prompt_version_daily_interactions`，避免半迁移可读判定。
-- `apps/web/app/api/prompts/[slug]/versions/[versionNo]/like/route.ts`
-  - 识别 `missing_infrastructure` 并返回 `500`：
-    - `{ error: "评分点赞限流基础设施未就绪", code: "missing_infrastructure" }`
-- `apps/web/app/api/prompts/[slug]/versions/[versionNo]/score/route.ts`
-  - 同上，返回一致的 `500` 错误体。
+  - `markPromptVersionDailyInteraction` 在非 fixture 且 DB 可连通时，强制走 DB 路径检查基础设施，避免缺表时错误回落 fixture。
+  - 新增 `getRuntimeDatabaseUrl()`，日频交互链路按请求时环境变量读取 `DATABASE_URL`，避免模块加载时静态 URL 导致“改了 55433、却查了旧库”。
+- `tests/integration/api/prompt-version-like.test.ts`
+  - fail-closed 用例加入 `pg_advisory_lock` 串行保护，避免与其它并发测试对同一表重命名/恢复产生竞态。
+- `tests/integration/api/prompt-version-score.test.ts`
+  - 同上，使用同一 advisory lock key 串行化关键区间。
 
 ## GREEN（相关测试）
 - 命令：
 ```bash
+TEST_DB_PORT=55433
+TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:55433/prompt_management_test
 node --test --experimental-strip-types tests/unit/auth/request-ip.test.ts tests/integration/api/prompt-version-like.test.ts tests/integration/api/prompt-version-score.test.ts tests/integration/api/prompt-submission.test.ts
 ```
 - 结果摘要：
-  - `pass=30`
-  - `skip=2`（新增真实 DB fail-closed 用例，因测试库不可达跳过）
+  - `pass=32`
+  - `skip=0`
   - `fail=0`
 
 ## 迁移与重启
@@ -70,4 +70,4 @@ curl -s -o NUL -w "%{http_code}" -X POST http://127.0.0.1:3011/api/prompts/api-d
   - 第一次 `200`，第二次 `429`
 
 ## 结论
-- 已实现 fail-closed：限流基础设施缺失时，点赞/评分不会继续放行。
+- 已实现 fail-closed：当 `prompt_version_daily_interactions` 缺失（或缺必要列）时，点赞/评分返回 `500 + missing_infrastructure`，不再返回 `200`。

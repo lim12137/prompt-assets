@@ -582,6 +582,11 @@ let fixtureSubmissionIdSeed = fixtureSubmissions.length;
 let fixtureAuditLogs: AuditLogEntry[] = [];
 let fixtureCreatedPrompts = new Map<string, FixturePromptRecord>();
 
+function getRuntimeDatabaseUrl(): string {
+  const runtime = process.env.DATABASE_URL?.trim();
+  return runtime && runtime.length > 0 ? runtime : databaseUrl;
+}
+
 function createFixtureLikeState(): Map<string, Set<string>> {
   return new Map(
     promptCatalog
@@ -2771,7 +2776,7 @@ async function markPromptVersionDailyInteractionInDb(input: {
   ip: string;
   dateKey: string;
 }): Promise<PromptVersionDailyInteractionResult> {
-  return withPgClient(databaseUrl, async (client) => {
+  return withPgClient(getRuntimeDatabaseUrl(), async (client) => {
     if (!(await hasPromptVersionDailyInteractionInfrastructure(client))) {
       return "missing_infrastructure";
     }
@@ -4324,7 +4329,12 @@ export async function markPromptVersionDailyInteraction(input: {
     return "not_found";
   }
 
-  if (await canReadFromDatabase()) {
+  // Fail-closed: when DB is reachable in auto mode, always evaluate infra in DB path.
+  // Do not fallback to fixtures on missing interaction table/columns.
+  if (
+    getRepositoryDataSourceMode() !== "fixture" &&
+    (await isPgReachable(getRuntimeDatabaseUrl(), 400))
+  ) {
     return markPromptVersionDailyInteractionInDb({
       slug: normalizedSlug,
       versionNo: normalizedVersionNo,
