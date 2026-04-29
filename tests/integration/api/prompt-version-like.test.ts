@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import { GET as getPromptDetail } from "../../../apps/web/app/api/prompts/[slug]/route.ts";
 import { __resetPromptLikeFixtureStateForTests } from "../../../apps/web/lib/api/prompt-repository.ts";
+import { buildAuthCookie } from "./_auth-test-helpers.ts";
 
 type VersionLikeRouteModule = {
   POST: (
@@ -52,12 +53,26 @@ function createLikeRequest(
   method: "POST" | "DELETE",
   versionNo: string,
   targetSlug: string = slug,
+  input?: { withAuth?: boolean; forgedHeaderEmail?: string },
 ): Request {
+  const withAuth = input?.withAuth ?? true;
+  const forgedHeaderEmail = input?.forgedHeaderEmail;
   return new Request(
     `http://localhost:3000/api/prompts/${targetSlug}/versions/${versionNo}/like`,
     {
       method,
-      headers: { "x-user-email": userEmail },
+      headers: {
+        ...(withAuth
+          ? {
+              cookie: buildAuthCookie({
+                uid: userEmail,
+                name: "Alice",
+                can_manage: false,
+              }),
+            }
+          : {}),
+        ...(forgedHeaderEmail ? { "x-user-email": forgedHeaderEmail } : {}),
+      },
     },
   );
 }
@@ -86,11 +101,13 @@ async function readVersionLikesCount(
 
 test.beforeEach(() => {
   process.env.PROMPT_REPOSITORY_DATA_SOURCE = "fixture";
+  process.env.LOGIN_TOKEN_SECRET = "test-secret";
   __resetPromptLikeFixtureStateForTests();
 });
 
 test.after(() => {
   delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+  delete process.env.LOGIN_TOKEN_SECRET;
 });
 
 test("POST /api/prompts/[slug]/versions/[versionNo]/like 首次点赞成功并增加版本 likesCount", async () => {
@@ -195,4 +212,16 @@ test("POST /api/prompts/ux-research-plan/versions/v0003/like 候选版本可点�
   assert.equal((payload as VersionLikeResponse).slug, uxResearchPlanSlug);
   assert.equal((payload as VersionLikeResponse).versionNo, uxCandidateVersionNo);
   assert.equal((payload as VersionLikeResponse).liked, true);
+});
+
+test("POST /versions/[versionNo]/like 未登录返回 401，伪造 x-user-email 不生效", async () => {
+  const route = await loadRouteModule();
+  const response = await route.POST(
+    createLikeRequest("POST", currentVersionNo, slug, {
+      withAuth: false,
+      forgedHeaderEmail: "forged@example.com",
+    }),
+    { params: { slug, versionNo: currentVersionNo } },
+  );
+  assert.equal(response.status, 401);
 });

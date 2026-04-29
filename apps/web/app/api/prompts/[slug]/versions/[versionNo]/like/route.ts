@@ -4,6 +4,10 @@ import {
   likePromptVersion,
   unlikePromptVersion,
 } from "../../../../../../../lib/api/prompt-repository.ts";
+import {
+  AuthConfigurationError,
+  getUserFromRequest,
+} from "../../../../../../../lib/auth/session.ts";
 
 type RouteParams = {
   slug: string;
@@ -13,20 +17,6 @@ type RouteParams = {
 type RouteContext = {
   params: Promise<RouteParams>;
 };
-
-const DEFAULT_USER_EMAIL = "alice@example.com";
-
-function resolveUserEmail(request: Request): string {
-  const fromHeader = request.headers.get("x-user-email")?.trim();
-  if (fromHeader) {
-    return fromHeader;
-  }
-  return DEFAULT_USER_EMAIL;
-}
-
-function isValidEmail(value: string): boolean {
-  return value.includes("@");
-}
 
 export async function POST(request: Request, context: RouteContext) {
   const params = await context.params;
@@ -40,10 +30,25 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "invalid versionNo" }, { status: 400 });
   }
 
-  const userEmail = resolveUserEmail(request);
-  if (!isValidEmail(userEmail)) {
-    return NextResponse.json({ error: "invalid user email" }, { status: 400 });
+  let user;
+  try {
+    user = getUserFromRequest(request);
+  } catch (error) {
+    if (error instanceof AuthConfigurationError) {
+      return NextResponse.json(
+        { error: error.message, code: "auth_configuration_error" },
+        { status: 500 },
+      );
+    }
+    throw error;
   }
+  if (!user) {
+    return NextResponse.json(
+      { error: "unauthorized", code: "unauthorized" },
+      { status: 401 },
+    );
+  }
+  const userEmail = user.uid;
 
   const result = await likePromptVersion(slug, versionNo, userEmail);
   if (!result) {
@@ -65,10 +70,25 @@ export async function DELETE(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "invalid versionNo" }, { status: 400 });
   }
 
-  const userEmail = resolveUserEmail(request);
-  if (!isValidEmail(userEmail)) {
-    return NextResponse.json({ error: "invalid user email" }, { status: 400 });
+  let user;
+  try {
+    user = getUserFromRequest(request);
+  } catch (error) {
+    if (error instanceof AuthConfigurationError) {
+      return NextResponse.json(
+        { error: error.message, code: "auth_configuration_error" },
+        { status: 500 },
+      );
+    }
+    throw error;
   }
+  if (!user) {
+    return NextResponse.json(
+      { error: "unauthorized", code: "unauthorized" },
+      { status: 401 },
+    );
+  }
+  const userEmail = user.uid;
 
   const result = await unlikePromptVersion(slug, versionNo, userEmail);
   if (!result) {
