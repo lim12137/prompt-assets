@@ -7,6 +7,7 @@ import {
   __getAuditLogFixtureStateForTests,
   __resetPromptLikeFixtureStateForTests,
 } from "../../../apps/web/lib/api/prompt-repository.ts";
+import { buildAuthCookie } from "./_auth-test-helpers.ts";
 
 type ImportRequestItem = {
   title: string;
@@ -44,8 +45,7 @@ function postAsAdmin(items: unknown): Request {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-user-email": adminEmail,
-      "x-user-role": "admin",
+      cookie: buildAuthCookie({ uid: adminEmail, name: "Admin", can_manage: true }),
     },
     body: JSON.stringify(items),
   });
@@ -56,8 +56,7 @@ function postAsUser(items: unknown): Request {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-user-email": "alice@example.com",
-      "x-user-role": "user",
+      cookie: buildAuthCookie({ uid: "alice@example.com", name: "Alice", can_manage: false }),
     },
     body: JSON.stringify(items),
   });
@@ -72,11 +71,13 @@ async function detailStatus(slug: string): Promise<number> {
 
 test.beforeEach(() => {
   process.env.PROMPT_REPOSITORY_DATA_SOURCE = "fixture";
+  process.env.LOGIN_TOKEN_SECRET = "test-secret";
   __resetPromptLikeFixtureStateForTests();
 });
 
 test.after(() => {
   delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+  delete process.env.LOGIN_TOKEN_SECRET;
 });
 
 test("POST /api/admin/prompts/import 成功导入多个首版 prompt 并写入审计日志", async () => {

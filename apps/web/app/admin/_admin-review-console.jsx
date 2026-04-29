@@ -2,9 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-const REVIEWER_EMAIL = "admin@example.com";
-const REVIEWER_ROLE = "admin";
-
 function formatSubmittedAt(input) {
   const value = new Date(input);
   if (Number.isNaN(value.getTime())) {
@@ -24,18 +21,12 @@ function formatSubmittedAt(input) {
 function adminHeaders() {
   return {
     "content-type": "application/json",
-    "x-user-email": REVIEWER_EMAIL,
-    "x-user-role": REVIEWER_ROLE,
   };
 }
 
 async function submitReview(submissionId, action) {
   const response = await fetch(`/api/admin/submissions/${submissionId}/${action}`, {
     method: "POST",
-    headers: {
-      "x-user-email": REVIEWER_EMAIL,
-      "x-user-role": REVIEWER_ROLE,
-    },
   });
 
   const payload = await response.json().catch(() => ({}));
@@ -53,10 +44,6 @@ async function submitReview(submissionId, action) {
 async function fetchAdminCategories() {
   const response = await fetch("/api/admin/categories", {
     method: "GET",
-    headers: {
-      "x-user-email": REVIEWER_EMAIL,
-      "x-user-role": REVIEWER_ROLE,
-    },
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {

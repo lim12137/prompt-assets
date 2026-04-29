@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { buildAuthCookie } from "./_auth-test-helpers.ts";
 
 const testDbUrl =
   process.env.TEST_DATABASE_URL ??
@@ -7,6 +8,7 @@ const testDbUrl =
 
 process.env.DATABASE_URL = testDbUrl;
 delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+process.env.LOGIN_TOKEN_SECRET = "test-secret";
 
 type DbClient = {
   query: <R extends Record<string, unknown>>(
@@ -89,8 +91,12 @@ async function loadModules(): Promise<void> {
 function adminHeaders(): HeadersInit {
   return {
     "content-type": "application/json",
-    "x-user-email": "admin@example.com",
-    "x-user-role": "admin",
+    cookie: buildAuthCookie({
+      uid: "admin@example.com",
+      name: "Admin",
+      can_manage: true,
+      can_manage_whitelist: false,
+    }),
   };
 }
 
@@ -105,10 +111,7 @@ function adminPostCategoryRequest(body: Record<string, unknown>): Request {
 function adminListCategoryRequest(): Request {
   return new Request("http://localhost:3000/api/admin/categories", {
     method: "GET",
-    headers: {
-      "x-user-email": "admin@example.com",
-      "x-user-role": "admin",
-    },
+    headers: adminHeaders(),
   });
 }
 

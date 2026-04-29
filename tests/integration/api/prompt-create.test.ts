@@ -7,6 +7,7 @@ import {
   __getAuditLogFixtureStateForTests,
   __resetPromptLikeFixtureStateForTests,
 } from "../../../apps/web/lib/api/prompt-repository.ts";
+import { buildAuthCookie } from "./_auth-test-helpers.ts";
 
 type CreatePromptResponse = {
   prompt: {
@@ -43,8 +44,11 @@ function adminCreateRequest(body: Record<string, unknown>): Request {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-user-email": "admin@example.com",
-      "x-user-role": "admin",
+      cookie: buildAuthCookie({
+        uid: "admin@example.com",
+        name: "Admin",
+        can_manage: true,
+      }),
     },
     body: JSON.stringify(body),
   });
@@ -55,8 +59,11 @@ function userCreateRequest(body: Record<string, unknown>): Request {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-user-email": "alice@example.com",
-      "x-user-role": "user",
+      cookie: buildAuthCookie({
+        uid: "alice@example.com",
+        name: "Alice",
+        can_manage: false,
+      }),
     },
     body: JSON.stringify(body),
   });
@@ -64,11 +71,13 @@ function userCreateRequest(body: Record<string, unknown>): Request {
 
 test.beforeEach(() => {
   process.env.PROMPT_REPOSITORY_DATA_SOURCE = "fixture";
+  process.env.LOGIN_TOKEN_SECRET = "test-secret";
   __resetPromptLikeFixtureStateForTests();
 });
 
 test.after(() => {
   delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+  delete process.env.LOGIN_TOKEN_SECRET;
 });
 
 test("POST /api/prompts 管理员可创建首版官方 Prompt 并写入审计日志", async () => {

@@ -3,23 +3,13 @@ import { NextResponse } from "next/server.js";
 import {
   createAdminCategory,
   listAdminCategories,
-  type AdminCategoryCreateInput,
 } from "../../../../lib/api/prompt-repository.ts";
+import { requireManageUser } from "../../../../lib/auth/session.ts";
 
 type CreateCategoryBody = {
   name?: unknown;
   slug?: unknown;
 };
-
-function resolveAdminRole(request: Request): AdminCategoryCreateInput["creatorRole"] {
-  return request.headers.get("x-user-role")?.trim().toLowerCase() === "admin"
-    ? "admin"
-    : "user";
-}
-
-function resolveCreatorEmail(request: Request): string {
-  return request.headers.get("x-user-email")?.trim() ?? "";
-}
 
 function generateSlugFromName(name: string): string {
   const normalized = name
@@ -41,7 +31,9 @@ function generateSlugFromName(name: string): string {
 }
 
 export async function GET(request: Request) {
-  if (resolveAdminRole(request) !== "admin") {
+  try {
+    requireManageUser(request);
+  } catch {
     return NextResponse.json(
       {
         error: "admin role is required",
@@ -56,7 +48,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (resolveAdminRole(request) !== "admin") {
+  let operator: { uid: string };
+  try {
+    operator = requireManageUser(request);
+  } catch {
     return NextResponse.json(
       {
         error: "admin role is required",
@@ -93,7 +88,7 @@ export async function POST(request: Request) {
   const slug = slugInput || generateSlugFromName(name);
 
   const result = await createAdminCategory({
-    creatorEmail: resolveCreatorEmail(request),
+    creatorEmail: operator.uid,
     creatorRole: "admin",
     name,
     slug,

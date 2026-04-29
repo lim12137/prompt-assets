@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { __resetPromptLikeFixtureStateForTests } from "../../../apps/web/lib/api/prompt-repository.ts";
+import { buildAuthCookie } from "./_auth-test-helpers.ts";
 
 type ScoreRouteModule = {
   POST: (
@@ -69,7 +70,11 @@ function createPostScoreRequest(input: {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-user-email": input.userEmail ?? "alice@example.com",
+        cookie: buildAuthCookie({
+          uid: input.userEmail ?? "alice@example.com",
+          name: input.userEmail ?? "alice@example.com",
+          can_manage: false,
+        }),
       },
       body: JSON.stringify({
         score: input.score,
@@ -106,11 +111,13 @@ async function readScoreStats(
 
 test.beforeEach(() => {
   process.env.PROMPT_REPOSITORY_DATA_SOURCE = "fixture";
+  process.env.LOGIN_TOKEN_SECRET = "test-secret";
   __resetPromptLikeFixtureStateForTests();
 });
 
 test.after(() => {
   delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+  delete process.env.LOGIN_TOKEN_SECRET;
 });
 
 test("POST /api/prompts/[slug]/versions/[versionNo]/score 写入合法评分", async () => {
@@ -172,7 +179,11 @@ test("POST /api/prompts/[slug]/versions/[versionNo]/score 在 version 不存在�
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-user-email": "alice@example.com",
+          cookie: buildAuthCookie({
+            uid: "alice@example.com",
+            name: "alice@example.com",
+            can_manage: false,
+          }),
         },
         body: JSON.stringify({
           score: 5,
@@ -187,6 +198,22 @@ test("POST /api/prompts/[slug]/versions/[versionNo]/score 在 version 不存在�
 
   assert.equal(response.status, 404);
   assert.equal(typeof payload.error, "string");
+});
+
+test("POST /score 未登录返回 401，伪造 x-user-email 不生效", async () => {
+  const scoreRoute = await loadScoreRouteModule();
+  const response = await scoreRoute.POST(
+    new Request(`http://localhost:3000/api/prompts/${slug}/versions/${versionNo}/score`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-user-email": "forged@example.com",
+      },
+      body: JSON.stringify({ score: 5, scene: "detail_page", traceId: "forged" }),
+    }),
+    { params: Promise.resolve({ slug, versionNo }) },
+  );
+  assert.equal(response.status, 401);
 });
 
 test("POST 写入后 GET /score-stats 可见", async () => {

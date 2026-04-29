@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server.js";
 
 import { deleteAdminCategory } from "../../../../../lib/api/prompt-repository.ts";
+import { requireManageUser } from "../../../../../lib/auth/session.ts";
 
 type DeleteCategoryBody = {
   confirm?: unknown;
@@ -15,21 +16,14 @@ type RouteContext = {
   params: Promise<RouteParams>;
 };
 
-function resolveReviewerRole(request: Request): "admin" | "user" {
-  return request.headers.get("x-user-role")?.trim().toLowerCase() === "admin"
-    ? "admin"
-    : "user";
-}
-
-function resolveReviewerEmail(request: Request): string {
-  return request.headers.get("x-user-email")?.trim() ?? "";
-}
-
 export async function DELETE(
   request: Request,
   context: RouteContext,
 ) {
-  if (resolveReviewerRole(request) !== "admin") {
+  let operator: { uid: string };
+  try {
+    operator = requireManageUser(request);
+  } catch {
     return NextResponse.json(
       {
         error: "admin role is required",
@@ -63,7 +57,7 @@ export async function DELETE(
   const params = await Promise.resolve(context.params);
 
   const result = await deleteAdminCategory({
-    reviewerEmail: resolveReviewerEmail(request),
+    reviewerEmail: operator.uid,
     reviewerRole: "admin",
     slug: params.slug,
     confirm,

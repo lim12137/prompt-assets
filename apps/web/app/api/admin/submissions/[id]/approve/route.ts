@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server.js";
 
 import { reviewPromptSubmission } from "../../../../../../lib/api/prompt-repository.ts";
+import {
+  AuthConfigurationError,
+  ForbiddenError,
+  UnauthorizedError,
+  requireManageUser,
+} from "../../../../../../lib/auth/session.ts";
 
 type RouteParams = {
   id: string;
@@ -26,16 +32,6 @@ function mapReviewErrorCode(
   return "submission_not_pending";
 }
 
-function resolveReviewerEmail(request: Request): string {
-  return request.headers.get("x-user-email")?.trim() ?? "";
-}
-
-function resolveReviewerRole(request: Request): "user" | "admin" {
-  return request.headers.get("x-user-role")?.trim().toLowerCase() === "admin"
-    ? "admin"
-    : "user";
-}
-
 async function parseReviewComment(request: Request): Promise<string | undefined> {
   if (!request.body) {
     return undefined;
@@ -48,6 +44,28 @@ async function parseReviewComment(request: Request): Promise<string | undefined>
 }
 
 export async function POST(request: Request, context: RouteContext) {
+  let operator: { uid: string };
+  try {
+    operator = requireManageUser(request);
+  } catch (error) {
+    if (error instanceof AuthConfigurationError) {
+      return NextResponse.json(
+        { error: error.message, code: "auth_configuration_error" },
+        { status: 500 },
+      );
+    }
+    if (!(error instanceof UnauthorizedError || error instanceof ForbiddenError)) {
+      throw error;
+    }
+    return NextResponse.json(
+      {
+        error: "admin role is required",
+        code: "admin_role_required",
+      },
+      { status: 403 },
+    );
+  }
+
   const params = await Promise.resolve(context.params);
   const submissionId = Number(params.id);
   if (!Number.isInteger(submissionId) || submissionId <= 0) {
@@ -55,8 +73,8 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const result = await reviewPromptSubmission(submissionId, "approve", {
-    reviewerEmail: resolveReviewerEmail(request),
-    reviewerRole: resolveReviewerRole(request),
+    reviewerEmail: operator.uid,
+    reviewerRole: "admin",
     reviewComment: await parseReviewComment(request),
   });
 

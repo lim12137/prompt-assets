@@ -9,6 +9,7 @@ import {
   __getAuditLogFixtureStateForTests,
   __resetPromptLikeFixtureStateForTests,
 } from "../../../apps/web/lib/api/prompt-repository.ts";
+import { buildAuthCookie } from "./_auth-test-helpers.ts";
 
 type AuditLogEntry = {
   actorId: number | null;
@@ -26,7 +27,7 @@ function userPost(url: string, body: Record<string, unknown> = {}): Request {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-user-email": userEmail,
+      cookie: buildAuthCookie({ uid: userEmail, name: "Alice", can_manage: false }),
     },
     body: JSON.stringify(body),
   });
@@ -37,8 +38,7 @@ function adminPost(url: string, body: Record<string, unknown> = {}): Request {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-user-email": adminEmail,
-      "x-user-role": "admin",
+      cookie: buildAuthCookie({ uid: adminEmail, name: "Admin", can_manage: true }),
     },
     body: JSON.stringify(body),
   });
@@ -46,11 +46,13 @@ function adminPost(url: string, body: Record<string, unknown> = {}): Request {
 
 test.beforeEach(() => {
   process.env.PROMPT_REPOSITORY_DATA_SOURCE = "fixture";
+  process.env.LOGIN_TOKEN_SECRET = "test-secret";
   __resetPromptLikeFixtureStateForTests();
 });
 
 test.after(() => {
   delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+  delete process.env.LOGIN_TOKEN_SECRET;
 });
 
 test("投稿动作产生日志", async () => {
@@ -110,7 +112,7 @@ test("点赞动作产生日志", async () => {
     new Request("http://localhost:3000/api/prompts/api-debug-assistant/like", {
       method: "POST",
       headers: {
-        "x-user-email": userEmail,
+        cookie: buildAuthCookie({ uid: userEmail, name: "Alice", can_manage: false }),
       },
     }),
     { params: { slug: "api-debug-assistant" } },

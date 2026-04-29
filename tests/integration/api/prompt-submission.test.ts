@@ -10,6 +10,7 @@ import {
   createPromptSubmission,
   listPendingSubmissions,
 } from "../../../apps/web/lib/api/prompt-repository.ts";
+import { buildAuthCookie } from "./_auth-test-helpers.ts";
 
 type PromptDetail = {
   currentVersion: {
@@ -66,7 +67,7 @@ function createSubmissionRequest(
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-user-email": email,
+      cookie: buildAuthCookie({ uid: email, name: email, can_manage: false }),
     },
     body: JSON.stringify({
       content,
@@ -80,8 +81,7 @@ function createAdminApproveRequest(submissionId: string): Request {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-user-email": "admin@example.com",
-      "x-user-role": "admin",
+      cookie: buildAuthCookie({ uid: "admin@example.com", name: "Admin", can_manage: true }),
     },
     body: JSON.stringify({ reviewComment: "切换官方基线" }),
   });
@@ -89,11 +89,13 @@ function createAdminApproveRequest(submissionId: string): Request {
 
 test.beforeEach(() => {
   process.env.PROMPT_REPOSITORY_DATA_SOURCE = "fixture";
+  process.env.LOGIN_TOKEN_SECRET = "test-secret";
   __resetPromptLikeFixtureStateForTests();
 });
 
 test.after(() => {
   delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+  delete process.env.LOGIN_TOKEN_SECRET;
 });
 
 test("POST /api/prompts/[slug]/submissions 创建 pending submission 且不切换当前版本", async () => {
@@ -108,7 +110,7 @@ test("POST /api/prompts/[slug]/submissions 创建 pending submission 且不切�
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-user-email": userEmail,
+        cookie: buildAuthCookie({ uid: userEmail, name: "Alice", can_manage: false }),
       },
       body: JSON.stringify({
         content: "新增：输出接口重放步骤、根因树和回滚策略。",
@@ -154,7 +156,7 @@ test("POST /api/prompts/[slug]/submissions 在 content 为空时返回 400", asy
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-user-email": userEmail,
+        cookie: buildAuthCookie({ uid: userEmail, name: "Alice", can_manage: false }),
       },
       body: JSON.stringify({
         content: "   ",
@@ -175,7 +177,7 @@ test("POST /api/prompts/[slug]/submissions 在 slug 不存在时返回 404", asy
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-user-email": userEmail,
+        cookie: buildAuthCookie({ uid: userEmail, name: "Alice", can_manage: false }),
       },
       body: JSON.stringify({
         content: "这是一个不存在 slug 的投稿",
@@ -188,6 +190,24 @@ test("POST /api/prompts/[slug]/submissions 在 slug 不存在时返回 404", asy
 
   assert.equal(response.status, 404);
   assert.equal(typeof payload.error, "string");
+});
+
+test("POST /api/prompts/[slug]/submissions 未登录返回 401，伪造 x-user-email 不生效", async () => {
+  const response = await POST(
+    new Request(`http://localhost:3000/api/prompts/${slug}/submissions`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-user-email": "forged@example.com",
+      },
+      body: JSON.stringify({
+        content: "forged",
+        changeNote: "forged",
+      }),
+    }),
+    { params: { slug } },
+  );
+  assert.equal(response.status, 401);
 });
 
 test("同一用户在同一基线下多次投稿 revisionIndex 递增", async () => {

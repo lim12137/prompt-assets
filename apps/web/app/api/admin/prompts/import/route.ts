@@ -4,6 +4,7 @@ import {
   importPrompts,
   type PromptImportItemInput,
 } from "../../../../../lib/api/prompt-repository.ts";
+import { requireManageUser } from "../../../../../lib/auth/session.ts";
 
 type ImportErrorCode =
   | "admin_role_required"
@@ -11,16 +12,6 @@ type ImportErrorCode =
   | "invalid_import_item"
   | "prompt_slug_conflict"
   | "category_not_found";
-
-function resolveCreatorRole(request: Request): "admin" | "user" {
-  return request.headers.get("x-user-role")?.trim().toLowerCase() === "admin"
-    ? "admin"
-    : "user";
-}
-
-function resolveCreatorEmail(request: Request): string {
-  return request.headers.get("x-user-email")?.trim() ?? "";
-}
 
 function toNonEmptyString(input: unknown): string {
   return typeof input === "string" ? input.trim() : "";
@@ -133,7 +124,10 @@ function mapImportErrorCode(
 }
 
 export async function POST(request: Request) {
-  if (resolveCreatorRole(request) !== "admin") {
+  let operator: { uid: string };
+  try {
+    operator = requireManageUser(request);
+  } catch {
     return NextResponse.json(
       {
         error: "admin role is required",
@@ -158,7 +152,7 @@ export async function POST(request: Request) {
   }
 
   const result = await importPrompts({
-    creatorEmail: resolveCreatorEmail(request),
+    creatorEmail: operator.uid,
     creatorRole: "admin",
     items: validated.items,
   });

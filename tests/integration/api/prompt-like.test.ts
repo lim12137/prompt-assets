@@ -7,6 +7,7 @@ import {
 } from "../../../apps/web/app/api/prompts/[slug]/like/route.ts";
 import { GET as getPromptDetail } from "../../../apps/web/app/api/prompts/[slug]/route.ts";
 import { __resetPromptLikeFixtureStateForTests } from "../../../apps/web/lib/api/prompt-repository.ts";
+import { buildAuthCookie } from "./_auth-test-helpers.ts";
 
 type LikeResponse = {
   slug: string;
@@ -31,7 +32,12 @@ async function readLikesCount(targetSlug: string): Promise<number> {
 }
 
 test.beforeEach(() => {
+  process.env.LOGIN_TOKEN_SECRET = "test-secret";
   __resetPromptLikeFixtureStateForTests();
+});
+
+test.afterEach(() => {
+  delete process.env.LOGIN_TOKEN_SECRET;
 });
 
 test("POST /api/prompts/[slug]/like 首次点赞创建并增加 likesCount", async () => {
@@ -39,7 +45,9 @@ test("POST /api/prompts/[slug]/like 首次点赞创建并增加 likesCount", asy
 
   const response = await POST(new Request("http://localhost:3000", {
     method: "POST",
-    headers: { "x-user-email": userEmail },
+    headers: {
+      cookie: buildAuthCookie({ uid: userEmail, name: "Alice", can_manage: false }),
+    },
   }), {
     params: { slug },
   });
@@ -56,7 +64,7 @@ test("POST /api/prompts/[slug]/like 首次点赞创建并增加 likesCount", asy
 test("POST /api/prompts/[slug]/like 重复点赞幂等，不重复计数", async () => {
   const first = await POST(new Request("http://localhost:3000", {
     method: "POST",
-    headers: { "x-user-email": userEmail },
+    headers: { cookie: buildAuthCookie({ uid: userEmail, name: "Alice", can_manage: false }) },
   }), {
     params: { slug },
   });
@@ -64,7 +72,7 @@ test("POST /api/prompts/[slug]/like 重复点赞幂等，不重复计数", async
 
   const second = await POST(new Request("http://localhost:3000", {
     method: "POST",
-    headers: { "x-user-email": userEmail },
+    headers: { cookie: buildAuthCookie({ uid: userEmail, name: "Alice", can_manage: false }) },
   }), {
     params: { slug },
   });
@@ -81,14 +89,14 @@ test("DELETE /api/prompts/[slug]/like 取消点赞后计数回退", async () => 
 
   await POST(new Request("http://localhost:3000", {
     method: "POST",
-    headers: { "x-user-email": userEmail },
+    headers: { cookie: buildAuthCookie({ uid: userEmail, name: "Alice", can_manage: false }) },
   }), {
     params: { slug },
   });
 
   const response = await DELETE(new Request("http://localhost:3000", {
     method: "DELETE",
-    headers: { "x-user-email": userEmail },
+    headers: { cookie: buildAuthCookie({ uid: userEmail, name: "Alice", can_manage: false }) },
   }), {
     params: { slug },
   });
@@ -99,4 +107,15 @@ test("DELETE /api/prompts/[slug]/like 取消点赞后计数回退", async () => 
   assert.equal(payload.liked, false);
   assert.equal(payload.likesCount, beforeCount);
   assert.equal(afterCount, beforeCount);
+});
+
+test("POST /api/prompts/[slug]/like 未登录返回 401，伪造 x-user-email 不生效", async () => {
+  const response = await POST(
+    new Request("http://localhost:3000", {
+      method: "POST",
+      headers: { "x-user-email": "forged@example.com" },
+    }),
+    { params: { slug } },
+  );
+  assert.equal(response.status, 401);
 });

@@ -10,7 +10,7 @@
 
 - 说明：为指定 Prompt 版本写入 1-5 分评分。
 - Header：
-  - `x-user-email` 可选；缺失时后端默认 `alice@example.com`。
+  - 通过登录会话识别用户（`sid` Cookie）；不再支持 `x-user-email` 传递用户身份。
 - Path 参数：
   - `slug`：必填，去空格后不能为空。
   - `versionNo`：必填，示例 `v0003`。
@@ -46,9 +46,10 @@
 - `400`：
   - `{ "error": "invalid slug" }`
   - `{ "error": "invalid versionNo" }`
-  - `{ "error": "invalid user email" }`
+  - `{ "error": "invalid request body" }`
   - `{ "error": "scene is required" }`
   - `{ "error": "score must be an integer between 1 and 5" }`
+- `401`：`{ "error": "unauthorized", "code": "unauthorized" }`
 - `404`：`{ "error": "prompt version not found" }`
 
 ## 2. 持久化约束

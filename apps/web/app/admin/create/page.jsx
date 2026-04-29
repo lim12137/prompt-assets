@@ -2,9 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-const ADMIN_EMAIL = "admin@example.com";
-const ADMIN_ROLE = "admin";
-
 const INITIAL_FORM = {
   title: "",
   summary: "",
@@ -31,10 +28,7 @@ export default function AdminCreatePromptPage() {
       setCategoriesLoading(true);
       try {
         const response = await fetch("/api/admin/categories", {
-          headers: {
-            "x-user-email": ADMIN_EMAIL,
-            "x-user-role": ADMIN_ROLE,
-          },
+          credentials: "same-origin",
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -86,8 +80,6 @@ export default function AdminCreatePromptPage() {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-user-email": ADMIN_EMAIL,
-          "x-user-role": ADMIN_ROLE,
         },
         body: JSON.stringify({
           ...form,

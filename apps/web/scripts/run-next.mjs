@@ -1,6 +1,11 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
+import { createRequire } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const require = createRequire(import.meta.url);
 
 function parseDotEnv(content) {
   const env = {};
@@ -91,27 +96,123 @@ const defaults = {
   start: ".next-build",
 };
 
-loadWorkspaceEnv();
-
-const { command, forwarded, distDir } = parseArgs(process.argv.slice(2));
-const nextBin = process.platform === "win32" ? "next.cmd" : "next";
-const resolvedDistDir =
-  distDir?.trim() ||
-  process.env.NEXT_DIST_DIR_OVERRIDE?.trim() ||
-  defaults[command] ||
-  ".next";
-
-const result = spawnSync(nextBin, [command, ...forwarded], {
-  stdio: "inherit",
-  shell: process.platform === "win32",
-  env: {
-    ...process.env,
-    NEXT_DIST_DIR: resolvedDistDir,
-  },
-});
-
-if (result.error) {
-  throw result.error;
+function readCliOption(forwarded, optionName) {
+  const prefix = `${optionName}=`;
+  for (let index = 0; index < forwarded.length; index += 1) {
+    const arg = forwarded[index];
+    if (arg === optionName) {
+      return forwarded[index + 1];
+    }
+    if (arg.startsWith(prefix)) {
+      return arg.slice(prefix.length);
+    }
+  }
+  return undefined;
 }
 
-process.exit(result.status ?? 1);
+function resolveBindTarget(command, forwarded) {
+  if (command !== "dev" && command !== "start") {
+    return undefined;
+  }
+
+  const portRaw = readCliOption(forwarded, "--port");
+  if (!portRaw) {
+    return undefined;
+  }
+
+  const port = Number.parseInt(portRaw, 10);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`[run-next] Invalid --port value: ${portRaw}`);
+  }
+
+  const host = readCliOption(forwarded, "--hostname") || "127.0.0.1";
+  return { host, port };
+}
+
+async function ensureBindTargetAvailable(bindTarget) {
+  if (!bindTarget) {
+    return;
+  }
+
+  await new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once("error", (error) => {
+      const code =
+        error && typeof error === "object" && "code" in error
+          ? String(error.code)
+          : "";
+      if (code === "EADDRINUSE") {
+        reject(
+          new Error(
+            `[run-next] Port ${bindTarget.port} on ${bindTarget.host} is already in use (address already in use). Stop the existing process or use another port.`,
+          ),
+        );
+        return;
+      }
+      reject(error);
+    });
+
+    probe.listen(bindTarget.port, bindTarget.host, () => {
+      probe.close((closeError) => {
+        if (closeError) {
+          reject(closeError);
+          return;
+        }
+        resolve();
+      });
+    });
+  });
+}
+
+function normalizeCliErrorMessage(error) {
+  if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+    const command = "path" in error && typeof error.path === "string" ? error.path : "command";
+    return `Command not found in PATH: ${command}`;
+  }
+
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return String(error || "Unknown error");
+}
+
+async function main() {
+  loadWorkspaceEnv();
+
+  const { command, forwarded, distDir } = parseArgs(process.argv.slice(2));
+  const bindTarget = resolveBindTarget(command, forwarded);
+  await ensureBindTargetAvailable(bindTarget);
+
+  const resolvedDistDir =
+    distDir?.trim() ||
+    process.env.NEXT_DIST_DIR_OVERRIDE?.trim() ||
+    defaults[command] ||
+    ".next";
+
+  const nextCliPath = require.resolve("next/dist/bin/next");
+  const result = spawnSync(process.execPath, [nextCliPath, command, ...forwarded], {
+    stdio: "inherit",
+    shell: false,
+    env: {
+      ...process.env,
+      NEXT_DIST_DIR: resolvedDistDir,
+    },
+  });
+
+  if (result.error) {
+    throw result.error;
+  }
+
+  process.exit(result.status ?? 1);
+}
+
+const __filename = fileURLToPath(import.meta.url);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    await main();
+  } catch (error) {
+    console.error(normalizeCliErrorMessage(error));
+    process.exit(1);
+  }
+}

@@ -5,6 +5,7 @@ import {
   listPrompts,
   type PromptCreateInput,
 } from "../../../lib/api/prompt-repository.ts";
+import { requireManageUser } from "../../../lib/auth/session.ts";
 
 type CreatePromptBody = {
   title?: unknown;
@@ -32,16 +33,6 @@ function generateSlugFromTitle(title: string): string {
     hash = (hash * 31 + char.charCodeAt(0)) % 1000000007;
   }
   return `prompt-${Math.abs(hash)}`;
-}
-
-function resolveCreatorRole(request: Request): PromptCreateInput["creatorRole"] {
-  return request.headers.get("x-user-role")?.trim().toLowerCase() === "admin"
-    ? "admin"
-    : "user";
-}
-
-function resolveCreatorEmail(request: Request): string {
-  return request.headers.get("x-user-email")?.trim() ?? "";
 }
 
 function mapCreateErrorCode(
@@ -95,6 +86,19 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  let operator: { uid: string; name: string };
+  try {
+    operator = requireManageUser(request);
+  } catch {
+    return NextResponse.json(
+      {
+        error: "admin role is required",
+        code: "admin_role_required",
+      },
+      { status: 403 },
+    );
+  }
+
   let body: CreatePromptBody;
   try {
     body = (await request.json()) as CreatePromptBody;
@@ -132,8 +136,8 @@ export async function POST(request: Request) {
   }
 
   const result = await createPrompt({
-    creatorEmail: resolveCreatorEmail(request),
-    creatorRole: resolveCreatorRole(request),
+    creatorEmail: operator.uid,
+    creatorRole: "admin",
     title,
     slug,
     summary,

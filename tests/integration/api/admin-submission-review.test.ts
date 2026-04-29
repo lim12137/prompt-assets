@@ -5,6 +5,7 @@ import { POST as approveSubmission } from "../../../apps/web/app/api/admin/submi
 import { POST as rejectSubmission } from "../../../apps/web/app/api/admin/submissions/[id]/reject/route.ts";
 import { GET as getPromptDetail } from "../../../apps/web/app/api/prompts/[slug]/route.ts";
 import { __resetPromptLikeFixtureStateForTests } from "../../../apps/web/lib/api/prompt-repository.ts";
+import { buildAuthCookie } from "./_auth-test-helpers.ts";
 
 type PromptDetail = {
   currentVersion: {
@@ -41,8 +42,7 @@ function adminRequest(url: string, body: Record<string, unknown> = {}): Request 
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-user-email": adminEmail,
-      "x-user-role": "admin",
+      cookie: buildAuthCookie({ uid: adminEmail, name: "Admin", can_manage: true }),
     },
     body: JSON.stringify(body),
   });
@@ -53,8 +53,7 @@ function userRequest(url: string): Request {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-user-email": "alice@example.com",
-      "x-user-role": "user",
+      cookie: buildAuthCookie({ uid: "alice@example.com", name: "Alice", can_manage: false }),
     },
     body: JSON.stringify({ reviewComment: "普通用户不能审核" }),
   });
@@ -69,11 +68,13 @@ async function readPromptDetail(slug: string): Promise<PromptDetail> {
 
 test.beforeEach(() => {
   process.env.PROMPT_REPOSITORY_DATA_SOURCE = "fixture";
+  process.env.LOGIN_TOKEN_SECRET = "test-secret";
   __resetPromptLikeFixtureStateForTests();
 });
 
 test.after(() => {
   delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+  delete process.env.LOGIN_TOKEN_SECRET;
 });
 
 test("POST /api/admin/submissions/[id]/approve 成功后切换当前版本", async () => {

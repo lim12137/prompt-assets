@@ -2,9 +2,6 @@
 
 import { useState } from "react";
 
-const ADMIN_EMAIL = "admin@example.com";
-const ADMIN_ROLE = "admin";
-
 const DEFAULT_IMPORT_SAMPLE = JSON.stringify(
   [
     {
@@ -79,8 +76,6 @@ export default function AdminImportPromptPage() {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-user-email": ADMIN_EMAIL,
-          "x-user-role": ADMIN_ROLE,
         },
         body: JSON.stringify(parsed),
       });
