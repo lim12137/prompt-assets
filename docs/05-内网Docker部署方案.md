@@ -297,3 +297,5 @@ APP_SECRET=replace_me_with_long_random_string
 - 低运维门槛
 - 后续可平滑扩展 Redis/Worker
 - 数据可备份、可迁移、可审计
+
+补充：本地 Docker 测试库端口冲突、`TEST_DATABASE_URL` 不可达原因与标准测试命令，请参见 [07-测试与验收方案.md](./07-测试与验收方案.md) 第 `4.1` 节。
