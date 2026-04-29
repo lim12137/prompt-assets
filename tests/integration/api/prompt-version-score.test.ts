@@ -63,6 +63,7 @@ function createPostScoreRequest(input: {
   scene?: string;
   traceId?: string;
   userEmail?: string;
+  ip?: string;
 }): Request {
   return new Request(
     `http://localhost:3000/api/prompts/${slug}/versions/${versionNo}/score`,
@@ -75,6 +76,7 @@ function createPostScoreRequest(input: {
           name: input.userEmail ?? "alice@example.com",
           can_manage: false,
         }),
+        ...(input.ip ? { "x-forwarded-for": input.ip } : {}),
       },
       body: JSON.stringify({
         score: input.score,
@@ -216,6 +218,39 @@ test("POST /score 未登录返回 401，伪造 x-user-email 不生效", async ()
   assert.equal(response.status, 401);
 });
 
+test("POST /score 同 IP 同卡片同日重复评分返回 429", async () => {
+  const scoreRoute = await loadScoreRouteModule();
+  const first = await scoreRoute.POST(
+    new Request(`http://localhost:3000/api/prompts/${slug}/versions/${versionNo}/score`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: buildAuthCookie({ uid: "u1@example.com", name: "u1", can_manage: false }),
+        "x-forwarded-for": "203.0.113.20",
+      },
+      body: JSON.stringify({ score: 5, scene: "detail_page", traceId: "ip-day-1" }),
+    }),
+    { params: Promise.resolve({ slug, versionNo }) },
+  );
+  assert.equal(first.status, 200);
+
+  const second = await scoreRoute.POST(
+    new Request(`http://localhost:3000/api/prompts/${slug}/versions/${versionNo}/score`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: buildAuthCookie({ uid: "u2@example.com", name: "u2", can_manage: false }),
+        "x-forwarded-for": "203.0.113.20",
+      },
+      body: JSON.stringify({ score: 4, scene: "detail_page", traceId: "ip-day-2" }),
+    }),
+    { params: Promise.resolve({ slug, versionNo }) },
+  );
+  const payload = (await second.json()) as { error?: string };
+  assert.equal(second.status, 429);
+  assert.match(String(payload.error ?? ""), /今日该卡片已操作|今天已经对该卡片操作过/);
+});
+
 test("POST 写入后 GET /score-stats 可见", async () => {
   const scoreRoute = await loadScoreRouteModule();
   const statsRoute = await loadScoreStatsRouteModule();
@@ -246,11 +281,11 @@ test("GET /score-stats 返回平均分、1-5 分布、低分率，并支持 scen
   const statsRoute = await loadScoreStatsRouteModule();
 
   const writes = [
-    { score: 1, scene: "detail_page", traceId: "trace-stats-1", userEmail: "a1@example.com" },
-    { score: 2, scene: "detail_page", traceId: "trace-stats-2", userEmail: "a2@example.com" },
-    { score: 4, scene: "detail_page", traceId: "trace-stats-3", userEmail: "a3@example.com" },
-    { score: 5, scene: "detail_page", traceId: "trace-stats-4", userEmail: "a4@example.com" },
-    { score: 5, scene: "search_result", traceId: "trace-stats-5", userEmail: "a5@example.com" },
+    { score: 1, scene: "detail_page", traceId: "trace-stats-1", userEmail: "a1@example.com", ip: "203.0.113.41" },
+    { score: 2, scene: "detail_page", traceId: "trace-stats-2", userEmail: "a2@example.com", ip: "203.0.113.42" },
+    { score: 4, scene: "detail_page", traceId: "trace-stats-3", userEmail: "a3@example.com", ip: "203.0.113.43" },
+    { score: 5, scene: "detail_page", traceId: "trace-stats-4", userEmail: "a4@example.com", ip: "203.0.113.44" },
+    { score: 5, scene: "search_result", traceId: "trace-stats-5", userEmail: "a5@example.com", ip: "203.0.113.45" },
   ];
 
   for (const write of writes) {

@@ -5,6 +5,19 @@ import { createElement, useEffect, useState, useTransition } from "react";
 const DEFAULT_SCORE_SCENE = "detail_page";
 const SCORE_CHOICES = [1, 2, 3, 4, 5];
 
+function resolveActionErrorMessage(response, fallback) {
+  if (response.status === 401) {
+    return "请先登录后再操作";
+  }
+  if (response.status === 429) {
+    return "今天已经对该卡片操作过";
+  }
+  if (response.status === 409) {
+    return "操作已处理，请刷新";
+  }
+  return fallback;
+}
+
 async function mutateVersionLike(slug, versionNo, liked) {
   const method = liked ? "DELETE" : "POST";
   const response = await fetch(
@@ -13,7 +26,9 @@ async function mutateVersionLike(slug, versionNo, liked) {
       method,
     },
   );
-  if (!response.ok) throw new Error("点赞操作失败");
+  if (!response.ok) {
+    throw new Error(resolveActionErrorMessage(response, "点赞操作失败"));
+  }
   return response.json();
 }
 
@@ -66,7 +81,7 @@ export async function fetchVersionScoreStats(
   );
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error("评分统计加载失败");
+    throw new Error(resolveActionErrorMessage(response, "评分统计加载失败"));
   }
   return normalizeScoreStats(payload);
 }
@@ -101,7 +116,7 @@ export async function mutateVersionScore(
   );
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error("评分提交失败");
+    throw new Error(resolveActionErrorMessage(response, "评分提交失败"));
   }
   return payload;
 }
@@ -114,7 +129,17 @@ async function submitCandidate(slug, content) {
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(typeof payload.error === "string" && payload.error.length > 0 ? payload.error : "候选提交失败");
+    if (response.status === 401) {
+      throw new Error("请先登录后再提交候选迭代");
+    }
+    throw new Error(
+      resolveActionErrorMessage(
+        response,
+        typeof payload.error === "string" && payload.error.length > 0
+          ? payload.error
+          : "候选提交失败",
+      ),
+    );
   }
   return payload;
 }
@@ -229,8 +254,8 @@ export function VersionLikeAction({
           setLiked(Boolean(payload?.liked));
           setLikesCount(Number(payload?.likesCount ?? 0));
         })
-        .catch(() => {
-          setErrorMessage("点赞失败，请稍后重试");
+        .catch((error) => {
+          setErrorMessage(error instanceof Error ? error.message : "点赞失败，请稍后重试");
         });
     });
   };
@@ -255,9 +280,9 @@ export function VersionLikeAction({
         .then((stats) => {
           setScoreStats(stats);
         })
-        .catch(() => {
+        .catch((error) => {
           setScoreStatusMessage("");
-          setScoreErrorMessage("评分失败，请稍后重试");
+          setScoreErrorMessage(error instanceof Error ? error.message : "评分失败，请稍后重试");
         });
     });
   };

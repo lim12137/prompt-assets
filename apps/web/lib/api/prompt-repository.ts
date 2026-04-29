@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import {
   databaseUrl,
   isPgReachable,
@@ -85,6 +85,8 @@ export type PromptVersionScoreMutationResult = {
   traceId: string;
   score: number;
 };
+
+export type PromptVersionInteractionAction = "like" | "score";
 
 export type PromptVersionScoreStatsResult = {
   slug: string;
@@ -439,6 +441,10 @@ type DbPromptVersionScoreStatsRow = {
   low_score_count: number | string;
 };
 
+type DbPromptVersionDailyInteractionInsertRow = {
+  id: number | string;
+};
+
 type DbPromptSubmissionHeadRow = {
   id: number | string;
   current_version_id: number | string | null;
@@ -562,6 +568,7 @@ let cachedDbReadable:
 let fixturePromptLikes = createFixtureLikeState();
 let fixturePromptVersionLikes = createFixturePromptVersionLikeState();
 let fixturePromptVersionScores = createFixturePromptVersionScoreState();
+let fixturePromptVersionDailyInteractions = createFixturePromptVersionDailyInteractionState();
 let fixturePromptVersions = createFixturePromptVersionState();
 let fixtureCurrentVersionNoBySlug = createFixtureCurrentVersionState();
 let fixtureSubmissions = createFixtureSubmissionState();
@@ -591,6 +598,10 @@ function createFixturePromptVersionLikeState(): Map<string, Set<string>> {
 
 function createFixturePromptVersionScoreState(): Map<string, FixturePromptVersionScoreRecord> {
   return new Map<string, FixturePromptVersionScoreRecord>();
+}
+
+function createFixturePromptVersionDailyInteractionState(): Set<string> {
+  return new Set<string>();
 }
 
 function createFixturePromptVersionState(): Map<string, PromptVersionFixture[]> {
@@ -945,6 +956,20 @@ function buildFixturePromptVersionScoreKey(
 
 function normalizeScene(input: string): string {
   return input.trim();
+}
+
+function hashIp(ip: string): string {
+  return createHash("sha256").update(ip).digest("hex");
+}
+
+function buildPromptVersionDailyInteractionFixtureKey(input: {
+  slug: string;
+  versionNo: string;
+  action: PromptVersionInteractionAction;
+  ipHash: string;
+  dateKey: string;
+}): string {
+  return `${input.slug}::${input.versionNo}::${input.action}::${input.ipHash}::${input.dateKey}`;
 }
 
 function normalizeTraceId(input?: string): string {
@@ -2703,6 +2728,71 @@ async function hasPromptVersionLikeInfrastructure(
   return Boolean(columnResult.rows[0]?.exists);
 }
 
+async function hasPromptVersionDailyInteractionInfrastructure(
+  client: SqlClient,
+): Promise<boolean> {
+  const tableResult = await client.query<{ exists: boolean }>(
+    `
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_tables
+        WHERE schemaname = 'public'
+          AND tablename = 'prompt_version_daily_interactions'
+      ) AS exists;
+    `,
+  );
+  if (!tableResult.rows[0]?.exists) {
+    return false;
+  }
+
+  const columnsResult = await client.query<{ count: number | string }>(
+    `
+      SELECT COUNT(*)::text AS count
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'prompt_version_daily_interactions'
+        AND column_name = ANY($1::text[]);
+    `,
+    [["prompt_version_id", "action", "ip_hash", "date_key"]],
+  );
+  return asNumber(columnsResult.rows[0]?.count) >= 4;
+}
+
+async function markPromptVersionDailyInteractionInDb(input: {
+  slug: string;
+  versionNo: string;
+  action: PromptVersionInteractionAction;
+  ip: string;
+  dateKey: string;
+}): Promise<"ok" | "not_found" | "limited"> {
+  return withPgClient(databaseUrl, async (client) => {
+    if (!(await hasPromptVersionDailyInteractionInfrastructure(client))) {
+      return "ok";
+    }
+    const target = await findPublishedPromptVersionLikeTarget(
+      client,
+      input.slug,
+      input.versionNo,
+    );
+    if (!target) {
+      return "not_found";
+    }
+    const ipHash = hashIp(input.ip);
+    const inserted = await client.query<DbPromptVersionDailyInteractionInsertRow>(
+      `
+        INSERT INTO prompt_version_daily_interactions
+          (prompt_version_id, action, ip_hash, date_key)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (prompt_version_id, action, ip_hash, date_key)
+        DO NOTHING
+        RETURNING id;
+      `,
+      [target.versionId, input.action, ipHash, input.dateKey],
+    );
+    return inserted.rows.length > 0 ? "ok" : "limited";
+  });
+}
+
 async function findPublishedPromptVersionLikeTarget(
   client: SqlClient,
   slug: string,
@@ -3967,6 +4057,33 @@ function likePromptVersionInFixtures(
   };
 }
 
+function markPromptVersionDailyInteractionInFixtures(input: {
+  slug: string;
+  versionNo: string;
+  action: PromptVersionInteractionAction;
+  ip: string;
+  dateKey: string;
+}): "ok" | "not_found" | "limited" {
+  const prompt = findFixturePromptRecord(input.slug);
+  const versions = getFixturePromptVersions(input.slug);
+  if (!prompt || !versions?.some((version) => version.versionNo === input.versionNo)) {
+    return "not_found";
+  }
+
+  const key = buildPromptVersionDailyInteractionFixtureKey({
+    slug: input.slug,
+    versionNo: input.versionNo,
+    action: input.action,
+    ipHash: hashIp(input.ip),
+    dateKey: input.dateKey,
+  });
+  if (fixturePromptVersionDailyInteractions.has(key)) {
+    return "limited";
+  }
+  fixturePromptVersionDailyInteractions.add(key);
+  return "ok";
+}
+
 function unlikePromptInFixtures(
   slug: string,
   userEmail: string,
@@ -4119,6 +4236,7 @@ export function __resetPromptLikeFixtureStateForTests(): void {
   fixturePromptLikes = createFixtureLikeState();
   fixturePromptVersionLikes = createFixturePromptVersionLikeState();
   fixturePromptVersionScores = createFixturePromptVersionScoreState();
+  fixturePromptVersionDailyInteractions = createFixturePromptVersionDailyInteractionState();
   fixturePromptVersions = createFixturePromptVersionState();
   fixtureCurrentVersionNoBySlug = createFixtureCurrentVersionState();
   fixtureSubmissions = createFixtureSubmissionState();
@@ -4183,6 +4301,40 @@ export async function likePromptVersion(
   }
 
   return likePromptVersionInFixtures(slug, normalizedVersionNo, normalizedEmail);
+}
+
+export async function markPromptVersionDailyInteraction(input: {
+  slug: string;
+  versionNo: string;
+  action: PromptVersionInteractionAction;
+  ip: string;
+  dateKey: string;
+}): Promise<"ok" | "not_found" | "limited"> {
+  const normalizedSlug = input.slug.trim();
+  const normalizedVersionNo = input.versionNo.trim();
+  const normalizedIp = input.ip.trim() || "unknown";
+  const normalizedDateKey = input.dateKey.trim();
+  if (!normalizedSlug || !normalizedVersionNo || !normalizedDateKey) {
+    return "not_found";
+  }
+
+  if (await canReadFromDatabase()) {
+    return markPromptVersionDailyInteractionInDb({
+      slug: normalizedSlug,
+      versionNo: normalizedVersionNo,
+      action: input.action,
+      ip: normalizedIp,
+      dateKey: normalizedDateKey,
+    });
+  }
+
+  return markPromptVersionDailyInteractionInFixtures({
+    slug: normalizedSlug,
+    versionNo: normalizedVersionNo,
+    action: input.action,
+    ip: normalizedIp,
+    dateKey: normalizedDateKey,
+  });
 }
 
 export async function unlikePromptVersion(

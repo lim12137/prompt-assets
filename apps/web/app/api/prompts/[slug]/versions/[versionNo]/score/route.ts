@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server.js";
 
-import { scorePromptVersion } from "../../../../../../../lib/api/prompt-repository.ts";
+import {
+  markPromptVersionDailyInteraction,
+  scorePromptVersion,
+} from "../../../../../../../lib/api/prompt-repository.ts";
 import {
   AuthConfigurationError,
   getUserFromRequest,
 } from "../../../../../../../lib/auth/session.ts";
+import {
+  getBusinessDateKey,
+  getRequestIp,
+} from "../../../../../../../lib/auth/request-ip.ts";
 
 type RouteParams = {
   slug: string;
@@ -90,6 +97,20 @@ export async function POST(request: Request, context: RouteContext) {
   const score = normalizeScore(body.score);
   if (score === null) {
     return NextResponse.json({ error: "score must be an integer between 1 and 5" }, { status: 400 });
+  }
+
+  const interaction = await markPromptVersionDailyInteraction({
+    slug,
+    versionNo,
+    action: "score",
+    ip: getRequestIp(request),
+    dateKey: getBusinessDateKey(),
+  });
+  if (interaction === "not_found") {
+    return NextResponse.json({ error: "prompt version not found" }, { status: 404 });
+  }
+  if (interaction === "limited") {
+    return NextResponse.json({ error: "今日该卡片已操作：评分" }, { status: 429 });
   }
 
   const result = await scorePromptVersion(slug, versionNo, userEmail, {

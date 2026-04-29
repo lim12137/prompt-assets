@@ -2,12 +2,17 @@ import { NextResponse } from "next/server.js";
 
 import {
   likePromptVersion,
+  markPromptVersionDailyInteraction,
   unlikePromptVersion,
 } from "../../../../../../../lib/api/prompt-repository.ts";
 import {
   AuthConfigurationError,
   getUserFromRequest,
 } from "../../../../../../../lib/auth/session.ts";
+import {
+  getBusinessDateKey,
+  getRequestIp,
+} from "../../../../../../../lib/auth/request-ip.ts";
 
 type RouteParams = {
   slug: string;
@@ -49,6 +54,19 @@ export async function POST(request: Request, context: RouteContext) {
     );
   }
   const userEmail = user.uid;
+  const interaction = await markPromptVersionDailyInteraction({
+    slug,
+    versionNo,
+    action: "like",
+    ip: getRequestIp(request),
+    dateKey: getBusinessDateKey(),
+  });
+  if (interaction === "not_found") {
+    return NextResponse.json({ error: "prompt version not found" }, { status: 404 });
+  }
+  if (interaction === "limited") {
+    return NextResponse.json({ error: "今日该卡片已操作：点赞" }, { status: 429 });
+  }
 
   const result = await likePromptVersion(slug, versionNo, userEmail);
   if (!result) {

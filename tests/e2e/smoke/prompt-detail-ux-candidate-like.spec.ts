@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("详情页 ux-research-plan 候选版本 v0003 点赞链路可用", async ({
+test("详情页 ux-research-plan 候选版本 v0003 未登录点赞提示先登录", async ({
   page,
 }) => {
   const response = await page.goto("/prompts/ux-research-plan");
@@ -26,6 +26,7 @@ test("详情页 ux-research-plan 候选版本 v0003 点赞链路可用", async (
   await candidateCard.getByTestId("version-like-button").click();
 
   const likeResponse = await likeResponsePromise;
-  expect(likeResponse.status()).toBe(200);
-  await expect(likeCountNode).toHaveText(`${initialLikeCount + 1} 赞`);
+  expect(likeResponse.status()).toBe(401);
+  await expect(likeCountNode).toHaveText(`${initialLikeCount} 赞`);
+  await expect(candidateCard.getByText("请先登录后再操作")).toBeVisible();
 });

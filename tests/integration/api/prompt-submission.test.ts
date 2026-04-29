@@ -207,7 +207,9 @@ test("POST /api/prompts/[slug]/submissions 未登录返回 401，伪造 x-user-e
     }),
     { params: { slug } },
   );
+  const payload = (await response.json()) as { error?: string };
   assert.equal(response.status, 401);
+  assert.equal(payload.error, "unauthorized");
 });
 
 test("同一用户在同一基线下多次投稿 revisionIndex 递增", async () => {

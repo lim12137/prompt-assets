@@ -22,6 +22,7 @@ export const coreTableNames = [
   "prompt_likes",
   "prompt_version_likes",
   "prompt_version_scores",
+  "prompt_version_daily_interactions",
   "audit_logs",
 ] as const;
 
@@ -262,6 +263,30 @@ export const promptVersionScores = pgTable(
       table.scene,
     ),
     index("prompt_version_scores_prompt_version_id_idx").on(table.promptVersionId),
+  ],
+);
+
+export const promptVersionDailyInteractions = pgTable(
+  "prompt_version_daily_interactions",
+  {
+    id: serial("id").primaryKey(),
+    promptVersionId: integer("prompt_version_id")
+      .notNull()
+      .references(() => promptVersions.id, { onDelete: "cascade" }),
+    action: text("action").notNull(),
+    ipHash: text("ip_hash").notNull(),
+    dateKey: text("date_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: false })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex(
+      "prompt_version_daily_interactions_unique_key",
+    ).on(table.promptVersionId, table.action, table.ipHash, table.dateKey),
+    index("prompt_version_daily_interactions_prompt_version_id_idx").on(
+      table.promptVersionId,
+    ),
   ],
 );
 

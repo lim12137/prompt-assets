@@ -128,23 +128,47 @@ test("POST /api/prompts/[slug]/versions/[versionNo]/like 首次点赞成功并�
   assert.equal(afterCount, beforeCount + 1);
 });
 
-test("POST /api/prompts/[slug]/versions/[versionNo]/like 重复点赞幂等，不重复计数", async () => {
+test("POST /api/prompts/[slug]/versions/[versionNo]/like 同 IP 同日重复点赞返回 429", async () => {
   const route = await loadRouteModule();
 
-  const first = await route.POST(createLikeRequest("POST", currentVersionNo), {
+  const first = await route.POST(new Request(
+    `http://localhost:3000/api/prompts/${slug}/versions/${currentVersionNo}/like`,
+    {
+      method: "POST",
+      headers: {
+        cookie: buildAuthCookie({
+          uid: userEmail,
+          name: "Alice",
+          can_manage: false,
+        }),
+        "x-forwarded-for": "198.51.100.31",
+      },
+    },
+  ), {
     params: { slug, versionNo: currentVersionNo },
   });
-  const firstPayload = (await first.json()) as VersionLikeResponse;
 
-  const second = await route.POST(createLikeRequest("POST", currentVersionNo), {
+  const second = await route.POST(new Request(
+    `http://localhost:3000/api/prompts/${slug}/versions/${currentVersionNo}/like`,
+    {
+      method: "POST",
+      headers: {
+        cookie: buildAuthCookie({
+          uid: userEmail,
+          name: "Alice",
+          can_manage: false,
+        }),
+        "x-forwarded-for": "198.51.100.31",
+      },
+    },
+  ), {
     params: { slug, versionNo: currentVersionNo },
   });
-  const secondPayload = (await second.json()) as VersionLikeResponse;
+  const secondPayload = (await second.json()) as { error?: string };
 
   assert.equal(first.status, 200);
-  assert.equal(second.status, 200);
-  assert.equal(secondPayload.liked, true);
-  assert.equal(secondPayload.likesCount, firstPayload.likesCount);
+  assert.equal(second.status, 429);
+  assert.match(String(secondPayload.error ?? ""), /今日该卡片已操作|今天已经对该卡片操作过/);
 });
 
 test("DELETE /api/prompts/[slug]/versions/[versionNo]/like 取消点赞后计数回退", async () => {
@@ -224,4 +248,59 @@ test("POST /versions/[versionNo]/like 未登录返回 401，伪造 x-user-email 
     { params: { slug, versionNo: currentVersionNo } },
   );
   assert.equal(response.status, 401);
+});
+
+test("POST /like 同 IP 同卡片同日重复点赞返回 429", async () => {
+  const route = await loadRouteModule();
+  const first = await route.POST(
+    new Request(`http://localhost:3000/api/prompts/${slug}/versions/${currentVersionNo}/like`, {
+      method: "POST",
+      headers: {
+        cookie: buildAuthCookie({ uid: "u1@example.com", name: "u1", can_manage: false }),
+        "x-forwarded-for": "203.0.113.10",
+      },
+    }),
+    { params: { slug, versionNo: currentVersionNo } },
+  );
+  assert.equal(first.status, 200);
+
+  const second = await route.POST(
+    new Request(`http://localhost:3000/api/prompts/${slug}/versions/${currentVersionNo}/like`, {
+      method: "POST",
+      headers: {
+        cookie: buildAuthCookie({ uid: "u2@example.com", name: "u2", can_manage: false }),
+        "x-forwarded-for": "203.0.113.10",
+      },
+    }),
+    { params: { slug, versionNo: currentVersionNo } },
+  );
+  const payload = (await second.json()) as { error?: string };
+  assert.equal(second.status, 429);
+  assert.match(String(payload.error ?? ""), /今日该卡片已操作|今天已经对该卡片操作过/);
+});
+
+test("POST /like 不同 IP 同卡片同日可分别点赞", async () => {
+  const route = await loadRouteModule();
+  const first = await route.POST(
+    new Request(`http://localhost:3000/api/prompts/${slug}/versions/${currentVersionNo}/like`, {
+      method: "POST",
+      headers: {
+        cookie: buildAuthCookie({ uid: "u1@example.com", name: "u1", can_manage: false }),
+        "x-forwarded-for": "203.0.113.11",
+      },
+    }),
+    { params: { slug, versionNo: currentVersionNo } },
+  );
+  const second = await route.POST(
+    new Request(`http://localhost:3000/api/prompts/${slug}/versions/${currentVersionNo}/like`, {
+      method: "POST",
+      headers: {
+        cookie: buildAuthCookie({ uid: "u2@example.com", name: "u2", can_manage: false }),
+        "x-forwarded-for": "203.0.113.12",
+      },
+    }),
+    { params: { slug, versionNo: currentVersionNo } },
+  );
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
 });
