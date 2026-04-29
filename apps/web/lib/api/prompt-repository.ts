@@ -87,6 +87,11 @@ export type PromptVersionScoreMutationResult = {
 };
 
 export type PromptVersionInteractionAction = "like" | "score";
+export type PromptVersionDailyInteractionResult =
+  | "ok"
+  | "not_found"
+  | "limited"
+  | "missing_infrastructure";
 
 export type PromptVersionScoreStatsResult = {
   slug: string;
@@ -555,6 +560,7 @@ const REQUIRED_TABLES = [
   "prompts",
   "prompt_categories",
   "prompt_versions",
+  "prompt_version_daily_interactions",
   "submissions",
   "prompt_likes",
   "audit_logs",
@@ -2764,10 +2770,10 @@ async function markPromptVersionDailyInteractionInDb(input: {
   action: PromptVersionInteractionAction;
   ip: string;
   dateKey: string;
-}): Promise<"ok" | "not_found" | "limited"> {
+}): Promise<PromptVersionDailyInteractionResult> {
   return withPgClient(databaseUrl, async (client) => {
     if (!(await hasPromptVersionDailyInteractionInfrastructure(client))) {
-      return "ok";
+      return "missing_infrastructure";
     }
     const target = await findPublishedPromptVersionLikeTarget(
       client,
@@ -4309,7 +4315,7 @@ export async function markPromptVersionDailyInteraction(input: {
   action: PromptVersionInteractionAction;
   ip: string;
   dateKey: string;
-}): Promise<"ok" | "not_found" | "limited"> {
+}): Promise<PromptVersionDailyInteractionResult> {
   const normalizedSlug = input.slug.trim();
   const normalizedVersionNo = input.versionNo.trim();
   const normalizedIp = input.ip.trim() || "unknown";

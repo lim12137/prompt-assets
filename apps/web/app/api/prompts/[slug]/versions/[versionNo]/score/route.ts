@@ -112,6 +112,15 @@ export async function POST(request: Request, context: RouteContext) {
   if (interaction === "limited") {
     return NextResponse.json({ error: "今日该卡片已操作：评分" }, { status: 429 });
   }
+  if (interaction === "missing_infrastructure") {
+    return NextResponse.json(
+      {
+        error: "评分点赞限流基础设施未就绪",
+        code: "missing_infrastructure",
+      },
+      { status: 500 },
+    );
+  }
 
   const result = await scorePromptVersion(slug, versionNo, userEmail, {
     scene,

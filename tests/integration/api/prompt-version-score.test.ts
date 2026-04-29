@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import { __resetPromptLikeFixtureStateForTests } from "../../../apps/web/lib/api/prompt-repository.ts";
 import { buildAuthCookie } from "./_auth-test-helpers.ts";
+import { isPgReachable, withPgClient } from "../../../packages/db/src/client.ts";
+import { seedDatabase } from "../../../packages/db/src/seed.ts";
 
 type ScoreRouteModule = {
   POST: (
@@ -45,6 +47,9 @@ type ScoreStatsResponse = {
 const slug = "ux-research-plan";
 const versionNo = "v0003";
 const missingVersionNo = "v9999";
+const testDbUrl =
+  process.env.TEST_DATABASE_URL ??
+  "postgres://postgres:postgres@127.0.0.1:55432/prompt_management_test";
 
 async function loadScoreRouteModule(): Promise<ScoreRouteModule> {
   return import(
@@ -321,4 +326,50 @@ test("GET /score-stats 返回平均分、1-5 分布、低分率，并支持 scen
     "4": 1,
     "5": 1,
   });
+});
+
+test("POST /score 在缺少日频限流基础设施时应 fail-closed 返回 500", async (t) => {
+  process.env.DATABASE_URL = testDbUrl;
+  delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+  process.env.LOGIN_TOKEN_SECRET = "test-secret";
+  __resetPromptLikeFixtureStateForTests();
+
+  if (!(await isPgReachable(testDbUrl))) {
+    t.skip(`测试库不可达，跳过: ${testDbUrl}`);
+    return;
+  }
+  await seedDatabase(testDbUrl, { reset: true });
+
+  await withPgClient(testDbUrl, async (client) => {
+    await client.query(
+      "ALTER TABLE IF EXISTS prompt_version_daily_interactions RENAME TO prompt_version_daily_interactions_disabled_for_test;",
+    );
+  });
+
+  try {
+    const scoreRoute = await loadScoreRouteModule();
+    const response = await scoreRoute.POST(
+      new Request(`http://localhost:3000/api/prompts/${slug}/versions/${versionNo}/score`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: buildAuthCookie({ uid: "u1@example.com", name: "u1", can_manage: false }),
+          "x-forwarded-for": "203.0.113.41",
+        },
+        body: JSON.stringify({ score: 5, scene: "detail_page", traceId: "infra-missing" }),
+      }),
+      { params: Promise.resolve({ slug, versionNo }) },
+    );
+    const payload = (await response.json()) as { error?: string; code?: string };
+    assert.equal(response.status, 500);
+    assert.equal(payload.code, "missing_infrastructure");
+    assert.equal(payload.error, "评分点赞限流基础设施未就绪");
+  } finally {
+    await withPgClient(testDbUrl, async (client) => {
+      await client.query(
+        "ALTER TABLE IF EXISTS prompt_version_daily_interactions_disabled_for_test RENAME TO prompt_version_daily_interactions;",
+      );
+    });
+    await seedDatabase(testDbUrl, { reset: true });
+  }
 });

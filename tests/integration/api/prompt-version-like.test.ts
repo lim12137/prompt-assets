@@ -4,15 +4,17 @@ import assert from "node:assert/strict";
 import { GET as getPromptDetail } from "../../../apps/web/app/api/prompts/[slug]/route.ts";
 import { __resetPromptLikeFixtureStateForTests } from "../../../apps/web/lib/api/prompt-repository.ts";
 import { buildAuthCookie } from "./_auth-test-helpers.ts";
+import { isPgReachable, withPgClient } from "../../../packages/db/src/client.ts";
+import { seedDatabase } from "../../../packages/db/src/seed.ts";
 
 type VersionLikeRouteModule = {
   POST: (
     request: Request,
-    context: { params: { slug: string; versionNo: string } },
+    context: { params: Promise<{ slug: string; versionNo: string }> },
   ) => Promise<Response>;
   DELETE: (
     request: Request,
-    context: { params: { slug: string; versionNo: string } },
+    context: { params: Promise<{ slug: string; versionNo: string }> },
   ) => Promise<Response>;
 };
 
@@ -42,6 +44,9 @@ const uxResearchPlanSlug = "ux-research-plan";
 const uxCandidateVersionNo = "v0003";
 const missingVersionNo = "v9999";
 const userEmail = "alice@example.com";
+const testDbUrl =
+  process.env.TEST_DATABASE_URL ??
+  "postgres://postgres:postgres@127.0.0.1:55432/prompt_management_test";
 
 async function loadRouteModule(): Promise<VersionLikeRouteModule> {
   return import(
@@ -115,7 +120,7 @@ test("POST /api/prompts/[slug]/versions/[versionNo]/like 首次点赞成功并�
   const beforeCount = await readVersionLikesCount(slug, currentVersionNo);
 
   const response = await route.POST(createLikeRequest("POST", currentVersionNo), {
-    params: { slug, versionNo: currentVersionNo },
+    params: Promise.resolve({ slug, versionNo: currentVersionNo }),
   });
   const payload = (await response.json()) as VersionLikeResponse;
   const afterCount = await readVersionLikesCount(slug, currentVersionNo);
@@ -145,7 +150,7 @@ test("POST /api/prompts/[slug]/versions/[versionNo]/like 同 IP 同日重复点�
       },
     },
   ), {
-    params: { slug, versionNo: currentVersionNo },
+    params: Promise.resolve({ slug, versionNo: currentVersionNo }),
   });
 
   const second = await route.POST(new Request(
@@ -162,7 +167,7 @@ test("POST /api/prompts/[slug]/versions/[versionNo]/like 同 IP 同日重复点�
       },
     },
   ), {
-    params: { slug, versionNo: currentVersionNo },
+    params: Promise.resolve({ slug, versionNo: currentVersionNo }),
   });
   const secondPayload = (await second.json()) as { error?: string };
 
@@ -176,11 +181,11 @@ test("DELETE /api/prompts/[slug]/versions/[versionNo]/like 取消点赞后计数
   const beforeCount = await readVersionLikesCount(slug, currentVersionNo);
 
   await route.POST(createLikeRequest("POST", currentVersionNo), {
-    params: { slug, versionNo: currentVersionNo },
+    params: Promise.resolve({ slug, versionNo: currentVersionNo }),
   });
 
   const response = await route.DELETE(createLikeRequest("DELETE", currentVersionNo), {
-    params: { slug, versionNo: currentVersionNo },
+    params: Promise.resolve({ slug, versionNo: currentVersionNo }),
   });
   const payload = (await response.json()) as VersionLikeResponse;
   const afterCount = await readVersionLikesCount(slug, currentVersionNo);
@@ -197,7 +202,7 @@ test("不同版本的点赞计数互不影响", async () => {
   const beforePrevious = await readVersionLikesCount(slug, previousVersionNo);
 
   const response = await route.POST(createLikeRequest("POST", currentVersionNo), {
-    params: { slug, versionNo: currentVersionNo },
+    params: Promise.resolve({ slug, versionNo: currentVersionNo }),
   });
   const payload = (await response.json()) as VersionLikeResponse;
   const afterCurrent = await readVersionLikesCount(slug, currentVersionNo);
@@ -213,7 +218,7 @@ test("POST /api/prompts/[slug]/versions/[versionNo]/like 在 versionNo 不存在
   const route = await loadRouteModule();
 
   const response = await route.POST(createLikeRequest("POST", missingVersionNo), {
-    params: { slug, versionNo: missingVersionNo },
+    params: Promise.resolve({ slug, versionNo: missingVersionNo }),
   });
   const payload = (await response.json()) as { error: string };
 
@@ -227,7 +232,7 @@ test("POST /api/prompts/ux-research-plan/versions/v0003/like 候选版本可点�
   const response = await route.POST(
     createLikeRequest("POST", uxCandidateVersionNo, uxResearchPlanSlug),
     {
-      params: { slug: uxResearchPlanSlug, versionNo: uxCandidateVersionNo },
+      params: Promise.resolve({ slug: uxResearchPlanSlug, versionNo: uxCandidateVersionNo }),
     },
   );
   const payload = (await response.json()) as VersionLikeResponse | { error: string };
@@ -245,7 +250,7 @@ test("POST /versions/[versionNo]/like 未登录返回 401，伪造 x-user-email 
       withAuth: false,
       forgedHeaderEmail: "forged@example.com",
     }),
-    { params: { slug, versionNo: currentVersionNo } },
+    { params: Promise.resolve({ slug, versionNo: currentVersionNo }) },
   );
   assert.equal(response.status, 401);
 });
@@ -260,7 +265,7 @@ test("POST /like 同 IP 同卡片同日重复点赞返回 429", async () => {
         "x-forwarded-for": "203.0.113.10",
       },
     }),
-    { params: { slug, versionNo: currentVersionNo } },
+    { params: Promise.resolve({ slug, versionNo: currentVersionNo }) },
   );
   assert.equal(first.status, 200);
 
@@ -272,7 +277,7 @@ test("POST /like 同 IP 同卡片同日重复点赞返回 429", async () => {
         "x-forwarded-for": "203.0.113.10",
       },
     }),
-    { params: { slug, versionNo: currentVersionNo } },
+    { params: Promise.resolve({ slug, versionNo: currentVersionNo }) },
   );
   const payload = (await second.json()) as { error?: string };
   assert.equal(second.status, 429);
@@ -289,7 +294,7 @@ test("POST /like 不同 IP 同卡片同日可分别点赞", async () => {
         "x-forwarded-for": "203.0.113.11",
       },
     }),
-    { params: { slug, versionNo: currentVersionNo } },
+    { params: Promise.resolve({ slug, versionNo: currentVersionNo }) },
   );
   const second = await route.POST(
     new Request(`http://localhost:3000/api/prompts/${slug}/versions/${currentVersionNo}/like`, {
@@ -299,8 +304,53 @@ test("POST /like 不同 IP 同卡片同日可分别点赞", async () => {
         "x-forwarded-for": "203.0.113.12",
       },
     }),
-    { params: { slug, versionNo: currentVersionNo } },
+    { params: Promise.resolve({ slug, versionNo: currentVersionNo }) },
   );
   assert.equal(first.status, 200);
   assert.equal(second.status, 200);
 });
+
+test("POST /like 在缺少日频限流基础设施时应 fail-closed 返回 500", async (t) => {
+  process.env.DATABASE_URL = testDbUrl;
+  delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+  process.env.LOGIN_TOKEN_SECRET = "test-secret";
+  __resetPromptLikeFixtureStateForTests();
+
+  if (!(await isPgReachable(testDbUrl))) {
+    t.skip(`测试库不可达，跳过: ${testDbUrl}`);
+    return;
+  }
+  await seedDatabase(testDbUrl, { reset: true });
+
+  await withPgClient(testDbUrl, async (client) => {
+    await client.query(
+      "ALTER TABLE IF EXISTS prompt_version_daily_interactions RENAME TO prompt_version_daily_interactions_disabled_for_test;",
+    );
+  });
+
+  try {
+    const route = await loadRouteModule();
+    const response = await route.POST(
+      new Request(`http://localhost:3000/api/prompts/${slug}/versions/${currentVersionNo}/like`, {
+        method: "POST",
+        headers: {
+          cookie: buildAuthCookie({ uid: "u1@example.com", name: "u1", can_manage: false }),
+          "x-forwarded-for": "203.0.113.31",
+        },
+      }),
+      { params: Promise.resolve({ slug, versionNo: currentVersionNo }) },
+    );
+    const payload = (await response.json()) as { error?: string; code?: string };
+    assert.equal(response.status, 500);
+    assert.equal(payload.code, "missing_infrastructure");
+    assert.equal(payload.error, "评分点赞限流基础设施未就绪");
+  } finally {
+    await withPgClient(testDbUrl, async (client) => {
+      await client.query(
+        "ALTER TABLE IF EXISTS prompt_version_daily_interactions_disabled_for_test RENAME TO prompt_version_daily_interactions;",
+      );
+    });
+    await seedDatabase(testDbUrl, { reset: true });
+  }
+});
+
