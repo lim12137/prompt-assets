@@ -1,5 +1,13 @@
 import { test, expect } from "@playwright/test";
 
+function e2eAuthHeaders(): Record<string, string> {
+  const cookie = process.env.E2E_AUTH_COOKIE?.trim() ?? "";
+  if (!cookie) {
+    throw new Error("E2E_AUTH_COOKIE is required for admin API setup in this spec");
+  }
+  return { cookie };
+}
+
 async function createPromptByApi(
   request: Parameters<typeof test>[0]["request"],
   input: {
@@ -13,8 +21,7 @@ async function createPromptByApi(
   const response = await request.post("/api/prompts", {
     headers: {
       "content-type": "application/json",
-      "x-user-email": "admin@example.com",
-      "x-user-role": "admin",
+      ...e2eAuthHeaders(),
     },
     data: input,
   });
@@ -29,10 +36,7 @@ async function getPromptListByApi(
   currentVersionContent: string;
 }>> {
   const response = await request.get("/api/prompts", {
-    headers: {
-      "x-user-email": "admin@example.com",
-      "x-user-role": "admin",
-    },
+    headers: e2eAuthHeaders(),
   });
   expect(response.status()).toBe(200);
   return (await response.json()) as Array<{
