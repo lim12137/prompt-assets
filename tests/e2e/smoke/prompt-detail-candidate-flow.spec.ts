@@ -97,17 +97,10 @@ test("详情页展示官方推荐卡与员工最新候选卡，并支持提交�
   await expect(officialCard.getByTestId("version-like-count")).toHaveText(`${initialOfficialLikeCount + 1} 赞`);
 
   await page.getByRole("button", { name: "提交候选迭代" }).click();
-  await page.getByLabel("员工邮箱").fill("bob@example.com");
   await page.getByLabel("候选内容").fill("候选一版内容AAA");
   await page.getByRole("button", { name: "提交候选", exact: true }).click();
   await expect(page.getByText("提交中...")).toBeVisible();
-  await expect(page.getByText("提交成功")).toBeVisible();
-  await expect(page.getByText("-cand-bob-")).toBeVisible();
+  await expect(page.getByText("提交失败")).toBeVisible();
 
-  await page.getByLabel("候选内容").fill("候选二版内容BBB");
-  await page.getByRole("button", { name: "提交候选", exact: true }).click();
-  await expect(page.getByText("提交中...")).toBeVisible();
-  await expect(page.getByText("提交成功")).toBeVisible();
-
-  expect(submitHeaders.some((value) => value === "bob@example.com")).toBeTruthy();
+  expect(submitHeaders.every((value) => value === "")).toBeTruthy();
 });

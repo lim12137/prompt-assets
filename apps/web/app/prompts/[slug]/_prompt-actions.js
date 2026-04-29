@@ -2,17 +2,15 @@
 
 import { createElement, useEffect, useState, useTransition } from "react";
 
-const DEFAULT_ACTOR_EMAIL = "alice@example.com";
 const DEFAULT_SCORE_SCENE = "detail_page";
 const SCORE_CHOICES = [1, 2, 3, 4, 5];
 
-async function mutateVersionLike(slug, versionNo, liked, actorEmail) {
+async function mutateVersionLike(slug, versionNo, liked) {
   const method = liked ? "DELETE" : "POST";
   const response = await fetch(
     `/api/prompts/${encodeURIComponent(slug)}/versions/${encodeURIComponent(versionNo)}/like`,
     {
       method,
-      headers: { "x-user-email": actorEmail },
     },
   );
   if (!response.ok) throw new Error("点赞操作失败");
@@ -76,7 +74,7 @@ export async function fetchVersionScoreStats(
 export async function mutateVersionScore(
   slug,
   versionNo,
-  { score, scene = DEFAULT_SCORE_SCENE, actorEmail = DEFAULT_ACTOR_EMAIL, traceId } = {},
+  { score, scene = DEFAULT_SCORE_SCENE, traceId } = {},
 ) {
   const normalizedScore = normalizeScore(score);
   if (normalizedScore === null) {
@@ -84,17 +82,12 @@ export async function mutateVersionScore(
   }
 
   const normalizedScene = String(scene ?? "").trim() || DEFAULT_SCORE_SCENE;
-  const normalizedActor = String(actorEmail ?? "").trim();
   const response = await fetch(
     `/api/prompts/${encodeURIComponent(slug)}/versions/${encodeURIComponent(versionNo)}/score`,
     {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-user-email":
-          normalizedActor && normalizedActor.includes("@")
-            ? normalizedActor
-            : DEFAULT_ACTOR_EMAIL,
       },
       body: JSON.stringify({
         score: normalizedScore,
@@ -113,10 +106,10 @@ export async function mutateVersionScore(
   return payload;
 }
 
-async function submitCandidate(slug, content, actorEmail) {
+async function submitCandidate(slug, content) {
   const response = await fetch(`/api/prompts/${encodeURIComponent(slug)}/submissions`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-user-email": actorEmail },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify({ content, changeNote: "员工候选迭代提交" }),
   });
   const payload = await response.json().catch(() => ({}));
@@ -190,7 +183,6 @@ export function VersionLikeAction({
   versionNo,
   initialLikesCount,
   initialLiked,
-  actorEmail = DEFAULT_ACTOR_EMAIL,
 }) {
   const [likesCount, setLikesCount] = useState(Number(initialLikesCount ?? 0));
   const [liked, setLiked] = useState(Boolean(initialLiked));
@@ -232,15 +224,7 @@ export function VersionLikeAction({
   const onToggleLike = () => {
     startLikeTransition(() => {
       setErrorMessage("");
-      const normalizedActor = String(actorEmail ?? "").trim();
-      void mutateVersionLike(
-        slug,
-        versionNo,
-        liked,
-        normalizedActor && normalizedActor.includes("@")
-          ? normalizedActor
-          : DEFAULT_ACTOR_EMAIL,
-      )
+      void mutateVersionLike(slug, versionNo, liked)
         .then((payload) => {
           setLiked(Boolean(payload?.liked));
           setLikesCount(Number(payload?.likesCount ?? 0));
@@ -255,15 +239,9 @@ export function VersionLikeAction({
     startScoreTransition(() => {
       setScoreErrorMessage("");
       setScoreStatusMessage("评分提交中...");
-      const normalizedActor = String(actorEmail ?? "").trim();
-
       void mutateVersionScore(slug, versionNo, {
         score,
         scene: DEFAULT_SCORE_SCENE,
-        actorEmail:
-          normalizedActor && normalizedActor.includes("@")
-            ? normalizedActor
-            : DEFAULT_ACTOR_EMAIL,
       })
         .then((payload) => {
           const submittedScore = Number(payload?.score ?? score);
@@ -381,7 +359,6 @@ export function VersionLikeAction({
 }
 
 export function PromptActions({ slug, currentVersionContent }) {
-  const [actorEmail, setActorEmail] = useState(DEFAULT_ACTOR_EMAIL);
   const [copyStatusMessage, setCopyStatusMessage] = useState("");
   const [copyErrorMessage, setCopyErrorMessage] = useState("");
 
@@ -407,11 +384,8 @@ export function PromptActions({ slug, currentVersionContent }) {
       setCandidateStatusMessage(""); setCandidateErrorMessage("");
       const content = candidateContent.trim();
       if (!content) { setCandidateErrorMessage("候选内容不能为空"); return; }
-      const currentActorEmail = actorEmail.trim();
-      if (!currentActorEmail || !currentActorEmail.includes("@")) { setCandidateErrorMessage("当前员工邮箱无效"); return; }
-
       setCandidateStatusMessage("提交中...");
-      void submitCandidate(slug, content, currentActorEmail)
+      void submitCandidate(slug, content)
         .then((payload) => {
           const candidateNo = payload?.candidateVersion?.candidateNo;
           setCandidateStatusMessage(typeof candidateNo === "string" && candidateNo.length > 0 ? `提交成功：${candidateNo}` : "提交成功");
@@ -426,15 +400,6 @@ export function PromptActions({ slug, currentVersionContent }) {
   return createElement("div", { style: { display: "grid", gap: "12px" } },
     createElement("div", { className: "pm-detail-section" },
       createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "center" } },
-        createElement("label", { style: { display: "flex", alignItems: "center", gap: "8px", flex: "1 1 280px" } },
-          createElement("span", { style: { fontSize: "14px", color: "var(--pm-muted)", whiteSpace: "nowrap" } }, "员工邮箱"),
-          createElement("input", {
-            value: actorEmail, onChange: (e) => setActorEmail(e.target.value),
-            style: { flex: 1, padding: "8px 12px", border: "1px solid var(--pm-border)", borderRadius: "8px", fontSize: "14px", outline: "none", transition: "border-color 0.2s ease, box-shadow 0.2s ease" },
-            onFocus: (e) => { e.target.style.borderColor = "var(--pm-accent)"; e.target.style.boxShadow = "0 0 0 3px rgba(196, 30, 58, 0.15)"; },
-            onBlur: (e) => { e.target.style.borderColor = "var(--pm-border)"; e.target.style.boxShadow = "none"; },
-          }),
-        ),
         createElement("div", { style: { display: "flex", gap: "8px", alignItems: "center" } },
           createElement("button", {
             type: "button", onClick: copyCurrentVersion, className: "pm-secondary-button",
