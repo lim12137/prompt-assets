@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import {
@@ -6,6 +6,7 @@ import {
   getLoginCookieName,
   verifyLoginToken,
 } from "../../lib/auth/session.ts";
+import { resolveAdminRedirectTarget } from "../../lib/auth/admin-redirect.ts";
 
 function redirectToLogin(targetPath) {
   redirect(`/login?redirect=${encodeURIComponent(targetPath)}`);
@@ -13,6 +14,7 @@ function redirectToLogin(targetPath) {
 
 export default async function AdminLayout({ children }) {
   const cookieStore = await cookies();
+  const requestHeaders = await headers();
   const token = cookieStore.get(getLoginCookieName())?.value;
   let verified;
   try {
@@ -25,7 +27,7 @@ export default async function AdminLayout({ children }) {
   }
 
   if (!verified.ok || !verified.user.can_manage) {
-    redirectToLogin("/admin");
+    redirectToLogin(resolveAdminRedirectTarget(requestHeaders));
   }
 
   return children;
