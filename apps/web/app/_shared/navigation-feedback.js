@@ -16,6 +16,10 @@ function isSameOriginNavigation(anchor) {
   return targetUrl.origin === currentUrl.origin && targetUrl.href !== currentUrl.href;
 }
 
+export function notifyNavigationStart() {
+  window.dispatchEvent(new CustomEvent("pm:navigation-start"));
+}
+
 export function NavigationFeedback() {
   const pathname = usePathname();
   const [visible, setVisible] = useState(false);
@@ -24,15 +28,7 @@ export function NavigationFeedback() {
   const pendingPathRef = useRef(null);
 
   useEffect(() => {
-    function handleDocumentClick(event) {
-      if (!isPlainLeftClick(event)) {
-        return;
-      }
-      const anchor = event.target instanceof Element ? event.target.closest("a") : null;
-      if (!anchor || !isSameOriginNavigation(anchor)) {
-        return;
-      }
-
+    function showFeedback() {
       window.clearTimeout(hideTimerRef.current);
       window.clearTimeout(maxTimerRef.current);
       pendingPathRef.current = window.location.pathname;
@@ -43,9 +39,23 @@ export function NavigationFeedback() {
       }, 10000);
     }
 
+    function handleDocumentClick(event) {
+      if (!isPlainLeftClick(event)) {
+        return;
+      }
+      const anchor = event.target instanceof Element ? event.target.closest("a") : null;
+      if (!anchor || !isSameOriginNavigation(anchor)) {
+        return;
+      }
+
+      showFeedback();
+    }
+
     document.addEventListener("click", handleDocumentClick, true);
+    window.addEventListener("pm:navigation-start", showFeedback);
     return () => {
       document.removeEventListener("click", handleDocumentClick, true);
+      window.removeEventListener("pm:navigation-start", showFeedback);
       window.clearTimeout(hideTimerRef.current);
       window.clearTimeout(maxTimerRef.current);
     };

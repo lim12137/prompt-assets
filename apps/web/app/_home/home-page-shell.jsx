@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { notifyNavigationStart } from "../_shared/navigation-feedback.js";
 import {
   HOME_ACTION_ENTRIES,
   HOME_ACTION_STATUS_TEXT,
@@ -178,6 +179,7 @@ function createCardClickHandler(slug, router) {
     if (isInteractiveTarget(event.target)) {
       return;
     }
+    notifyNavigationStart();
     router.push(`/prompts/${slug}`);
   };
 }
@@ -191,6 +193,7 @@ function createCardKeyDownHandler(slug, router) {
       return;
     }
     event.preventDefault();
+    notifyNavigationStart();
     router.push(`/prompts/${slug}`);
   };
 }

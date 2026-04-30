@@ -43,7 +43,30 @@ test("ux loading: 点击详情链接后立即显示页面加载反馈", async ({
 
   const clickPromise = page.getByRole("link", { name: "查看详情 →" }).first().click();
 
-  await expect(page.getByText("页面加载中...")).toBeVisible();
+  await expect(page.locator(".pm-navigation-feedback.visible")).toContainText("页面加载中...");
+  await clickPromise;
+  await expect(page).toHaveURL(/\/prompts\/js-code-reviewer$/);
+});
+
+test("ux loading: 点击提示词卡片后立即显示页面加载反馈", async ({ page }) => {
+  await page.route("**/prompts/js-code-reviewer**", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await route.continue();
+  });
+
+  await page.goto("/");
+  await page.getByLabel("关键词搜索").fill("JavaScript 代码审查助手");
+
+  const card = page.locator("[data-testid='prompt-card']").filter({
+    hasText: "JavaScript 代码审查助手",
+  }).first();
+  await expect(card).toBeVisible();
+
+  const clickPromise = card.click({ position: { x: 12, y: 12 } });
+
+  await expect(page.locator(".pm-navigation-feedback.visible")).toContainText("页面加载中...", {
+    timeout: 250,
+  });
   await clickPromise;
   await expect(page).toHaveURL(/\/prompts\/js-code-reviewer$/);
 });
