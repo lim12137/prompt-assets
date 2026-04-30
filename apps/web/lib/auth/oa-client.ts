@@ -53,7 +53,7 @@ function pickFieldByRegex(text: string, keys: string[]): string | null {
     const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const patterns = [
       new RegExp(`["']${escapedKey}["']\\s*:\\s*["']([^"']+)["']`, "i"),
-      new RegExp(`${escapedKey}["'\\s:=>]+([^\\s<,}]+)`, "i"),
+      new RegExp(`(?:^|\\n|\\r|>)\\s*${escapedKey}\\s*[：:]\\s*([^\\r\\n<]+)`, "i"),
     ];
     for (const pattern of patterns) {
       const match = text.match(pattern);

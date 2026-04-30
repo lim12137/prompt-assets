@@ -82,3 +82,44 @@ test("authenticateWithOa: 部门字段支持兼容解析（dept/org/部门）", 
     globalThis.fetch = originalFetch;
   }
 });
+
+test("authenticateWithOa: HTML 含 meta viewport 时不应将 viewport 解析为姓名", async () => {
+  process.env.AWS_PORTAL_URL = "http://oa.local";
+  const originalFetch = globalThis.fetch;
+  const profileHtml = `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+  </head>
+  <body>
+    <div>姓名: 张三</div>
+    <div>部门: 安全部</div>
+  </body>
+</html>`;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/portal/r/jd")) {
+      return new Response("ok", {
+        status: 200,
+        headers: { "set-cookie": "oa_session=abc123; Path=/; HttpOnly" },
+      });
+    }
+    if (url.endsWith("/portal/r/w")) {
+      return new Response(profileHtml, { status: 200 });
+    }
+    return new Response("not found", { status: 404 });
+  }) as typeof fetch;
+
+  try {
+    const result = await authenticateWithOa({ username: "zhangsan", password: "p" });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.userInfo.name, "张三");
+      assert.equal(result.userInfo.department, "安全部");
+      assert.notEqual(result.userInfo.name, 'viewport"');
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

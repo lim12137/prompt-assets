@@ -92,3 +92,37 @@ test("已登录时右上显示用户标识并提供退出入口", async ({ brows
   await expect(header.getByRole("link", { name: "登录" })).toBeVisible();
   await context.close();
 });
+
+test("已登录且无部门时仅显示姓名，不显示 undefined/null", async ({ browser }) => {
+  const secret = process.env.LOGIN_TOKEN_SECRET?.trim() || readSecretFromDotEnv();
+  test.skip(!secret, "未配置 LOGIN_TOKEN_SECRET，无法生成 token。");
+  const authCookie = signLoginToken(
+    {
+      uid: "e2e-user-nodept",
+      name: "无部门用户",
+      can_manage: false,
+      can_manage_whitelist: false,
+    },
+    { secret },
+  );
+
+  const context = await browser.newContext();
+  await context.addCookies([
+    {
+      name: "auth_token",
+      value: authCookie,
+      domain: "127.0.0.1",
+      path: "/",
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+  const page = await context.newPage();
+  await page.goto("/");
+
+  const identity = page.locator("[data-testid='global-auth-header'] .pm-auth-user-id");
+  await expect(identity).toContainText("无部门用户");
+  await expect(identity).not.toContainText("undefined");
+  await expect(identity).not.toContainText("null");
+  await context.close();
+});
