@@ -4,6 +4,7 @@ export type AuditAction =
   | "prompt.unliked"
   | "prompt.version.liked"
   | "prompt.version.unliked"
+  | "prompt.version.scored"
   | "submission.created"
   | "submission.approved"
   | "submission.rejected";

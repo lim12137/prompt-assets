@@ -20,7 +20,12 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as LoginBody;
   const username = typeof body.username === "string" ? body.username.trim() : "";
   const password = typeof body.password === "string" ? body.password : "";
-  const passwordEncrypted = body.password_encrypted;
+  const passwordEncrypted =
+    typeof body.password_encrypted === "string" ||
+    typeof body.password_encrypted === "number" ||
+    typeof body.password_encrypted === "boolean"
+      ? body.password_encrypted
+      : undefined;
   const redirect = typeof body.redirect === "string" ? body.redirect.trim() : "";
 
   if (!username || !password) {
@@ -35,7 +40,7 @@ export async function POST(request: Request) {
     password,
     passwordEncrypted,
   });
-  if (!oaResult.ok) {
+  if (oaResult.ok === false) {
     return NextResponse.json(
       { error: oaResult.message, code: "invalid_credentials" },
       { status: 401 },
