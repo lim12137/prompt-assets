@@ -62,11 +62,21 @@ function LoginForm() {
           autoComplete="current-password"
           required
         />
-        <button type="submit" className="pm-primary-button" disabled={submitting}>
-          {submitting ? "登录中..." : "登录"}
+        <button
+          type="submit"
+          className="pm-primary-button"
+          disabled={submitting}
+          aria-busy={submitting}
+        >
+          {submitting ? "正在登录..." : "登录"}
         </button>
       </form>
-      <p role="status" style={{ color: "var(--pm-muted)" }}>
+      <p
+        role="status"
+        aria-label="登录状态"
+        aria-live="polite"
+        style={{ color: "var(--pm-muted)" }}
+      >
         {feedback}
       </p>
     </main>

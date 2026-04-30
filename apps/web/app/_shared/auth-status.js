@@ -24,7 +24,7 @@ export function AuthStatusContent({ user, currentPath }) {
       <span className="pm-auth-user-id" title={identity}>
         {identity}
       </span>
-      <LogoutButton />
+      <LogoutButton loginHref={loginHref} />
     </div>
   );
 }

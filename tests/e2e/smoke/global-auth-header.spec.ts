@@ -88,8 +88,51 @@ test("已登录时右上显示用户标识并提供退出入口", async ({ brows
   await expect(header.locator(".pm-auth-user-id")).toBeVisible();
   await expect(header.locator(".pm-auth-user-id")).toContainText("E2E用户 / 安全部");
 
+  const logoutRequestPromise = page.waitForRequest((request) => {
+    return request.method() === "POST" && request.url().includes("/api/logout");
+  });
+  const logoutResponsePromise = page.waitForResponse((response) => {
+    return response.request().method() === "POST" && response.url().includes("/api/logout");
+  });
+
+  const beforeLogout = Date.now();
   await header.getByRole("button", { name: "退出" }).click();
-  await expect(header.getByRole("link", { name: "登录" })).toBeVisible();
+  const logoutRequest = await logoutRequestPromise;
+  const logoutResponse = await logoutResponsePromise;
+  const logoutDurationMs = Date.now() - beforeLogout;
+
+  expect(logoutRequest).toBeTruthy();
+  expect(logoutResponse.ok()).toBeTruthy();
+  expect(logoutDurationMs).toBeLessThan(10_000);
+  await context.close();
+});
+
+test("点击退出后当前页头部应在 1 秒内恢复登录态", async ({ browser }) => {
+  const authCookie = resolveE2eAuthToken();
+  test.skip(!authCookie, "未提供可用登录 cookie 且无法生成 token。");
+
+  const context = await browser.newContext();
+  await context.addCookies([
+    {
+      name: "auth_token",
+      value: authCookie,
+      domain: "127.0.0.1",
+      path: "/",
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+  const page = await context.newPage();
+  await page.goto("/prompts/js-code-reviewer");
+
+  const header = page.locator("[data-testid='global-auth-header']");
+  await expect(header.getByRole("button", { name: "退出" })).toBeVisible();
+
+  const startedAt = Date.now();
+  await header.getByRole("button", { name: "退出" }).click();
+  await expect(header.getByRole("link", { name: "登录" })).toBeVisible({ timeout: 1_000 });
+  const elapsedMs = Date.now() - startedAt;
+  expect(elapsedMs).toBeLessThan(1_000);
   await context.close();
 });
 

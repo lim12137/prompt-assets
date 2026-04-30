@@ -213,10 +213,20 @@ export default function AdminCreatePromptPage() {
         </label>
 
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-          <button type="submit" className="pm-primary-button" disabled={submitting}>
-            {submitting ? "提交中..." : "提交审核"}
+          <button
+            type="submit"
+            className="pm-primary-button"
+            disabled={submitting}
+            aria-busy={submitting}
+          >
+            {submitting ? "正在提交审核..." : "提交审核"}
           </button>
-          <p role="status" aria-live="polite" style={{ margin: 0, color: "var(--pm-muted)" }}>
+          <p
+            role="status"
+            aria-label="创建提交状态"
+            aria-live="polite"
+            style={{ margin: 0, color: "var(--pm-muted)" }}
+          >
             {feedback}
           </p>
         </div>

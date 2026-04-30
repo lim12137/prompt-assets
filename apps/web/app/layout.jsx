@@ -1,5 +1,6 @@
 import "./globals.css";
 import { PersistentAuthStatus } from "./_shared/auth-status.server.js";
+import { NavigationFeedback } from "./_shared/navigation-feedback.js";
 
 export const metadata = {
   title: "Prompt Library",
@@ -16,6 +17,7 @@ export default function RootLayout({ children }) {
               <PersistentAuthStatus />
             </div>
           </header>
+          <NavigationFeedback />
           <div className="pm-global-content">{children}</div>
         </div>
       </body>
