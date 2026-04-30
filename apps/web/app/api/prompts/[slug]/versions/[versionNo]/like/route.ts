@@ -23,18 +23,7 @@ type RouteContext = {
   params: Promise<RouteParams>;
 };
 
-export async function POST(request: Request, context: RouteContext) {
-  const params = await context.params;
-  const slug = decodeURIComponent(params.slug ?? "").trim();
-  const versionNo = decodeURIComponent(params.versionNo ?? "").trim();
-
-  if (!slug) {
-    return NextResponse.json({ error: "invalid slug" }, { status: 400 });
-  }
-  if (!versionNo) {
-    return NextResponse.json({ error: "invalid versionNo" }, { status: 400 });
-  }
-
+function getVersionLikeUserEmail(request: Request): string {
   let user;
   try {
     user = getUserFromRequest(request);
@@ -47,7 +36,23 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const requestIp = getRequestIp(request);
-  const userEmail = user?.uid ?? `anonymous+${requestIp.replace(/[^a-zA-Z0-9]/g, "-")}@ip.local`;
+  return user?.uid ?? `anonymous+${requestIp.replace(/[^a-zA-Z0-9]/g, "-")}@ip.local`;
+}
+
+export async function POST(request: Request, context: RouteContext) {
+  const params = await context.params;
+  const slug = decodeURIComponent(params.slug ?? "").trim();
+  const versionNo = decodeURIComponent(params.versionNo ?? "").trim();
+
+  if (!slug) {
+    return NextResponse.json({ error: "invalid slug" }, { status: 400 });
+  }
+  if (!versionNo) {
+    return NextResponse.json({ error: "invalid versionNo" }, { status: 400 });
+  }
+
+  const requestIp = getRequestIp(request);
+  const userEmail = getVersionLikeUserEmail(request);
   const interaction = await markPromptVersionDailyInteraction({
     slug,
     versionNo,
@@ -91,25 +96,7 @@ export async function DELETE(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "invalid versionNo" }, { status: 400 });
   }
 
-  let user;
-  try {
-    user = getUserFromRequest(request);
-  } catch (error) {
-    if (error instanceof AuthConfigurationError) {
-      return NextResponse.json(
-        { error: error.message, code: "auth_configuration_error" },
-        { status: 500 },
-      );
-    }
-    throw error;
-  }
-  if (!user) {
-    return NextResponse.json(
-      { error: "unauthorized", code: "unauthorized" },
-      { status: 401 },
-    );
-  }
-  const userEmail = user.uid;
+  const userEmail = getVersionLikeUserEmail(request);
 
   const result = await unlikePromptVersion(slug, versionNo, userEmail);
   if (!result) {

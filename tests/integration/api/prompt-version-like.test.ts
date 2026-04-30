@@ -260,6 +260,42 @@ test("POST /versions/[versionNo]/like 未登录也可点赞，伪造 x-user-emai
   assert.equal(payload.liked, true);
 });
 
+test("DELETE /versions/[versionNo]/like 未登录同 IP 可取消自己的匿名点赞", async () => {
+  const route = await loadRouteModule();
+  const requestIp = "203.0.113.88";
+  const beforeCount = await readVersionLikesCount(slug, currentVersionNo);
+
+  const likeResponse = await route.POST(
+    new Request(`http://localhost:3000/api/prompts/${slug}/versions/${currentVersionNo}/like`, {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": requestIp,
+      },
+    }),
+    { params: Promise.resolve({ slug, versionNo: currentVersionNo }) },
+  );
+  assert.equal(likeResponse.status, 200);
+
+  const unlikeResponse = await route.DELETE(
+    new Request(`http://localhost:3000/api/prompts/${slug}/versions/${currentVersionNo}/like`, {
+      method: "DELETE",
+      headers: {
+        "x-forwarded-for": requestIp,
+      },
+    }),
+    { params: Promise.resolve({ slug, versionNo: currentVersionNo }) },
+  );
+  const payload = (await unlikeResponse.json()) as VersionLikeResponse;
+  const afterCount = await readVersionLikesCount(slug, currentVersionNo);
+
+  assert.equal(unlikeResponse.status, 200);
+  assert.equal(payload.slug, slug);
+  assert.equal(payload.versionNo, currentVersionNo);
+  assert.equal(payload.liked, false);
+  assert.equal(payload.likesCount, beforeCount);
+  assert.equal(afterCount, beforeCount);
+});
+
 test("POST /versions/[versionNo]/like 未登录同 IP 同日同卡片第二次返回 429", async () => {
   const route = await loadRouteModule();
   const first = await route.POST(
