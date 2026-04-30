@@ -35,6 +35,7 @@ export default function LoginPage() {
         );
       }
       router.replace(typeof payload.redirect === "string" ? payload.redirect : "/admin");
+      router.refresh();
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "登录失败");
     } finally {

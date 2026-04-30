@@ -126,3 +126,55 @@ test("已登录且无部门时仅显示姓名，不显示 undefined/null", async
   await expect(identity).not.toContainText("null");
   await context.close();
 });
+
+test("登录成功后回到原页面时右上角立即刷新为已登录态", async ({ page }) => {
+  const authCookie = resolveE2eAuthToken();
+  test.skip(!authCookie, "未提供可用登录 cookie 且无法生成 token。");
+
+  await page.addInitScript(
+    ({ token }) => {
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (typeof input === "string" && input === "/api/login") {
+          document.cookie = `auth_token=${token}; Path=/; SameSite=Lax`;
+          return new Response(
+            JSON.stringify({
+              user: {
+                uid: "e2e-user-1001",
+                name: "E2E用户",
+                department: "安全部",
+                can_manage: true,
+                can_manage_whitelist: false,
+              },
+              redirect: "/prompts/js-code-reviewer",
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+        return originalFetch(input, init);
+      };
+    },
+    { token: authCookie },
+  );
+
+  await page.goto("/prompts/js-code-reviewer");
+  await page
+    .locator("[data-testid='global-auth-header']")
+    .getByRole("link", { name: "登录" })
+    .click();
+  await expect(page).toHaveURL(/\/login\?redirect=%2Fprompts%2Fjs-code-reviewer/);
+  await page.waitForTimeout(1000);
+
+  await page.getByPlaceholder("用户名").fill("e2e-user");
+  await page.getByPlaceholder("密码").fill("e2e-pass");
+  await page.getByRole("button", { name: "登录" }).click();
+
+  await expect(page).toHaveURL(/\/prompts\/js-code-reviewer/);
+  const header = page.locator("[data-testid='global-auth-header']");
+  await expect(header.getByRole("link", { name: "登录" })).toHaveCount(0);
+  await expect(header.locator(".pm-auth-user-id")).toContainText("E2E用户 / 安全部");
+  await expect(header.getByRole("button", { name: "退出" })).toBeVisible();
+});
