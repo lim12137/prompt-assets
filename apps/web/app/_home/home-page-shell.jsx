@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   HOME_ACTION_ENTRIES,
   HOME_ACTION_STATUS_TEXT,
@@ -171,20 +173,16 @@ function isInteractiveTarget(target) {
   return Boolean(target.closest(INTERACTIVE_SELECTOR));
 }
 
-function openPromptDetail(slug) {
-  window.location.assign(`/prompts/${slug}`);
-}
-
-function createCardClickHandler(slug) {
+function createCardClickHandler(slug, router) {
   return function handleCardClick(event) {
     if (isInteractiveTarget(event.target)) {
       return;
     }
-    openPromptDetail(slug);
+    router.push(`/prompts/${slug}`);
   };
 }
 
-function createCardKeyDownHandler(slug) {
+function createCardKeyDownHandler(slug, router) {
   return function handleCardKeyDown(event) {
     if (event.key !== "Enter" && event.key !== " ") {
       return;
@@ -193,7 +191,7 @@ function createCardKeyDownHandler(slug) {
       return;
     }
     event.preventDefault();
-    openPromptDetail(slug);
+    router.push(`/prompts/${slug}`);
   };
 }
 
@@ -223,7 +221,7 @@ function CopyButton({ prompt, copyState, onCopy }) {
   );
 }
 
-function PromptCard({ prompt, copyState, onCopy }) {
+function PromptCard({ prompt, copyState, onCopy, router }) {
   const categories = getPromptCategories(prompt);
 
   return (
@@ -238,8 +236,8 @@ function PromptCard({ prompt, copyState, onCopy }) {
         gap: "8px",
         cursor: "pointer",
       }}
-      onClick={createCardClickHandler(prompt.slug)}
-      onKeyDown={createCardKeyDownHandler(prompt.slug)}
+      onClick={createCardClickHandler(prompt.slug, router)}
+      onKeyDown={createCardKeyDownHandler(prompt.slug, router)}
     >
       <div style={{ display: "grid", gap: "8px" }}>
         <h3 style={{ margin: 0, fontSize: "16px", color: "var(--pm-title)" }}>{prompt.title}</h3>
@@ -267,8 +265,9 @@ function PromptCard({ prompt, copyState, onCopy }) {
         {prompt.summary}
       </p>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px", gap: "10px" }}>
-        <a
+        <Link
           href={`/prompts/${prompt.slug}`}
+          prefetch
           style={{
             color: "var(--pm-accent)",
             textDecoration: "none",
@@ -277,14 +276,14 @@ function PromptCard({ prompt, copyState, onCopy }) {
           }}
         >
           查看详情 →
-        </a>
+        </Link>
         <CopyButton prompt={prompt} copyState={copyState} onCopy={onCopy} />
       </div>
     </article>
   );
 }
 
-function PromptListItem({ prompt, copyState, onCopy }) {
+function PromptListItem({ prompt, copyState, onCopy, router }) {
   const categories = getPromptCategories(prompt);
 
   return (
@@ -309,8 +308,8 @@ function PromptListItem({ prompt, copyState, onCopy }) {
       onMouseLeave={(e) => {
         e.currentTarget.style.boxShadow = "none";
       }}
-      onClick={createCardClickHandler(prompt.slug)}
-      onKeyDown={createCardKeyDownHandler(prompt.slug)}
+      onClick={createCardClickHandler(prompt.slug, router)}
+      onKeyDown={createCardKeyDownHandler(prompt.slug, router)}
     >
       <div style={{ flex: 1, minWidth: 0, display: "grid", gap: "6px" }}>
         <h3 style={{ margin: 0, fontSize: "15px", color: "var(--pm-title)" }}>{prompt.title}</h3>
@@ -338,8 +337,9 @@ function PromptListItem({ prompt, copyState, onCopy }) {
         </p>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "10px", whiteSpace: "nowrap" }}>
-        <a
+        <Link
           href={`/prompts/${prompt.slug}`}
+          prefetch
           style={{
             color: "var(--pm-accent)",
             textDecoration: "none",
@@ -348,7 +348,7 @@ function PromptListItem({ prompt, copyState, onCopy }) {
           }}
         >
           查看详情 →
-        </a>
+        </Link>
         <div style={{ marginLeft: "auto" }}>
           <CopyButton prompt={prompt} copyState={copyState} onCopy={onCopy} />
         </div>
@@ -358,6 +358,7 @@ function PromptListItem({ prompt, copyState, onCopy }) {
 }
 
 export function HomePageShell({ prompts }) {
+  const router = useRouter();
   const [selectedCategories, setSelectedCategories] = useState([]);
   const [keyword, setKeyword] = useState("");
   const [viewMode, setViewMode] = useState("card");
@@ -365,6 +366,15 @@ export function HomePageShell({ prompts }) {
   const categories = collectCategories(prompts);
   const { manualCategories, systemCategories } = splitCategories(categories);
   const normalizedKeyword = keyword.trim().toLowerCase();
+  useEffect(() => {
+    const firstVisiblePromptSlugs = prompts
+      .slice(0, 6)
+      .map((item) => item?.slug)
+      .filter((slug) => typeof slug === "string" && slug);
+    for (const slug of firstVisiblePromptSlugs) {
+      router.prefetch(`/prompts/${slug}`);
+    }
+  }, [prompts, router]);
 
   function toggleCategory(categorySlug) {
     setSelectedCategories((prev) => {
@@ -631,6 +641,7 @@ export function HomePageShell({ prompts }) {
                   prompt={prompt}
                   copyState={copyFeedbackBySlug[prompt.slug]}
                   onCopy={copyPromptContent}
+                  router={router}
                 />
               ))}
             </div>
@@ -642,6 +653,7 @@ export function HomePageShell({ prompts }) {
                   prompt={prompt}
                   copyState={copyFeedbackBySlug[prompt.slug]}
                   onCopy={copyPromptContent}
+                  router={router}
                 />
               ))}
             </div>
