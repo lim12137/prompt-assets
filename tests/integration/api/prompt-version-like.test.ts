@@ -244,16 +244,47 @@ test("POST /api/prompts/ux-research-plan/versions/v0003/like 候选版本可点�
   assert.equal((payload as VersionLikeResponse).liked, true);
 });
 
-test("POST /versions/[versionNo]/like 未登录返回 401，伪造 x-user-email 不生效", async () => {
+test("POST /versions/[versionNo]/like 未登录也可点赞，伪造 x-user-email 不影响", async () => {
   const route = await loadRouteModule();
   const response = await route.POST(
     createLikeRequest("POST", currentVersionNo, slug, {
       withAuth: false,
       forgedHeaderEmail: "forged@example.com",
     }),
+  { params: Promise.resolve({ slug, versionNo: currentVersionNo }) },
+  );
+  const payload = (await response.json()) as VersionLikeResponse;
+  assert.equal(response.status, 200);
+  assert.equal(payload.slug, slug);
+  assert.equal(payload.versionNo, currentVersionNo);
+  assert.equal(payload.liked, true);
+});
+
+test("POST /versions/[versionNo]/like 未登录同 IP 同日同卡片第二次返回 429", async () => {
+  const route = await loadRouteModule();
+  const first = await route.POST(
+    new Request(`http://localhost:3000/api/prompts/${slug}/versions/${currentVersionNo}/like`, {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.77",
+      },
+    }),
     { params: Promise.resolve({ slug, versionNo: currentVersionNo }) },
   );
-  assert.equal(response.status, 401);
+  assert.equal(first.status, 200);
+
+  const second = await route.POST(
+    new Request(`http://localhost:3000/api/prompts/${slug}/versions/${currentVersionNo}/like`, {
+      method: "POST",
+      headers: {
+        "x-forwarded-for": "203.0.113.77",
+      },
+    }),
+    { params: Promise.resolve({ slug, versionNo: currentVersionNo }) },
+  );
+  const payload = (await second.json()) as { error?: string };
+  assert.equal(second.status, 429);
+  assert.match(String(payload.error ?? ""), /今日该卡片已操作|今天已经对该卡片操作过/);
 });
 
 test("POST /like 同 IP 同卡片同日重复点赞返回 429", async () => {

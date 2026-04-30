@@ -5,9 +5,9 @@ import { createElement, useEffect, useState, useTransition } from "react";
 const DEFAULT_SCORE_SCENE = "detail_page";
 const SCORE_CHOICES = [1, 2, 3, 4, 5];
 
-function resolveActionErrorMessage(response, fallback) {
+function resolveActionErrorMessage(response, fallback, options = {}) {
   if (response.status === 401) {
-    return "请先登录后再操作";
+    return options.requireLoginMessage ?? "请先登录后再操作";
   }
   if (response.status === 429) {
     return "今天已经对该卡片操作过";
@@ -27,7 +27,11 @@ async function mutateVersionLike(slug, versionNo, liked) {
     },
   );
   if (!response.ok) {
-    throw new Error(resolveActionErrorMessage(response, "点赞操作失败"));
+    throw new Error(
+      resolveActionErrorMessage(response, "点赞操作失败", {
+        requireLoginMessage: "点赞操作失败",
+      }),
+    );
   }
   return response.json();
 }

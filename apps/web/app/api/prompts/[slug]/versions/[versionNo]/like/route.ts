@@ -40,25 +40,19 @@ export async function POST(request: Request, context: RouteContext) {
     user = getUserFromRequest(request);
   } catch (error) {
     if (error instanceof AuthConfigurationError) {
-      return NextResponse.json(
-        { error: error.message, code: "auth_configuration_error" },
-        { status: 500 },
-      );
+      user = null;
+    } else {
+      throw error;
     }
-    throw error;
   }
-  if (!user) {
-    return NextResponse.json(
-      { error: "unauthorized", code: "unauthorized" },
-      { status: 401 },
-    );
-  }
-  const userEmail = user.uid;
+
+  const requestIp = getRequestIp(request);
+  const userEmail = user?.uid ?? `anonymous+${requestIp.replace(/[^a-zA-Z0-9]/g, "-")}@ip.local`;
   const interaction = await markPromptVersionDailyInteraction({
     slug,
     versionNo,
     action: "like",
-    ip: getRequestIp(request),
+    ip: requestIp,
     dateKey: getBusinessDateKey(),
   });
   if (interaction === "not_found") {
