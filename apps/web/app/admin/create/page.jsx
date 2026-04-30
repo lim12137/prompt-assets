@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BackHomeLink } from "../../_shared/back-home-link.jsx";
 
 const INITIAL_FORM = {
   title: "",
@@ -125,6 +126,7 @@ export default function AdminCreatePromptPage() {
         gap: "16px",
       }}
     >
+      <BackHomeLink />
       <header className="pm-card" style={{ display: "grid", gap: "8px" }}>
         <h1 className="pm-page-title" style={{ margin: 0 }}>
           创建提示词
@@ -133,9 +135,6 @@ export default function AdminCreatePromptPage() {
           创建全新 Prompt 的首个版本（v0001），普通用户提交后需管理员审核。
         </p>
         <div style={{ display: "flex", gap: "8px" }}>
-          <a className="pm-secondary-button pm-button-link" href="/admin">
-            返回管理页
-          </a>
           <a className="pm-secondary-button pm-button-link" href="/admin/import">
             去批量导入
           </a>

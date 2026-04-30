@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { BackHomeLink } from "../../_shared/back-home-link.jsx";
 
 const DEFAULT_IMPORT_SAMPLE = JSON.stringify(
   [
@@ -114,6 +115,7 @@ export default function AdminImportPromptPage() {
         gap: "16px",
       }}
     >
+      <BackHomeLink />
       <header className="pm-card" style={{ display: "grid", gap: "8px" }}>
         <h1 className="pm-page-title" style={{ margin: 0 }}>
           批量导入提示词
@@ -122,9 +124,6 @@ export default function AdminImportPromptPage() {
           使用 JSON 数组批量创建首版 Prompt（全有或全无）。
         </p>
         <div style={{ display: "flex", gap: "8px" }}>
-          <a className="pm-secondary-button pm-button-link" href="/admin">
-            返回管理页
-          </a>
           <a className="pm-secondary-button pm-button-link" href="/admin/create">
             去创建提示词
           </a>

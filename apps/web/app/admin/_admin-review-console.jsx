@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BackHomeLink } from "../_shared/back-home-link.jsx";
 
 function formatSubmittedAt(input) {
   const value = new Date(input);
@@ -233,6 +234,7 @@ export function AdminReviewConsole({ initialSubmissions }) {
         gap: "20px",
       }}
     >
+      <BackHomeLink />
       <header className="pm-card" style={{ display: "grid", gap: "8px" }}>
         <div
           style={{
@@ -256,9 +258,6 @@ export function AdminReviewConsole({ initialSubmissions }) {
             </a>
             <a className="pm-secondary-button pm-button-link" href="/admin/import">
               批量导入
-            </a>
-            <a className="pm-secondary-button pm-button-link" href="/">
-              返回首页
             </a>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import { createElement } from "react";
+import { BackHomeLink } from "../../_shared/back-home-link.jsx";
 import { PromptActions, VersionLikeAction } from "./_prompt-actions.js";
 import { CopyCardButton } from "./_copy-card-button.js";
 
@@ -72,15 +73,6 @@ function pickLatestCandidateByEmployee(versions) {
   return [...latestByEmployee.values()];
 }
 
-function BackButton() {
-  return createElement("a", { href: "/", className: "pm-back-button", "aria-label": "返回首页" },
-    createElement("svg", { width: "16", height: "16", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" },
-      createElement("polyline", { points: "15 18 9 12 15 6" }),
-    ),
-    "返回首页",
-  );
-}
-
 function Breadcrumb({ title }) {
   return createElement("nav", { className: "pm-breadcrumb", "aria-label": "面包屑导航" },
     createElement("a", { href: "/" }, "首页"),
@@ -125,7 +117,7 @@ export function PromptDetailContent({ detail }) {
   const employeeCandidateCards = pickLatestCandidateByEmployee(versions);
 
   return createElement("main", { className: "prompt-detail-page", style: { maxWidth: "1200px", margin: "0 auto" } },
-    createElement(BackButton),
+    createElement(BackHomeLink),
     createElement(Breadcrumb, { title: detail.title }),
     createElement("div", { className: "pm-detail-header" },
       createElement("h1", { className: "pm-page-title", style: { margin: 0, fontSize: "24px" } }, detail.title),
