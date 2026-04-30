@@ -52,6 +52,7 @@ export async function POST(request: Request) {
     token = signLoginToken({
       uid: oaResult.userInfo.id,
       name: oaResult.userInfo.name,
+      department: oaResult.userInfo.department,
       can_manage: flags.can_manage,
       can_manage_whitelist: flags.can_manage_whitelist,
     });
@@ -70,6 +71,7 @@ export async function POST(request: Request) {
       user: {
         uid: oaResult.userInfo.id,
         name: oaResult.userInfo.name,
+        department: oaResult.userInfo.department,
         can_manage: flags.can_manage,
         can_manage_whitelist: flags.can_manage_whitelist,
       },

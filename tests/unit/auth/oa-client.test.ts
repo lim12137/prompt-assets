@@ -26,7 +26,7 @@ test("authenticateWithOa: 第二次请求应带上第一次响应的 cookie", as
       });
     }
     if (url.endsWith("/portal/r/w")) {
-      return new Response('{"name":"Alice"}', { status: 200 });
+      return new Response('{"name":"Alice","department":"安全部"}', { status: 200 });
     }
     return new Response("not found", { status: 404 });
   }) as typeof fetch;
@@ -34,8 +34,50 @@ test("authenticateWithOa: 第二次请求应带上第一次响应的 cookie", as
   try {
     const result = await authenticateWithOa({ username: "alice", password: "p" });
     assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.userInfo.name, "Alice");
+      assert.equal(result.userInfo.department, "安全部");
+    }
     assert.equal(calls.length, 2);
     assert.equal(calls[1].cookie, "oa_session=abc123");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("authenticateWithOa: 部门字段支持兼容解析（dept/org/部门）", async () => {
+  process.env.AWS_PORTAL_URL = "http://oa.local";
+  const originalFetch = globalThis.fetch;
+  const payloads = ['{"name":"Alice","dept":"研发部"}', '{"name":"Bob","org":"产品部"}', '{"name":"Carol","部门":"安全部"}'];
+  let index = 0;
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/portal/r/jd")) {
+      return new Response("ok", {
+        status: 200,
+        headers: { "set-cookie": "oa_session=abc123; Path=/; HttpOnly" },
+      });
+    }
+    if (url.endsWith("/portal/r/w")) {
+      const payload = payloads[index] ?? payloads[payloads.length - 1];
+      index += 1;
+      return new Response(payload, { status: 200 });
+    }
+    return new Response("not found", { status: 404 });
+  }) as typeof fetch;
+
+  try {
+    const one = await authenticateWithOa({ username: "alice", password: "p" });
+    const two = await authenticateWithOa({ username: "bob", password: "p" });
+    const three = await authenticateWithOa({ username: "carol", password: "p" });
+    assert.equal(one.ok, true);
+    assert.equal(two.ok, true);
+    assert.equal(three.ok, true);
+    if (one.ok && two.ok && three.ok) {
+      assert.equal(one.userInfo.department, "研发部");
+      assert.equal(two.userInfo.department, "产品部");
+      assert.equal(three.userInfo.department, "安全部");
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }

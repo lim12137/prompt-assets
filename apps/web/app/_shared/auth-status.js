@@ -13,7 +13,12 @@ export function AuthStatusContent({ user, currentPath }) {
     );
   }
 
-  const identity = user.name || user.uid || "已登录";
+  const baseName = user.name || user.uid || "已登录";
+  const department =
+    typeof user.department === "string" && user.department.trim()
+      ? user.department.trim()
+      : "";
+  const identity = department ? `${baseName} / ${department}` : baseName;
   return (
     <div className="pm-auth-user-wrap">
       <span className="pm-auth-user-id" title={identity}>

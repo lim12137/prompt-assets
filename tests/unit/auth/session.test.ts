@@ -14,6 +14,7 @@ test("sign/verify: 有效 token 可通过校验", () => {
     {
       uid: "u1001",
       name: "Alice",
+      department: "安全部",
       can_manage: true,
       can_manage_whitelist: false,
     },
@@ -32,6 +33,7 @@ test("sign/verify: 有效 token 可通过校验", () => {
   assert.equal(verified.ok, true);
   if (verified.ok) {
     assert.equal(verified.user.uid, "u1001");
+    assert.equal(verified.user.department, "安全部");
     assert.equal(verified.user.can_manage, true);
   }
 });

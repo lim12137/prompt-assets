@@ -19,7 +19,7 @@ test.beforeEach(() => {
   __resetPromptLikeFixtureStateForTests();
   __setOaClientForTests(async ({ username }) => {
     if (username === "alice") {
-      return { ok: true, userInfo: { id: "u1001", name: "Alice" } };
+      return { ok: true, userInfo: { id: "u1001", name: "Alice", department: "安全部" } };
     }
     return { ok: false, message: "invalid credentials" };
   });
@@ -51,8 +51,10 @@ test("POST /api/login + GET /api/me + POST /api/logout 基本链路", async () =
     }),
   );
   assert.equal(meResponse.status, 200);
-  const mePayload = (await meResponse.json()) as { user: { uid: string } };
+  const mePayload = (await meResponse.json()) as { user: { uid: string; name: string; department?: string } };
   assert.equal(mePayload.user.uid, "u1001");
+  assert.equal(mePayload.user.name, "Alice");
+  assert.equal(mePayload.user.department, "安全部");
 
   const logoutResponse = await logoutPost(
     new Request("http://localhost:3000/api/logout", {

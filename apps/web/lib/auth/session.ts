@@ -3,6 +3,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 export type LoginTokenUser = {
   uid: string;
   name: string;
+  department?: string;
   can_manage: boolean;
   can_manage_whitelist: boolean;
   exp: number;
@@ -184,6 +185,7 @@ export function verifyLoginToken(
     !parsed ||
     typeof parsed.uid !== "string" ||
     typeof parsed.name !== "string" ||
+    (parsed.department !== undefined && typeof parsed.department !== "string") ||
     typeof parsed.can_manage !== "boolean" ||
     typeof parsed.can_manage_whitelist !== "boolean" ||
     typeof parsed.exp !== "number" ||

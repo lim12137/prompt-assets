@@ -1,6 +1,7 @@
 type OaUserInfo = {
   id: string;
   name: string;
+  department?: string;
 };
 
 type OaLoginSuccess = {
@@ -27,6 +28,42 @@ let oaClientForTests: OaClient | null = null;
 
 export function __setOaClientForTests(client: OaClient | null): void {
   oaClientForTests = client;
+}
+
+function normalizeString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized ? normalized : null;
+}
+
+function pickFieldFromRecord(record: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = normalizeString(record[key]);
+    if (value) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function pickFieldByRegex(text: string, keys: string[]): string | null {
+  for (const key of keys) {
+    const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const patterns = [
+      new RegExp(`["']${escapedKey}["']\\s*:\\s*["']([^"']+)["']`, "i"),
+      new RegExp(`${escapedKey}["'\\s:=>]+([^\\s<,}]+)`, "i"),
+    ];
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      const value = normalizeString(match?.[1]);
+      if (value) {
+        return value;
+      }
+    }
+  }
+  return null;
 }
 
 async function callOaPortal(input: OaLoginInput): Promise<OaLoginResult> {
@@ -58,12 +95,31 @@ async function callOaPortal(input: OaLoginInput): Promise<OaLoginResult> {
   }
   const profileText = await profileResponse.text();
   const userId = input.username.trim();
-  const nameMatch = profileText.match(/name["'\s:=>]+([^\s<]+)/i);
+  let profileJson: Record<string, unknown> | null = null;
+  try {
+    const parsed = JSON.parse(profileText) as unknown;
+    if (parsed && typeof parsed === "object") {
+      profileJson = parsed as Record<string, unknown>;
+    }
+  } catch {
+    profileJson = null;
+  }
+  const name =
+    (profileJson ? pickFieldFromRecord(profileJson, ["name", "realName", "username", "姓名"]) : null) ??
+    pickFieldByRegex(profileText, ["name", "realName", "username", "姓名"]) ??
+    userId;
+  const department =
+    (profileJson
+      ? pickFieldFromRecord(profileJson, ["department", "dept", "org", "部门", "组织", "organization"])
+      : null) ??
+    pickFieldByRegex(profileText, ["department", "dept", "org", "部门", "组织", "organization"]) ??
+    undefined;
   return {
     ok: true,
     userInfo: {
       id: userId,
-      name: nameMatch?.[1] ?? userId,
+      name,
+      ...(department ? { department } : {}),
     },
   };
 }

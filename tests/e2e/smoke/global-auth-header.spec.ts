@@ -44,6 +44,7 @@ function resolveE2eAuthToken(): string {
     {
       uid: "e2e-user-1001",
       name: "E2E用户",
+      department: "安全部",
       can_manage: true,
       can_manage_whitelist: false,
     },
@@ -85,6 +86,7 @@ test("已登录时右上显示用户标识并提供退出入口", async ({ brows
   await expect(header.getByRole("link", { name: "登录" })).toHaveCount(0);
   await expect(header.getByText("退出")).toBeVisible();
   await expect(header.locator(".pm-auth-user-id")).toBeVisible();
+  await expect(header.locator(".pm-auth-user-id")).toContainText("E2E用户 / 安全部");
 
   await header.getByRole("button", { name: "退出" }).click();
   await expect(header.getByRole("link", { name: "登录" })).toBeVisible();
