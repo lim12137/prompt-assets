@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { GET as getPromptDetail } from "../../../apps/web/app/api/prompts/[slug]/route.ts";
-import { POST } from "../../../apps/web/app/api/prompts/route.ts";
+import { GET, POST } from "../../../apps/web/app/api/prompts/route.ts";
 import {
   __getAuditLogFixtureStateForTests,
   __resetPromptLikeFixtureStateForTests,
@@ -14,6 +14,7 @@ type CreatePromptResponse = {
     slug: string;
     title: string;
     summary: string;
+    status?: "draft" | "published" | "archived";
     categorySlug: string;
     categories: Array<{
       slug: string;
@@ -24,6 +25,10 @@ type CreatePromptResponse = {
       versionNo: string;
       sourceType: string;
     };
+  };
+  submission?: {
+    id: number;
+    status: "pending" | "approved" | "rejected";
   };
 };
 
@@ -138,20 +143,35 @@ test("POST /api/prompts 在未传分类时自动落入 uncategorized", async () 
   );
 });
 
-test("POST /api/prompts 禁止非 admin 创建", async () => {
+test("POST /api/prompts 普通用户创建后进入待审核且不直接公开", async () => {
+  const slug = "user-created-pending-review";
   const response = await POST(
     userCreateRequest({
       title: "普通用户创建",
-      slug: "should-not-created-by-user",
-      summary: "should fail",
+      slug,
+      summary: "普通用户投稿应进入待审核",
       categorySlug: "programming",
-      content: "content",
+      content: "普通用户提交的新提示词内容",
     }),
   );
-  const payload = (await response.json()) as ErrorResponse;
+  const payload = (await response.json()) as CreatePromptResponse;
 
-  assert.equal(response.status, 403);
-  assert.equal(payload.code, "admin_role_required");
+  assert.equal(response.status, 201);
+  assert.equal(payload.prompt.slug, slug);
+  assert.equal(payload.prompt.status, "draft");
+  assert.equal(payload.submission?.status, "pending");
+
+  const detailResponse = await getPromptDetail(new Request("http://localhost:3000"), {
+    params: { slug },
+  });
+  assert.equal(detailResponse.status, 404);
+
+  const listResponse = await GET(new Request("http://localhost:3000/api/prompts"));
+  const listPayload = (await listResponse.json()) as Array<{ slug: string }>;
+  assert.equal(
+    listPayload.some((item) => item.slug === slug),
+    false,
+  );
 });
 
 test("POST /api/prompts 必填字段缺失时返回 400", async () => {

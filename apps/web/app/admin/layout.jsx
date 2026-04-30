@@ -39,6 +39,7 @@ function AdminForbidden() {
 export default async function AdminLayout({ children }) {
   const cookieStore = await cookies();
   const requestHeaders = await headers();
+  const pathname = requestHeaders.get("x-pathname") ?? "";
   const token = cookieStore.get(getLoginCookieName())?.value;
   let verified;
   try {
@@ -54,7 +55,7 @@ export default async function AdminLayout({ children }) {
     redirectToLogin(resolveAdminRedirectTarget(requestHeaders));
   }
 
-  if (!verified.user.can_manage) {
+  if (!verified.user.can_manage && pathname !== "/admin/create") {
     return <AdminForbidden />;
   }
 

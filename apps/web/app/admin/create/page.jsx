@@ -14,7 +14,7 @@ export default function AdminCreatePromptPage() {
   const [selectedCategorySlugs, setSelectedCategorySlugs] = useState([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState("请填写提示词信息并提交创建。");
+  const [feedback, setFeedback] = useState("请填写提示词信息并提交审核。");
 
   function updateField(field, value) {
     setForm((current) => ({
@@ -68,12 +68,12 @@ export default function AdminCreatePromptPage() {
     }
 
     if (selectedCategorySlugs.length === 0) {
-      setFeedback("创建失败：请至少选择一个分类。");
+      setFeedback("提交失败：请至少选择一个分类。");
       return;
     }
 
     setSubmitting(true);
-    setFeedback("创建请求提交中...");
+    setFeedback("审核请求提交中...");
 
     try {
       const response = await fetch("/api/prompts", {
@@ -101,10 +101,15 @@ export default function AdminCreatePromptPage() {
         typeof prompt?.currentVersion?.versionNo === "string"
           ? prompt.currentVersion.versionNo
           : "v0001";
-      setFeedback(`已创建《${title}》，当前版本 ${versionNo}。`);
+      const status = payload.submission?.status;
+      setFeedback(
+        status === "pending"
+          ? `已提交《${title}》审核，当前版本 ${versionNo}，通过后公开。`
+          : `已创建《${title}》，当前版本 ${versionNo}。`,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "请求失败";
-      setFeedback(`创建失败：${message}`);
+      setFeedback(`提交失败：${message}`);
     } finally {
       setSubmitting(false);
     }
@@ -125,7 +130,7 @@ export default function AdminCreatePromptPage() {
           创建提示词
         </h1>
         <p style={{ margin: 0, color: "var(--pm-muted)" }}>
-          创建全新 Prompt 的首个官方版本（v0001）。
+          创建全新 Prompt 的首个版本（v0001），普通用户提交后需管理员审核。
         </p>
         <div style={{ display: "flex", gap: "8px" }}>
           <a className="pm-secondary-button pm-button-link" href="/admin">
@@ -209,7 +214,7 @@ export default function AdminCreatePromptPage() {
 
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           <button type="submit" className="pm-primary-button" disabled={submitting}>
-            {submitting ? "提交中..." : "提交创建"}
+            {submitting ? "提交中..." : "提交审核"}
           </button>
           <p role="status" aria-live="polite" style={{ margin: 0, color: "var(--pm-muted)" }}>
             {feedback}

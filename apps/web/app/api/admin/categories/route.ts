@@ -4,7 +4,7 @@ import {
   createAdminCategory,
   listAdminCategories,
 } from "../../../../lib/api/prompt-repository.ts";
-import { requireManageUser } from "../../../../lib/auth/session.ts";
+import { getUserFromRequest, requireManageUser } from "../../../../lib/auth/session.ts";
 
 type CreateCategoryBody = {
   name?: unknown;
@@ -31,15 +31,14 @@ function generateSlugFromName(name: string): string {
 }
 
 export async function GET(request: Request) {
-  try {
-    requireManageUser(request);
-  } catch {
+  const user = getUserFromRequest(request);
+  if (!user) {
     return NextResponse.json(
       {
-        error: "admin role is required",
-        code: "admin_role_required",
+        error: "login is required",
+        code: "login_required",
       },
-      { status: 403 },
+      { status: 401 },
     );
   }
 
