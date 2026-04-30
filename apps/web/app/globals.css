@@ -23,6 +23,86 @@ body {
   font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
+.pm-root-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.pm-global-header {
+  border-bottom: 1px solid var(--pm-border);
+  background-color: var(--pm-card-bg);
+}
+
+.pm-global-header-inner {
+  max-width: 1400px;
+  margin: 0 auto;
+  min-height: 52px;
+  padding: 8px 24px;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.pm-global-content {
+  min-width: 0;
+}
+
+.pm-auth-user-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+}
+
+.pm-auth-user-id {
+  display: inline-block;
+  max-width: min(48vw, 240px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--pm-title);
+}
+
+.pm-auth-link {
+  border: 1px solid var(--pm-border);
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: var(--pm-text);
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.pm-auth-link:hover {
+  border-color: var(--pm-accent);
+  color: var(--pm-accent);
+}
+
+.pm-auth-logout-button {
+  font-family: inherit;
+}
+
+@media (max-width: 768px) {
+  .pm-global-header-inner {
+    padding: 8px 12px;
+    min-height: 48px;
+  }
+
+  .pm-auth-user-wrap {
+    gap: 8px;
+  }
+
+  .pm-auth-link {
+    padding: 5px 10px;
+    font-size: 13px;
+  }
+}
+
 .pm-page-title {
   color: var(--pm-title);
   letter-spacing: 0.6px;
