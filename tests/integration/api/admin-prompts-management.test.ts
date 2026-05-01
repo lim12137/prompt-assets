@@ -656,6 +656,43 @@ test("GET /api/admin/prompts 在 0 个已发布 prompt 时仍读取真实库管�
   });
 });
 
+test("POST /api/admin/prompts/[slug]/archive 在 0 个已发布 prompt 时仍命中真实库并返回状态冲突", async (t) => {
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
+
+    const slug = `mgmt-zero-published-archive-${Date.now()}`;
+    await createPrompt({
+      slug,
+      title: "零已发布归档 Prompt",
+      summary: "验证 archive 不会回退到 fixture",
+      categorySlugs: ["programming"],
+    });
+
+    await clientModule.withPgClient(testDbUrl, async (client) => {
+      await client.query(
+        `
+          UPDATE prompts
+          SET status = 'archived', updated_at = NOW();
+        `,
+      );
+    });
+    repositoryModule.__resetPromptLikeFixtureStateForTests();
+
+    const response = await archiveRouteModule.POST(
+      adminPostPromptActionRequest(slug, "archive"),
+      { params: { slug } },
+    );
+    const payload = (await response.json()) as { error?: string; code?: string };
+
+    assert.equal(response.status, 409);
+    assert.equal(payload.code, "prompt_status_transition_not_allowed");
+    assert.equal(payload.error, "prompt status transition not allowed");
+
+    const snapshot = await queryPromptSnapshot(slug);
+    assert.equal(snapshot?.status, "archived");
+  });
+});
+
 test("POST /api/admin/prompts/[slug]/archive 与 restore 可切换状态并影响前台可见性", async (t) => {
   await withDbLifecycleLock(t, async () => {
     await resetDbSeed();
@@ -707,6 +744,40 @@ test("POST /api/admin/prompts/[slug]/archive 与 restore 可切换状态并影�
       { params: { slug } },
     );
     assert.equal(restoredDetailResponse.status, 200);
+  });
+});
+
+test("POST /api/admin/prompts/[slug]/restore 在 0 个已发布 prompt 时仍更新真实库状态", async (t) => {
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
+
+    const slug = `mgmt-zero-published-restore-${Date.now()}`;
+    await createPrompt({
+      slug,
+      title: "零已发布恢复 Prompt",
+      summary: "验证 restore 不会回退到 fixture",
+      categorySlugs: ["programming"],
+    });
+
+    await clientModule.withPgClient(testDbUrl, async (client) => {
+      await client.query(
+        `
+          UPDATE prompts
+          SET status = 'archived', updated_at = NOW();
+        `,
+      );
+    });
+    repositoryModule.__resetPromptLikeFixtureStateForTests();
+
+    const response = await restoreRouteModule.POST(
+      adminPostPromptActionRequest(slug, "restore"),
+      { params: { slug } },
+    );
+
+    assert.equal(response.status, 200);
+
+    const snapshot = await queryPromptSnapshot(slug);
+    assert.equal(snapshot?.status, "published");
   });
 });
 
@@ -874,6 +945,67 @@ test("DELETE /api/admin/prompts/[slug]/delete 先 dry-run 再 confirm，并级�
       { params: { slug } },
     );
     assert.equal(detailResponse.status, 404);
+  });
+});
+
+test("DELETE /api/admin/prompts/[slug]/delete 在 0 个已发布 prompt 时仍走真实库 dry-run 与 confirm", async (t) => {
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
+
+    const slug = `mgmt-zero-published-delete-${Date.now()}`;
+    await createPrompt({
+      slug,
+      title: "零已发布删除 Prompt",
+      summary: "验证 delete 不会回退到 fixture",
+      categorySlugs: ["programming"],
+    });
+    await addPromptOperationalData(slug);
+
+    await clientModule.withPgClient(testDbUrl, async (client) => {
+      await client.query(
+        `
+          UPDATE prompts
+          SET status = 'archived', updated_at = NOW();
+        `,
+      );
+    });
+    repositoryModule.__resetPromptLikeFixtureStateForTests();
+
+    const previewResponse = await deleteRouteModule.DELETE(
+      adminDeletePromptRequest(slug, { confirm: false }),
+      { params: { slug } },
+    );
+    const previewPayload = (await previewResponse.json()) as AdminPromptDeletePreviewResponse;
+
+    assert.equal(previewResponse.status, 200);
+    assert.equal(previewPayload.dryRun, true);
+    assert.equal(previewPayload.slug, slug);
+    assert.equal(previewPayload.status, "archived");
+
+    const confirmResponse = await deleteRouteModule.DELETE(
+      adminDeletePromptRequest(slug, {
+        confirm: true,
+        confirmationToken: previewPayload.confirmationToken,
+        reason: "零已发布删除回归",
+      }),
+      { params: { slug } },
+    );
+    const confirmPayload = (await confirmResponse.json()) as AdminPromptDeleteConfirmResponse;
+
+    assert.equal(confirmResponse.status, 200);
+    assert.equal(confirmPayload.deleted, true);
+    assert.equal(confirmPayload.slug, slug);
+
+    assert.deepEqual(await countPromptBusinessRelations(slug), {
+      prompts: 0,
+      promptCategories: 0,
+      promptVersions: 0,
+      submissions: 0,
+      promptLikes: 0,
+      promptVersionLikes: 0,
+      promptVersionScores: 0,
+      promptVersionDailyInteractions: 0,
+    });
   });
 });
 
