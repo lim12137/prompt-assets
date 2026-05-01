@@ -1,7 +1,12 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BackHomeLink } from "../../_shared/back-home-link.jsx";
+import { notifyNavigationStart } from "../../_shared/navigation-feedback.js";
+
+const INTERACTIVE_SELECTOR =
+  "a,button,input,textarea,select,summary,label,[role='button'],[data-interactive='true']";
 
 function adminHeaders() {
   return {
@@ -124,7 +129,39 @@ const INITIAL_FILTERS = {
   keyword: "",
 };
 
+function isInteractiveTarget(target) {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+  return Boolean(target.closest(INTERACTIVE_SELECTOR));
+}
+
+function createRowClickHandler(slug, router) {
+  return function handleRowClick(event) {
+    if (isInteractiveTarget(event.target)) {
+      return;
+    }
+    notifyNavigationStart();
+    router.push(`/admin/prompts/${slug}`);
+  };
+}
+
+function createRowKeyDownHandler(slug, router) {
+  return function handleRowKeyDown(event) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+    if (isInteractiveTarget(event.target)) {
+      return;
+    }
+    event.preventDefault();
+    notifyNavigationStart();
+    router.push(`/admin/prompts/${slug}`);
+  };
+}
+
 export function AdminPromptManagementConsole() {
+  const router = useRouter();
   const [filters, setFilters] = useState(INITIAL_FILTERS);
   const [categories, setCategories] = useState([]);
   const [prompts, setPrompts] = useState([]);
@@ -354,7 +391,11 @@ export function AdminPromptManagementConsole() {
                 key={prompt.slug}
                 data-testid={`admin-prompts-row-${prompt.slug}`}
                 className="pm-card"
-                style={{ display: "grid", gap: "12px" }}
+                role="link"
+                tabIndex={0}
+                style={{ display: "grid", gap: "12px", cursor: "pointer" }}
+                onClick={createRowClickHandler(prompt.slug, router)}
+                onKeyDown={createRowKeyDownHandler(prompt.slug, router)}
               >
                 <div
                   style={{

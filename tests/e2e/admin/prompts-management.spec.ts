@@ -499,6 +499,22 @@ test("后台提示词管理列表在状态操作后切换筛选时不会被旧�
   await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).toHaveCount(0);
 });
 
+test("后台提示词管理列表点击卡片非按钮区域可进入详情页", async ({ page }) => {
+  await addAdminCookie(page);
+  await setupPromptManagementRoutes(page);
+
+  await page.goto("/admin/prompts");
+
+  const row = page.getByTestId("admin-prompts-row-beta-prompt");
+  await expect(row).toBeVisible();
+
+  await row.click({ position: { x: 24, y: 24 } });
+
+  await expect(page).toHaveURL(/\/admin\/prompts\/beta-prompt$/);
+  await expect(page.getByRole("heading", { level: 1, name: "管理提示词" })).toBeVisible();
+  await expect(page.getByText("Beta Prompt")).toBeVisible();
+});
+
 test("后台提示词管理详情页状态标签样式跟随真实状态", async ({ page }) => {
   await addAdminCookie(page);
   await setupPromptManagementRoutes(page);
