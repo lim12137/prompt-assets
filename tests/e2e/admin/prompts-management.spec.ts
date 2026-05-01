@@ -353,7 +353,43 @@ test("后台提示词管理列表支持归档与恢复", async ({ page }) => {
 
   await page.getByTestId("admin-prompts-row-beta-prompt").getByRole("button", { name: "恢复发布" }).click();
   await expect(page.getByRole("status")).toContainText("已恢复发布 Beta Prompt");
-  await expect(page.getByTestId("admin-prompts-row-beta-prompt")).toContainText("已发布");
+  await expect(page.getByTestId("admin-prompts-row-beta-prompt")).toHaveCount(0);
+});
+
+test("后台提示词管理列表在状态筛选下归档和恢复后会重新收敛结果", async ({ page }) => {
+  await addAdminCookie(page);
+  await setupPromptManagementRoutes(page);
+
+  await page.goto("/admin/prompts");
+
+  await page.getByRole("button", { name: "仅看已发布" }).click();
+  await expect(page.getByTestId("admin-prompts-row-alpha-prompt")).toBeVisible();
+  await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).toBeVisible();
+  await expect(page.getByTestId("admin-prompts-row-beta-prompt")).toHaveCount(0);
+
+  await page.getByTestId("admin-prompts-row-alpha-prompt").getByRole("button", { name: "归档" }).click();
+  await expect(page.getByRole("status")).toContainText("已归档 Alpha Prompt");
+  await expect(page.getByTestId("admin-prompts-row-alpha-prompt")).toHaveCount(0);
+  await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).toBeVisible();
+
+  await page.getByRole("button", { name: "仅看已归档" }).click();
+  await expect(page.getByTestId("admin-prompts-row-alpha-prompt")).toBeVisible();
+  await expect(page.getByTestId("admin-prompts-row-beta-prompt")).toBeVisible();
+
+  await page.getByTestId("admin-prompts-row-beta-prompt").getByRole("button", { name: "恢复发布" }).click();
+  await expect(page.getByRole("status")).toContainText("已恢复发布 Beta Prompt");
+  await expect(page.getByTestId("admin-prompts-row-beta-prompt")).toHaveCount(0);
+});
+
+test("后台提示词管理详情页状态标签样式跟随真实状态", async ({ page }) => {
+  await addAdminCookie(page);
+  await setupPromptManagementRoutes(page);
+
+  await page.goto("/admin/prompts/beta-prompt");
+
+  const statusChip = page.locator(".pm-status-chip").filter({ hasText: "已归档" });
+  await expect(statusChip).toBeVisible();
+  await expect(statusChip).toHaveClass(/archived/);
 });
 
 test("后台提示词管理详情支持重新分类并自动移除待分类，且删除走预检查确认", async ({

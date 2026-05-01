@@ -144,6 +144,16 @@ function getPromptStatusLabel(status) {
   return "已发布";
 }
 
+function getPromptStatusClassName(status) {
+  if (status === "archived") {
+    return "archived";
+  }
+  if (status === "draft") {
+    return "draft";
+  }
+  return "published";
+}
+
 export function AdminPromptManagementDetail({ slug }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -340,7 +350,9 @@ export function AdminPromptManagementDetail({ slug }) {
           </div>
 
           {prompt ? (
-            <span className="pm-status-chip published">{getPromptStatusLabel(prompt.status)}</span>
+            <span className={`pm-status-chip ${getPromptStatusClassName(prompt.status)}`}>
+              {getPromptStatusLabel(prompt.status)}
+            </span>
           ) : null}
         </div>
 

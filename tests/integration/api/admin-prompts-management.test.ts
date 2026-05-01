@@ -99,6 +99,7 @@ let repositoryModule: {
     categorySlugs?: string[];
     content: string;
   }) => Promise<{ ok: boolean }>;
+  __resetPromptLikeFixtureStateForTests: () => void;
 };
 let adminPromptsRouteModule: {
   GET: (request: Request) => Promise<Response>;
@@ -251,6 +252,7 @@ async function withDbLifecycleLock(
 
 async function resetDbSeed(): Promise<void> {
   await seedModule.seedDatabase(testDbUrl, { reset: true });
+  repositoryModule.__resetPromptLikeFixtureStateForTests();
 }
 
 async function createCategory(input: {
@@ -619,6 +621,41 @@ test("GET /api/admin/prompts 支持状态、分类、关键词筛选", async (t)
   });
 });
 
+test("GET /api/admin/prompts 在 0 个已发布 prompt 时仍读取真实库管理数据", async (t) => {
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
+
+    const marker = Date.now();
+    const slug = `mgmt-zero-published-${marker}`;
+    await createPrompt({
+      slug,
+      title: "零已发布管理 Prompt",
+      summary: "验证后台管理列表不会回退到 fixture",
+      categorySlugs: ["programming"],
+    });
+
+    await clientModule.withPgClient(testDbUrl, async (client) => {
+      await client.query(
+        `
+          UPDATE prompts
+          SET status = 'archived', updated_at = NOW();
+        `,
+      );
+    });
+    repositoryModule.__resetPromptLikeFixtureStateForTests();
+
+    const response = await adminPromptsRouteModule.GET(
+      adminGetPromptsRequest(`?status=archived&keyword=${encodeURIComponent(slug)}`),
+    );
+    const payload = (await response.json()) as AdminPromptListResponse;
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.prompts.length, 1);
+    assert.equal(payload.prompts[0]?.slug, slug);
+    assert.equal(payload.prompts[0]?.status, "archived");
+  });
+});
+
 test("POST /api/admin/prompts/[slug]/archive 与 restore 可切换状态并影响前台可见性", async (t) => {
   await withDbLifecycleLock(t, async () => {
     await resetDbSeed();
@@ -670,6 +707,58 @@ test("POST /api/admin/prompts/[slug]/archive 与 restore 可切换状态并影�
       { params: { slug } },
     );
     assert.equal(restoredDetailResponse.status, 200);
+  });
+});
+
+test("PATCH /api/admin/prompts/[slug] 在 0 个已发布 prompt 时仍更新真实库分类", async (t) => {
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
+
+    const marker = Date.now();
+    const targetCategorySlug = `mgmt-zero-published-category-${marker}`;
+    const promptSlug = `mgmt-zero-published-edit-${marker}`;
+    await createCategory({ name: "零已发布分类", slug: targetCategorySlug });
+    await createPrompt({
+      slug: promptSlug,
+      title: "零已发布分类编辑 Prompt",
+      summary: "验证后台管理编辑不会回退到 fixture",
+      categorySlugs: ["uncategorized"],
+    });
+
+    await clientModule.withPgClient(testDbUrl, async (client) => {
+      await client.query(
+        `
+          UPDATE prompts
+          SET status = 'archived', updated_at = NOW();
+        `,
+      );
+    });
+    repositoryModule.__resetPromptLikeFixtureStateForTests();
+
+    const response = await adminPromptRouteModule.PATCH(
+      adminPatchPromptRequest(promptSlug, {
+        categorySlugs: [targetCategorySlug],
+        primaryCategorySlug: targetCategorySlug,
+      }),
+      { params: { slug: promptSlug } },
+    );
+    const payload = (await response.json()) as {
+      prompt: {
+        slug: string;
+        category: { slug: string };
+        categorySlugs: string[];
+      };
+    };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.prompt.slug, promptSlug);
+    assert.equal(payload.prompt.category.slug, targetCategorySlug);
+    assert.deepEqual(payload.prompt.categorySlugs, [targetCategorySlug]);
+
+    const snapshot = await queryPromptSnapshot(promptSlug);
+    assert.equal(snapshot?.status, "archived");
+    assert.equal(snapshot?.primaryCategorySlug, targetCategorySlug);
+    assert.deepEqual(snapshot?.categorySlugs, [targetCategorySlug]);
   });
 });
 

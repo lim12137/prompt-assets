@@ -184,10 +184,9 @@ export function AdminPromptManagementConsole() {
     );
 
     try {
-      const updatedPrompt = await mutatePromptStatus(prompt.slug, action);
-      setPrompts((current) =>
-        current.map((item) => (item.slug === prompt.slug ? updatedPrompt : item)),
-      );
+      await mutatePromptStatus(prompt.slug, action);
+      const nextPrompts = await fetchAdminPrompts(filters);
+      setPrompts(nextPrompts);
       setFeedback(
         action === "archive"
           ? `已归档 ${prompt.title}`

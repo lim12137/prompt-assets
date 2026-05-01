@@ -5980,7 +5980,7 @@ export async function listAdminPrompts(
     category: typeof query.category === "string" ? query.category.trim() : undefined,
     keyword: typeof query.keyword === "string" ? query.keyword.trim() : undefined,
   };
-  if (await canReadFromDatabase()) {
+  if (await canWriteToDatabase()) {
     return listAdminPromptsFromDb(normalizedQuery);
   }
   return listAdminPromptsFromFixtures(normalizedQuery);
@@ -6026,7 +6026,7 @@ export async function updateAdminPromptCategories(
     categorySlugs: input.categorySlugs.map((item) => item.trim()).filter(Boolean),
     primaryCategorySlug: input.primaryCategorySlug.trim(),
   };
-  if (await canReadFromDatabase()) {
+  if (await canWriteToDatabase()) {
     return updateAdminPromptCategoriesInDb(normalizedInput);
   }
   return updateAdminPromptCategoriesInFixtures(normalizedInput);
@@ -6040,7 +6040,7 @@ export async function archiveAdminPrompt(
     reviewerRole: input.reviewerRole,
     slug: input.slug.trim(),
   };
-  if (await canReadFromDatabase()) {
+  if (await canWriteToDatabase()) {
     return mutateAdminPromptStatusInDb("archive", normalizedInput);
   }
   return mutateAdminPromptStatusInFixtures("archive", normalizedInput);
@@ -6054,7 +6054,7 @@ export async function restoreAdminPrompt(
     reviewerRole: input.reviewerRole,
     slug: input.slug.trim(),
   };
-  if (await canReadFromDatabase()) {
+  if (await canWriteToDatabase()) {
     return mutateAdminPromptStatusInDb("restore", normalizedInput);
   }
   return mutateAdminPromptStatusInFixtures("restore", normalizedInput);
@@ -6071,7 +6071,7 @@ export async function deleteAdminPrompt(
     confirmationToken: input.confirmationToken?.trim(),
     reason: input.reason?.trim(),
   };
-  if (await canReadFromDatabase()) {
+  if (await canWriteToDatabase()) {
     return deleteAdminPromptInDb(normalizedInput);
   }
   return deleteAdminPromptInFixtures(normalizedInput);
