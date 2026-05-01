@@ -177,6 +177,16 @@ function normalizeCliErrorMessage(error) {
   return String(error || "Unknown error");
 }
 
+function withDefaultNodeOptions(command) {
+  const current = process.env.NODE_OPTIONS?.trim() ?? "";
+  const hasExplicitHeap = /--max-old-space-size=\d+/u.test(current);
+  if (hasExplicitHeap || (command !== "dev" && command !== "build")) {
+    return current;
+  }
+
+  return current ? `${current} --max-old-space-size=4096` : "--max-old-space-size=4096";
+}
+
 async function main() {
   loadWorkspaceEnv();
 
@@ -197,6 +207,7 @@ async function main() {
     env: {
       ...process.env,
       NEXT_DIST_DIR: resolvedDistDir,
+      NODE_OPTIONS: withDefaultNodeOptions(command),
     },
   });
 

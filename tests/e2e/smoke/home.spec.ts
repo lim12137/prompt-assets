@@ -56,15 +56,24 @@ test("home page task4: 页面名称为公司提示词库", async ({ page }) => {
   await expect(page.getByTestId("prompt-card").first()).toBeVisible();
 });
 
-test("home page task4: 分类支持多选 OR 过滤", async ({ page }) => {
+test("home page task4: 分类支持单选切换与再次点击取消", async ({ page }) => {
   await page.goto("/");
-
-  await page.getByRole("button", { name: "编程" }).click();
-  await page.getByRole("button", { name: "设计" }).click();
 
   await expect(page.getByText("JavaScript 代码审查助手")).toBeVisible();
   await expect(page.getByText("UX 研究计划器")).toBeVisible();
+
+  await page.getByRole("button", { name: "编程" }).click();
+  await expect(page.getByText("JavaScript 代码审查助手")).toBeVisible();
+  await expect(page.getByText("UX 研究计划器")).toHaveCount(0);
   await expect(page.getByText("博客大纲生成器")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "设计" }).click();
+  await expect(page.getByText("UX 研究计划器")).toBeVisible();
+  await expect(page.getByText("JavaScript 代码审查助手")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "设计" }).click();
+  await expect(page.getByText("JavaScript 代码审查助手")).toBeVisible();
+  await expect(page.getByText("UX 研究计划器")).toBeVisible();
 });
 
 test("home page task4: 系统待分类默认折叠且不可手动勾选", async ({ page }) => {

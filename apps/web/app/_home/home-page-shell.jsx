@@ -362,7 +362,7 @@ function PromptListItem({ prompt, copyState, onCopy, router }) {
 
 export function HomePageShell({ prompts }) {
   const router = useRouter();
-  const [selectedCategories, setSelectedCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState("");
   const [keyword, setKeyword] = useState("");
   const [viewMode, setViewMode] = useState("card");
   const [copyFeedbackBySlug, setCopyFeedbackBySlug] = useState({});
@@ -380,12 +380,7 @@ export function HomePageShell({ prompts }) {
   }, [prompts, router]);
 
   function toggleCategory(categorySlug) {
-    setSelectedCategories((prev) => {
-      if (prev.includes(categorySlug)) {
-        return prev.filter((item) => item !== categorySlug);
-      }
-      return [...prev, categorySlug];
-    });
+    setSelectedCategory((current) => (current === categorySlug ? "" : categorySlug));
   }
 
   function setCopyFeedback(slug, status) {
@@ -427,10 +422,7 @@ export function HomePageShell({ prompts }) {
       ? prompt.categorySlugs
       : getPromptCategories(prompt).map((item) => item.slug);
 
-    if (
-      selectedCategories.length > 0 &&
-      !selectedCategories.some((category) => promptCategorySlugs.includes(category))
-    ) {
+    if (selectedCategory && !promptCategorySlugs.includes(selectedCategory)) {
       return false;
     }
 
@@ -488,9 +480,9 @@ export function HomePageShell({ prompts }) {
           >
             <button
               type="button"
-              className={`pm-tag ${selectedCategories.length === 0 ? "active" : ""}`}
+              className={`pm-tag ${selectedCategory === "" ? "active" : ""}`}
               style={{ justifyContent: "flex-start" }}
-              onClick={() => setSelectedCategories([])}
+              onClick={() => setSelectedCategory("")}
             >
               全部
             </button>
@@ -498,7 +490,7 @@ export function HomePageShell({ prompts }) {
               <button
                 key={category.slug}
                 type="button"
-                className={`pm-tag ${selectedCategories.includes(category.slug) ? "active" : ""}`}
+                className={`pm-tag ${selectedCategory === category.slug ? "active" : ""}`}
                 style={{ justifyContent: "flex-start" }}
                 onClick={() => toggleCategory(category.slug)}
               >
@@ -534,7 +526,7 @@ export function HomePageShell({ prompts }) {
                     type="button"
                     disabled
                     aria-disabled="true"
-                    className={`pm-tag ${selectedCategories.includes(category.slug) ? "active" : ""}`}
+                    className={`pm-tag ${selectedCategory === category.slug ? "active" : ""}`}
                     style={{ justifyContent: "flex-start" }}
                   >
                     {category.name}

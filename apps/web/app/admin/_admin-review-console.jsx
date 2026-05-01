@@ -259,6 +259,9 @@ export function AdminReviewConsole({ initialSubmissions }) {
             <a className="pm-secondary-button pm-button-link" href="/admin/import">
               批量导入
             </a>
+            <a className="pm-secondary-button pm-button-link" href="/admin/prompts">
+              提示词管理
+            </a>
           </div>
         </div>
         <p
