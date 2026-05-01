@@ -39,6 +39,18 @@ function createWithPgClientStub(records, operationLog) {
           };
         }
 
+        if (normalizedSql === "SELECT to_regclass($1) AS table_name;") {
+          const tableName = params[0];
+          if (tableName === "public.prompt_version_likes") {
+            return {
+              rows: [{ table_name: "prompt_version_likes" }],
+            };
+          }
+          return {
+            rows: [{ table_name: null }],
+          };
+        }
+
         if (normalizedSql === "BEGIN") {
           return { rows: [] };
         }
@@ -275,4 +287,63 @@ test("cleanup-real-db-sample-prompts: 只接受显式 slug 清单输入", async 
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
+});
+
+test("cleanup-real-db-sample-prompts: 真实库缺少 prompt_version_likes 表时仍可 dry-run", async () => {
+  const stdout = createMemoryWriter();
+  const stderr = createMemoryWriter();
+  const operationLog = [];
+  const records = [
+    {
+      id: 31,
+      slug: "sample-legacy",
+      title: "旧库样例",
+      summary: "legacy summary",
+      status: "published",
+      primary_category_slug: "writing",
+      category_slugs_json: ["writing"],
+      version_count: 1,
+      submission_count: 0,
+      prompt_like_count: 0,
+      version_like_count: 0,
+      version_score_count: 2,
+      version_daily_interaction_count: 3,
+    },
+  ];
+
+  const withPgClientImpl = async (_connectionString, run) =>
+    run({
+      async query(sql, params = []) {
+        const normalizedSql = sql.replace(/\s+/g, " ").trim();
+        operationLog.push({ sql: normalizedSql, params });
+
+        if (normalizedSql === "SELECT to_regclass($1) AS table_name;") {
+          return { rows: [{ table_name: null }] };
+        }
+
+        if (normalizedSql.startsWith("SELECT p.id")) {
+          return { rows: records };
+        }
+
+        throw new Error(`unexpected sql: ${normalizedSql}`);
+      },
+    });
+
+  const exitCode = await runCleanupRealDbSamplePrompts({
+    argv: ["--dry-run", "--slug", "sample-legacy"],
+    stdout,
+    stderr,
+    withPgClientImpl,
+    connectionString: "postgres://example",
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(stderr.toString(), "");
+  const payload = JSON.parse(stdout.toString());
+  assert.equal(payload.mode, "dry-run");
+  assert.equal(payload.prompts[0].counts.versionLikes, 0);
+  assert.equal(
+    operationLog.some((entry) => entry.sql.includes("FROM prompt_version_likes")),
+    false,
+  );
 });

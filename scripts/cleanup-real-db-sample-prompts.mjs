@@ -241,6 +241,8 @@ function summarizeTotals(prompts) {
 }
 
 export async function fetchPromptCleanupSummaries(client, slugs) {
+  const versionLikesTableExists = await checkCleanupTableExists(client, "prompt_version_likes");
+
   const result = await client.query(
     `
       SELECT p.id,
@@ -277,10 +279,14 @@ export async function fetchPromptCleanupSummaries(client, slugs) {
                WHERE pl.prompt_id = p.id
              ) AS prompt_like_count,
              (
-               SELECT COUNT(*)::int
+               ${
+                 versionLikesTableExists
+                   ? `SELECT COUNT(*)::int
                FROM prompt_version_likes pvl
                INNER JOIN prompt_versions pv ON pv.id = pvl.prompt_version_id
-               WHERE pv.prompt_id = p.id
+               WHERE pv.prompt_id = p.id`
+                   : "SELECT 0::int"
+               }
              ) AS version_like_count,
              (
                SELECT COUNT(*)::int
@@ -303,6 +309,11 @@ export async function fetchPromptCleanupSummaries(client, slugs) {
   );
 
   return result.rows.map(mapPromptCleanupSummary);
+}
+
+async function checkCleanupTableExists(client, tableName) {
+  const result = await client.query("SELECT to_regclass($1) AS table_name;", [`public.${tableName}`]);
+  return typeof result.rows[0]?.table_name === "string" && result.rows[0].table_name.length > 0;
 }
 
 async function deletePromptBatch(client, prompts, auditContext) {
