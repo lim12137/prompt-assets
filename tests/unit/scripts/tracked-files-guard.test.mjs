@@ -80,6 +80,8 @@ test("runWithTrackedFilesGuard 会把快照写入锁文件供异常退出后恢�
     async () => {
       const payload = JSON.parse(readFileSync(lockPath, "utf-8"));
       assert.equal(Array.isArray(payload.snapshot), true);
+      assert.equal(typeof payload.processIdentity?.pid, "number");
+      assert.equal(typeof payload.processIdentity?.startedAt, "number");
       assert.equal(payload.snapshot[0].content, "original-next-env\n");
       assert.equal(payload.snapshot[1].content, "{\n  \"include\": []\n}\n");
     },
@@ -88,6 +90,57 @@ test("runWithTrackedFilesGuard 会把快照写入锁文件供异常退出后恢�
       lockPath,
     },
   );
+
+  await rm(root, { recursive: true, force: true });
+});
+
+test("cleanupTrackedFilesFromLock 在 pid 存活但进程身份不匹配时会按 stale 清理遗留锁", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "pm-tracked-files-pid-reuse-"));
+  const nextEnvPath = path.join(root, "next-env.d.ts");
+  const tsconfigPath = path.join(root, "tsconfig.json");
+  const lockPath = path.join(root, ".next-tracked-files.lock");
+
+  mkdirSync(root, { recursive: true });
+  writeFileSync(nextEnvPath, "mutated-next-env\n", "utf-8");
+  writeFileSync(tsconfigPath, "{\n  \"include\": [\".next-e2e-reused/types/**/*.ts\"]\n}\n", "utf-8");
+  writeFileSync(
+    lockPath,
+    JSON.stringify({
+      pid: process.pid,
+      createdAt: Date.now() - 60_000,
+      trackedFilesOwnerToken: "stale-reused-owner",
+      processIdentity: {
+        pid: process.pid,
+        startedAt: Date.now() - 999_999,
+      },
+      snapshot: [
+        {
+          filePath: nextEnvPath,
+          exists: true,
+          content: "original-next-env\n",
+        },
+        {
+          filePath: tsconfigPath,
+          exists: true,
+          content: "{\n  \"include\": []\n}\n",
+        },
+      ],
+    }),
+    "utf-8",
+  );
+
+  const cleaned = cleanupTrackedFilesFromLock(lockPath, {
+    onlyIfStale: true,
+    staleMs: 1_000,
+    getProcessIdentity: () => ({
+      pid: process.pid,
+      startedAt: Date.now(),
+    }),
+  });
+
+  assert.equal(cleaned, true);
+  assert.equal(readFileSync(nextEnvPath, "utf-8"), "original-next-env\n");
+  assert.equal(readFileSync(tsconfigPath, "utf-8"), "{\n  \"include\": []\n}\n");
 
   await rm(root, { recursive: true, force: true });
 });

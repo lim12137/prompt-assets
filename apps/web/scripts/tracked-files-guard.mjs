@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 import { withTestDbLock } from "../../../scripts/with-test-db-lock.mjs";
 
@@ -60,11 +61,84 @@ function createTrackedFilesOwnerToken() {
     .slice(2)}`;
 }
 
-function isTrackedFilesLockStale(payload, staleMs) {
+function readProcessStartedAt(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return null;
+  }
+
+  try {
+    if (process.platform === "win32") {
+      const ticksText = execFileSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-Command",
+          `([DateTimeOffset](Get-Process -Id ${pid}).StartTime.ToUniversalTime()).ToUnixTimeMilliseconds()`,
+        ],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+      ).trim();
+      const startedAt = Number(ticksText);
+      return Number.isFinite(startedAt) && startedAt > 0 ? startedAt : null;
+    }
+
+    const startedAtText = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const startedAt = Date.parse(startedAtText);
+    return Number.isFinite(startedAt) && startedAt > 0 ? startedAt : null;
+  } catch {
+    return null;
+  }
+}
+
+function getProcessIdentity(pid = process.pid) {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return null;
+  }
+
+  const startedAt = readProcessStartedAt(pid);
+  if (startedAt === null) {
+    return { pid };
+  }
+
+  return { pid, startedAt };
+}
+
+function matchesProcessIdentity(expectedIdentity, actualIdentity) {
+  const expectedPid = Number(expectedIdentity?.pid ?? 0);
+  const actualPid = Number(actualIdentity?.pid ?? 0);
+  if (expectedPid <= 0 || actualPid <= 0 || expectedPid !== actualPid) {
+    return false;
+  }
+
+  const expectedStartedAt = Number(expectedIdentity?.startedAt ?? 0);
+  const actualStartedAt = Number(actualIdentity?.startedAt ?? 0);
+  if (expectedStartedAt > 0 && actualStartedAt > 0) {
+    return expectedStartedAt === actualStartedAt;
+  }
+
+  return true;
+}
+
+function isTrackedFilesLockStale(payload, staleMs, options = {}) {
   const pid = Number(payload?.pid ?? 0);
   const createdAt = Number(payload?.createdAt ?? 0);
   if (pid > 0) {
-    return !isProcessAlive(pid);
+    if (!isProcessAlive(pid)) {
+      return true;
+    }
+
+    const getProcessIdentityForPid = options.getProcessIdentity ?? getProcessIdentity;
+    const expectedIdentity = payload?.processIdentity;
+    if (expectedIdentity && typeof expectedIdentity === "object") {
+      const actualIdentity = getProcessIdentityForPid(pid);
+      if (actualIdentity && !matchesProcessIdentity(expectedIdentity, actualIdentity)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   return Number.isFinite(createdAt) && createdAt > 0 && Date.now() - createdAt > staleMs;
@@ -77,7 +151,7 @@ export function cleanupTrackedFilesFromLock(lockPath, options = {}) {
   }
 
   const staleMs = Number(options.staleMs ?? DEFAULT_STALE_MS);
-  if (options.onlyIfStale && !isTrackedFilesLockStale(payload, staleMs)) {
+  if (options.onlyIfStale && !isTrackedFilesLockStale(payload, staleMs, options)) {
     return false;
   }
 
@@ -106,6 +180,7 @@ export async function runWithTrackedFilesGuard(run, options = {}) {
     options.trackedFilesOwnerToken ??
     process.env.TRACKED_FILES_OWNER_TOKEN?.trim() ??
     createTrackedFilesOwnerToken();
+  const processIdentity = (options.getProcessIdentity ?? getProcessIdentity)(process.pid);
   const lock =
     options.lock ??
     ((callback) =>
@@ -126,6 +201,7 @@ export async function runWithTrackedFilesGuard(run, options = {}) {
         ...lockPayload,
         snapshot,
         trackedFilesOwnerToken,
+        processIdentity,
       });
     }
     let cleanedUp = false;
