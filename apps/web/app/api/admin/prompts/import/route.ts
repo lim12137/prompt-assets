@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server.js";
 
 import {
+  createAdminCategory,
   importPrompts,
   type PromptImportItemInput,
 } from "../../../../../lib/api/prompt-repository.ts";
@@ -13,6 +14,15 @@ type ImportErrorCode =
   | "invalid_import_item"
   | "prompt_slug_conflict"
   | "category_not_found";
+
+type NormalizedImportItem = PromptImportItemInput & {
+  cherryFallbackCategory: boolean;
+};
+
+const CHERRY_CATEGORY = {
+  slug: "cherry",
+  name: "Cherry",
+} as const;
 
 function toNonEmptyString(input: unknown): string {
   return typeof input === "string" ? input.trim() : "";
@@ -74,13 +84,13 @@ function resolveCherryGroupCategorySlugs(group: unknown): string[] | undefined {
     IMPORT_CATEGORY_ALIAS_MAP.get(normalizedMatch);
 
   if (!resolvedSlug || !IMPORT_CATEGORY_SLUG_SET.has(resolvedSlug)) {
-    return undefined;
+    return [CHERRY_CATEGORY.slug];
   }
 
   return [resolvedSlug];
 }
 
-function normalizeImportItem(raw: Record<string, unknown>): PromptImportItemInput {
+function normalizeImportItem(raw: Record<string, unknown>): NormalizedImportItem {
   const title = toNonEmptyString(raw.title) || toNonEmptyString(raw.name);
   const slugInput = toNonEmptyString(raw.slug) || toNonEmptyString(raw.id);
   const summary =
@@ -96,6 +106,10 @@ function normalizeImportItem(raw: Record<string, unknown>): PromptImportItemInpu
     categorySlug || (categorySlugs && categorySlugs.length > 0)
       ? undefined
       : resolveCherryGroupCategorySlugs(raw.group);
+  const cherryFallbackCategory =
+    Array.isArray(cherryGroupCategorySlugs) &&
+    cherryGroupCategorySlugs.length === 1 &&
+    cherryGroupCategorySlugs[0] === CHERRY_CATEGORY.slug;
 
   return {
     title,
@@ -104,12 +118,13 @@ function normalizeImportItem(raw: Record<string, unknown>): PromptImportItemInpu
     categorySlug,
     categorySlugs: categorySlugs ?? cherryGroupCategorySlugs,
     content,
+    cherryFallbackCategory,
   };
 }
 
 function validateImportItems(body: unknown): {
   ok: true;
-  items: PromptImportItemInput[];
+  items: NormalizedImportItem[];
 } | {
   ok: false;
   error: string;
@@ -125,7 +140,7 @@ function validateImportItems(body: unknown): {
     };
   }
 
-  const items: PromptImportItemInput[] = [];
+  const items: NormalizedImportItem[] = [];
   for (let index = 0; index < body.length; index += 1) {
     const raw = body[index];
     if (!raw || typeof raw !== "object") {
@@ -181,6 +196,47 @@ function mapImportErrorCode(
   return "invalid_import_payload";
 }
 
+async function ensureCherryCategoryAvailability(operatorUid: string): Promise<void> {
+  const result = await createAdminCategory({
+    creatorEmail: operatorUid,
+    creatorRole: "admin",
+    name: CHERRY_CATEGORY.name,
+    slug: CHERRY_CATEGORY.slug,
+  });
+
+  if (result.ok) {
+    return;
+  }
+
+  if (result.code === "conflict") {
+    return;
+  }
+}
+
+function stripCherryFallbackCategory(
+  items: NormalizedImportItem[],
+): PromptImportItemInput[] {
+  return items.map((item) => {
+    if (!item.cherryFallbackCategory) {
+      return {
+        title: item.title,
+        slug: item.slug,
+        summary: item.summary,
+        categorySlug: item.categorySlug,
+        categorySlugs: item.categorySlugs,
+        content: item.content,
+      };
+    }
+
+    return {
+      title: item.title,
+      slug: item.slug,
+      summary: item.summary,
+      content: item.content,
+    };
+  });
+}
+
 export async function POST(request: Request) {
   let operator: { uid: string };
   try {
@@ -209,11 +265,32 @@ export async function POST(request: Request) {
     );
   }
 
+  const hasCherryFallbackItems = validated.items.some(
+    (item) => item.cherryFallbackCategory,
+  );
+  if (hasCherryFallbackItems) {
+    await ensureCherryCategoryAvailability(operator.uid);
+  }
+
   const result = await importPrompts({
     creatorEmail: operator.uid,
     creatorRole: "admin",
     items: validated.items,
   });
+  if (
+    !result.ok &&
+    result.code === "not_found" &&
+    hasCherryFallbackItems
+  ) {
+    const retried = await importPrompts({
+      creatorEmail: operator.uid,
+      creatorRole: "admin",
+      items: stripCherryFallbackCategory(validated.items),
+    });
+    if (retried.ok) {
+      return NextResponse.json(retried.value, { status: 201 });
+    }
+  }
   if (result.ok) {
     return NextResponse.json(result.value, { status: 201 });
   }

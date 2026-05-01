@@ -553,8 +553,12 @@ const UNCATEGORIZED_CATEGORY = {
   status: "active",
 } as const;
 const SYSTEM_CATEGORY_SLUGS = new Set<string>([UNCATEGORIZED_CATEGORY.slug]);
+const FIXTURE_CATEGORY_BASELINE = [
+  ...baseCategories,
+  UNCATEGORIZED_CATEGORY,
+] as const;
 const CATEGORY_MAP = new Map(
-  [...baseCategories, UNCATEGORIZED_CATEGORY].map((item) => [item.slug, item]),
+  FIXTURE_CATEGORY_BASELINE.map((item) => [item.slug, item]),
 );
 const CATEGORY_DELETE_TOKEN_SECRET =
   process.env.CATEGORY_DELETE_TOKEN_SECRET ??
@@ -2087,6 +2091,62 @@ async function createAdminCategoryInDb(
       throw error;
     }
   });
+}
+
+function createAdminCategoryInFixtures(
+  input: AdminCategoryCreateInput,
+): AdminCategoryCreateResult {
+  if (input.creatorRole !== "admin") {
+    return {
+      ok: false,
+      code: "forbidden",
+      reason: "admin_role_required",
+      message: "admin role is required",
+    };
+  }
+
+  const name = input.name.trim();
+  const slug = input.slug.trim();
+  if (!name || !slug) {
+    return {
+      ok: false,
+      code: "bad_request",
+      reason: "invalid_request",
+      message: "name and slug are required",
+    };
+  }
+
+  if (CATEGORY_MAP.has(slug)) {
+    return {
+      ok: false,
+      code: "conflict",
+      reason: "category_slug_conflict",
+      message: "category slug already exists",
+    };
+  }
+
+  const nextSortOrder =
+    Math.max(...[...CATEGORY_MAP.values()].map((item) => item.sortOrder), 0) + 10;
+  CATEGORY_MAP.set(slug, {
+    name,
+    slug,
+    sortOrder: nextSortOrder,
+    status: "active",
+  });
+
+  return {
+    ok: true,
+    value: {
+      category: {
+        slug,
+        name,
+        isSystem: false,
+        isSelectable: true,
+        isCollapsedByDefault: false,
+        promptCount: 0,
+      },
+    },
+  };
 }
 
 async function deleteAdminCategoryInDb(
@@ -4309,6 +4369,10 @@ export function __resetPromptLikeFixtureStateForTests(): void {
   fixtureSubmissionIdSeed = fixtureSubmissions.length;
   fixtureAuditLogs = [];
   fixtureCreatedPrompts = new Map<string, FixturePromptRecord>();
+  CATEGORY_MAP.clear();
+  for (const category of FIXTURE_CATEGORY_BASELINE) {
+    CATEGORY_MAP.set(category.slug, category);
+  }
   cachedDbReadable = undefined;
 }
 
@@ -4581,7 +4645,10 @@ export async function createAdminCategory(
     name: input.name.trim(),
     slug: input.slug.trim(),
   };
-  return createAdminCategoryInDb(normalizedInput);
+  if ((await canReadFromDatabase()) || (await canWriteToDatabase())) {
+    return createAdminCategoryInDb(normalizedInput);
+  }
+  return createAdminCategoryInFixtures(normalizedInput);
 }
 
 export async function deleteAdminCategory(

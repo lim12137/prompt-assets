@@ -304,7 +304,7 @@ test("POST /api/admin/prompts/import 兼容 Cherry Studio 助手对象数组并�
   assert.equal(await detailStatus("cherry-code-review"), 200);
 });
 
-test("POST /api/admin/prompts/import 在 Cherry id 为空且 group 无法匹配时仍可保守导入", async () => {
+test("POST /api/admin/prompts/import 在 Cherry id 为空且 group 无法匹配时统一导入 cherry 分组", async () => {
   const items: CherryStudioAssistantItem[] = [
     {
       id: "   ",
@@ -322,7 +322,7 @@ test("POST /api/admin/prompts/import 在 Cherry id 为空且 group 无法匹配�
   assert.equal(response.status, 201);
   assert.equal(payload.total, 1);
   assert.equal(generatedSlug, "cherry-未知分组助手");
-  assert.equal(payload.prompts[0]?.categorySlug, "uncategorized");
-  assert.deepEqual(payload.prompts[0]?.categorySlugs, ["uncategorized"]);
+  assert.equal(payload.prompts[0]?.categorySlug, "cherry");
+  assert.deepEqual(payload.prompts[0]?.categorySlugs, ["cherry"]);
   assert.equal(await detailStatus(generatedSlug), 200);
 });
