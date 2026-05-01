@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 
 import { POST as approveSubmission } from "../../../apps/web/app/api/admin/submissions/[id]/approve/route.ts";
 import { POST as rejectSubmission } from "../../../apps/web/app/api/admin/submissions/[id]/reject/route.ts";
+import { POST as archivePrompt } from "../../../apps/web/app/api/admin/prompts/[slug]/archive/route.ts";
+import { POST as restorePrompt } from "../../../apps/web/app/api/admin/prompts/[slug]/restore/route.ts";
+import { PATCH as updatePromptCategories } from "../../../apps/web/app/api/admin/prompts/[slug]/route.ts";
+import { DELETE as deletePrompt } from "../../../apps/web/app/api/admin/prompts/[slug]/delete/route.ts";
 import { POST as likePrompt } from "../../../apps/web/app/api/prompts/[slug]/like/route.ts";
 import { POST as createSubmission } from "../../../apps/web/app/api/prompts/[slug]/submissions/route.ts";
 import {
@@ -126,4 +130,85 @@ test("点赞动作产生日志", async () => {
   assert.equal(log?.payloadJson.promptSlug, "api-debug-assistant");
   assert.equal(log?.payloadJson.liked, true);
   assert.equal(log?.payloadJson.likesCount, payload.likesCount);
+});
+
+test("后台归档、恢复、分类更新、彻底删除动作产生日志", async () => {
+  const archiveResponse = await archivePrompt(
+    adminPost("http://localhost:3000/api/admin/prompts/api-debug-assistant/archive"),
+    { params: { slug: "api-debug-assistant" } },
+  );
+  assert.equal(archiveResponse.status, 200);
+
+  const restoreResponse = await restorePrompt(
+    adminPost("http://localhost:3000/api/admin/prompts/api-debug-assistant/restore"),
+    { params: { slug: "api-debug-assistant" } },
+  );
+  assert.equal(restoreResponse.status, 200);
+
+  const patchResponse = await updatePromptCategories(
+    adminPost("http://localhost:3000/api/admin/prompts/api-debug-assistant", {
+      categorySlugs: ["programming", "design"],
+      primaryCategorySlug: "design",
+    }),
+    { params: { slug: "api-debug-assistant" } },
+  );
+  assert.equal(patchResponse.status, 200);
+
+  const previewResponse = await deletePrompt(
+    new Request("http://localhost:3000/api/admin/prompts/api-debug-assistant/delete", {
+      method: "DELETE",
+      headers: {
+        "content-type": "application/json",
+        cookie: buildAuthCookie({ uid: adminEmail, name: "Admin", can_manage: true }),
+      },
+      body: JSON.stringify({ confirm: false }),
+    }),
+    { params: { slug: "api-debug-assistant" } },
+  );
+  const previewPayload = (await previewResponse.json()) as {
+    confirmationToken: string;
+  };
+  assert.equal(previewResponse.status, 200);
+
+  const deleteResponse = await deletePrompt(
+    new Request("http://localhost:3000/api/admin/prompts/api-debug-assistant/delete", {
+      method: "DELETE",
+      headers: {
+        "content-type": "application/json",
+        cookie: buildAuthCookie({ uid: adminEmail, name: "Admin", can_manage: true }),
+      },
+      body: JSON.stringify({
+        confirm: true,
+        confirmationToken: previewPayload.confirmationToken,
+        reason: "fixture audit test",
+      }),
+    }),
+    { params: { slug: "api-debug-assistant" } },
+  );
+  assert.equal(deleteResponse.status, 200);
+
+  const logs = __getAuditLogFixtureStateForTests() as AuditLogEntry[];
+  const archivedLog = logs.find((item) => item.action === "prompt.archived");
+  const restoredLog = logs.find((item) => item.action === "prompt.restored");
+  const categoriesUpdatedLog = logs.find(
+    (item) => item.action === "prompt.categories.updated",
+  );
+  const deletedLog = logs.find((item) => item.action === "prompt.deleted");
+
+  assert.equal(archivedLog?.targetType, "prompt");
+  assert.equal(archivedLog?.payloadJson.promptSlug, "api-debug-assistant");
+  assert.equal(archivedLog?.payloadJson.toStatus, "archived");
+
+  assert.equal(restoredLog?.targetType, "prompt");
+  assert.equal(restoredLog?.payloadJson.promptSlug, "api-debug-assistant");
+  assert.equal(restoredLog?.payloadJson.toStatus, "published");
+
+  assert.equal(categoriesUpdatedLog?.targetType, "prompt");
+  assert.equal(categoriesUpdatedLog?.payloadJson.promptSlug, "api-debug-assistant");
+  assert.deepEqual(categoriesUpdatedLog?.payloadJson.categorySlugs, ["programming", "design"]);
+  assert.equal(categoriesUpdatedLog?.payloadJson.primaryCategorySlug, "design");
+
+  assert.equal(deletedLog?.targetType, "prompt");
+  assert.equal(deletedLog?.payloadJson.promptSlug, "api-debug-assistant");
+  assert.equal(deletedLog?.payloadJson.reason, "fixture audit test");
 });

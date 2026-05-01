@@ -1,5 +1,9 @@
 export type AuditAction =
   | "prompt.created"
+  | "prompt.archived"
+  | "prompt.restored"
+  | "prompt.categories.updated"
+  | "prompt.deleted"
   | "prompt.liked"
   | "prompt.unliked"
   | "prompt.version.liked"
