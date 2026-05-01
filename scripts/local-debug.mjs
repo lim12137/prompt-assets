@@ -22,6 +22,11 @@ const defaultConfig = {
   postgresImage: "ghcr.io/lim12137/prompt-assets-postgres:16-alpine",
   healthTimeoutMs: 30000,
   healthIntervalMs: 1000,
+  webHealthPath: "/api/health",
+  webHealthTimeoutMs: 45000,
+  webHealthIntervalMs: 1000,
+  webHealthRequestTimeoutMs: 5000,
+  webHealthRestarts: 1,
 };
 
 function toNonEmptyString(value, fallback) {
@@ -54,6 +59,31 @@ export function resolveLocalDebugConfig(env = process.env) {
         env.LOCAL_DB_HEALTH_INTERVAL_MS,
         String(defaultConfig.healthIntervalMs),
       ),
+    ),
+    webHealthPath: toNonEmptyString(
+      env.LOCAL_WEB_HEALTH_PATH,
+      defaultConfig.webHealthPath,
+    ),
+    webHealthTimeoutMs: Number(
+      toNonEmptyString(
+        env.LOCAL_WEB_HEALTH_TIMEOUT_MS,
+        String(defaultConfig.webHealthTimeoutMs),
+      ),
+    ),
+    webHealthIntervalMs: Number(
+      toNonEmptyString(
+        env.LOCAL_WEB_HEALTH_INTERVAL_MS,
+        String(defaultConfig.webHealthIntervalMs),
+      ),
+    ),
+    webHealthRequestTimeoutMs: Number(
+      toNonEmptyString(
+        env.LOCAL_WEB_HEALTH_REQUEST_TIMEOUT_MS,
+        String(defaultConfig.webHealthRequestTimeoutMs),
+      ),
+    ),
+    webHealthRestarts: Number(
+      toNonEmptyString(env.LOCAL_WEB_HEALTH_RESTARTS, String(defaultConfig.webHealthRestarts)),
     ),
   };
 }
@@ -315,6 +345,67 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export function buildWebHealthUrl(config) {
+  return new URL(config.webHealthPath || defaultConfig.webHealthPath, config.appBaseUrl).href;
+}
+
+async function fetchWithTimeout(url, timeoutMs, fetchImpl = globalThis.fetch) {
+  if (typeof fetchImpl !== "function") {
+    throw new Error("fetch is not available for web health check");
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchImpl(url, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function waitForWebHealthy(config, deps = {}) {
+  const url = buildWebHealthUrl(config);
+  const timeoutMs = Number.isFinite(config.webHealthTimeoutMs)
+    ? config.webHealthTimeoutMs
+    : defaultConfig.webHealthTimeoutMs;
+  const intervalMs = Number.isFinite(config.webHealthIntervalMs)
+    ? config.webHealthIntervalMs
+    : defaultConfig.webHealthIntervalMs;
+  const requestTimeoutMs = Number.isFinite(config.webHealthRequestTimeoutMs)
+    ? config.webHealthRequestTimeoutMs
+    : defaultConfig.webHealthRequestTimeoutMs;
+  const sleepImpl = deps.sleep ?? sleep;
+  const fetchImpl = deps.fetch ?? globalThis.fetch;
+  const startedAt = Date.now();
+  let lastError = null;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const response = await fetchWithTimeout(url, requestTimeoutMs, fetchImpl);
+      if (response?.ok) {
+        return;
+      }
+      lastError = new Error(`HTTP ${response?.status ?? "unknown"}`);
+    } catch (error) {
+      lastError = error;
+    }
+
+    const elapsed = Date.now() - startedAt;
+    const remaining = timeoutMs - elapsed;
+    if (remaining <= 0) {
+      break;
+    }
+    await sleepImpl(Math.min(intervalMs, remaining));
+  }
+
+  const reason =
+    lastError instanceof Error && lastError.message ? ` Last error: ${lastError.message}` : "";
+  throw new Error(`Web health check timed out after ${timeoutMs}ms: ${url}.${reason}`);
+}
+
 async function waitForDatabaseHealthy(config) {
   const startedAt = Date.now();
 
@@ -350,36 +441,141 @@ function runPnpm(args, config) {
   });
 }
 
-function startPersistentWeb(config) {
-  const child = spawn(pnpmCommand, buildWebDevArgs(config), {
+function spawnWebProcess(config) {
+  return spawn(pnpmCommand, buildWebDevArgs(config), {
     stdio: "inherit",
     env: buildRuntimeEnv(config),
     cwd: workspaceRoot,
     shell: process.platform === "win32",
   });
+}
 
+function attachPersistentWebLifecycle(child) {
   const stopChild = (signal) => {
     if (!child.killed) {
       child.kill(signal);
     }
   };
 
-  process.on("SIGINT", () => stopChild("SIGINT"));
-  process.on("SIGTERM", () => stopChild("SIGTERM"));
-
-  child.on("error", (error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    console.error(`[local-debug] Failed to launch web process: ${message}`);
-    process.exit(1);
-  });
+  const handleSigint = () => stopChild("SIGINT");
+  const handleSigterm = () => stopChild("SIGTERM");
+  process.on("SIGINT", handleSigint);
+  process.on("SIGTERM", handleSigterm);
 
   child.on("exit", (code, signal) => {
+    process.removeListener("SIGINT", handleSigint);
+    process.removeListener("SIGTERM", handleSigterm);
     if (signal) {
       process.kill(process.pid, signal);
       return;
     }
     process.exit(code ?? 0);
   });
+}
+
+async function waitForChildWebHealthy(child, config, waitForHealthy) {
+  return await new Promise((resolve, reject) => {
+    const handleExit = (code, signal) => {
+      reject(
+        new Error(
+          `Web process exited before health check passed: code=${code ?? "null"} signal=${signal ?? "null"}`,
+        ),
+      );
+    };
+
+    child.once("exit", handleExit);
+    Promise.resolve(waitForHealthy(config)).then(
+      () => {
+        child.removeListener("exit", handleExit);
+        resolve();
+      },
+      (error) => {
+        child.removeListener("exit", handleExit);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function stopChildForRestart(child, deps = {}) {
+  if (!child) {
+    return;
+  }
+
+  const waitMs = deps.waitMs ?? 2000;
+  await new Promise((resolve) => {
+    let settled = false;
+    let exited = false;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+
+    const timer = setTimeout(() => {
+      try {
+        if (!exited) {
+          child.kill("SIGKILL");
+        }
+      } catch {}
+      finish();
+    }, waitMs);
+
+    child.once("exit", () => {
+      exited = true;
+      finish();
+    });
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      finish();
+    }
+  });
+}
+
+export async function startPersistentWebWithHealth(config, deps = {}) {
+  const spawnProcess = deps.spawnWebProcess ?? spawnWebProcess;
+  const waitForHealthy = deps.waitForWebHealthy ?? waitForWebHealthy;
+  const reclaimWebPort = deps.reclaimWebPort ?? (() => reclaimWebPortIfNeeded(config));
+  const log = deps.log ?? ((message) => console.warn(message));
+  const attachLifecycle = deps.attachLifecycle ?? attachPersistentWebLifecycle;
+  const maxRestarts = Number.isFinite(config.webHealthRestarts)
+    ? Math.max(0, config.webHealthRestarts)
+    : defaultConfig.webHealthRestarts;
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= maxRestarts; attempt += 1) {
+    const child = spawnProcess(config);
+
+    child.on("error", (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[local-debug] Failed to launch web process: ${message}`);
+      process.exit(1);
+    });
+
+    try {
+      await waitForChildWebHealthy(child, config, waitForHealthy);
+      attachLifecycle(child);
+      return child;
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      log(`[local-debug] Web startup health check failed: ${message}`);
+      await stopChildForRestart(child, deps);
+      await reclaimWebPort();
+      if (attempt < maxRestarts) {
+        log(
+          `[local-debug] Restarting web process after failed health check (${attempt + 1}/${maxRestarts}).`,
+        );
+      }
+    }
+  }
+
+  const reason = lastError instanceof Error && lastError.message ? ` ${lastError.message}` : "";
+  throw new Error(`Web did not become healthy after ${maxRestarts + 1} attempt(s).${reason}`);
 }
 
 function parseWindowsProcessInfoOutput(output) {
@@ -666,7 +862,7 @@ async function executePlan(plan, config) {
 
     if (step === "web") {
       await reclaimWebPortIfNeeded(config);
-      startPersistentWeb(config);
+      await startPersistentWebWithHealth(config);
       return;
     }
   }
