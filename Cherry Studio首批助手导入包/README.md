@@ -96,8 +96,13 @@
 
 ## 导入方式
 
+本目录当前包含两份导入包：
+
+- `cherry-studio-first-batch.import.json`：首批英文整理版
+- `cherry-studio-first-batch.zh-CN.import.json`：首批中文化整理版
+
 1. 打开本仓库前台管理端导入页。
-2. 读取本目录下的 `cherry-studio-first-batch.import.json`。
+2. 按需要读取本目录下对应的导入包文件。
 3. 将整个 JSON 数组粘贴到导入输入框。
 4. 执行导入。
 
