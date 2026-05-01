@@ -18,6 +18,14 @@ type ImportRequestItem = {
   content: string;
 };
 
+type CherryStudioAssistantItem = {
+  id?: string;
+  name?: string;
+  description?: string;
+  prompt?: string;
+  group?: string;
+};
+
 type ImportSuccessResponse = {
   total: number;
   mode: "all_or_nothing";
@@ -270,4 +278,51 @@ test("POST /api/admin/prompts/import 在未传 slug 时可按标题自动生成"
   assert.equal(payload.total, 1);
   assert.equal(typeof payload.prompts[0]?.slug, "string");
   assert.ok((payload.prompts[0]?.slug ?? "").length > 0);
+});
+
+test("POST /api/admin/prompts/import 兼容 Cherry Studio 助手对象数组并映射字段", async () => {
+  const items: CherryStudioAssistantItem[] = [
+    {
+      id: "cherry-code-review",
+      name: "Cherry 代码审查助手",
+      description: "将 Cherry 助手格式导入为内部格式",
+      prompt: "请从正确性、性能、回归风险三个维度审查这段代码。",
+      group: "Programming",
+    },
+  ];
+
+  const response = await POST(postAsAdmin(items));
+  const payload = (await response.json()) as ImportSuccessResponse;
+
+  assert.equal(response.status, 201);
+  assert.equal(payload.total, 1);
+  assert.equal(payload.prompts[0]?.slug, "cherry-code-review");
+  assert.equal(payload.prompts[0]?.title, "Cherry 代码审查助手");
+  assert.equal(payload.prompts[0]?.summary, "将 Cherry 助手格式导入为内部格式");
+  assert.equal(payload.prompts[0]?.categorySlug, "programming");
+  assert.deepEqual(payload.prompts[0]?.categorySlugs, ["programming"]);
+  assert.equal(await detailStatus("cherry-code-review"), 200);
+});
+
+test("POST /api/admin/prompts/import 在 Cherry id 为空且 group 无法匹配时仍可保守导入", async () => {
+  const items: CherryStudioAssistantItem[] = [
+    {
+      id: "   ",
+      name: "Cherry 未知分组助手",
+      description: "group 不匹配现有分类时不应阻断",
+      prompt: "输出一个最保守的处理建议。",
+      group: "未建档分组",
+    },
+  ];
+
+  const response = await POST(postAsAdmin(items));
+  const payload = (await response.json()) as ImportSuccessResponse;
+  const generatedSlug = payload.prompts[0]?.slug ?? "";
+
+  assert.equal(response.status, 201);
+  assert.equal(payload.total, 1);
+  assert.equal(generatedSlug, "cherry-未知分组助手");
+  assert.equal(payload.prompts[0]?.categorySlug, "uncategorized");
+  assert.deepEqual(payload.prompts[0]?.categorySlugs, ["uncategorized"]);
+  assert.equal(await detailStatus(generatedSlug), 200);
 });

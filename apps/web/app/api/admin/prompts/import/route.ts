@@ -5,6 +5,7 @@ import {
   type PromptImportItemInput,
 } from "../../../../../lib/api/prompt-repository.ts";
 import { requireManageUser } from "../../../../../lib/auth/session.ts";
+import { baseCategories } from "../../../../../../../tests/fixtures/prompts.ts";
 
 type ImportErrorCode =
   | "admin_role_required"
@@ -34,6 +35,76 @@ function generateSlugFromTitle(title: string): string {
     hash = (hash * 31 + char.charCodeAt(0)) % 1000000007;
   }
   return `prompt-${Math.abs(hash)}`;
+}
+
+const IMPORT_CATEGORY_SLUG_SET = new Set<string>([
+  ...baseCategories.map((item) => item.slug),
+  "uncategorized",
+]);
+
+const IMPORT_CATEGORY_ALIAS_MAP = new Map<string, string>();
+for (const category of baseCategories) {
+  const aliasCandidates = [
+    category.slug,
+    category.slug.toLowerCase(),
+    category.name,
+    category.name.trim().toLowerCase(),
+    generateSlugFromTitle(category.name),
+  ];
+
+  for (const alias of aliasCandidates) {
+    const normalizedAlias = toNonEmptyString(alias).toLowerCase();
+    if (!normalizedAlias || IMPORT_CATEGORY_ALIAS_MAP.has(normalizedAlias)) {
+      continue;
+    }
+    IMPORT_CATEGORY_ALIAS_MAP.set(normalizedAlias, category.slug);
+  }
+}
+
+function resolveCherryGroupCategorySlugs(group: unknown): string[] | undefined {
+  const rawGroup = toNonEmptyString(group);
+  if (!rawGroup) {
+    return undefined;
+  }
+
+  const directMatch = rawGroup.toLowerCase();
+  const normalizedMatch = generateSlugFromTitle(rawGroup).toLowerCase();
+  const resolvedSlug =
+    IMPORT_CATEGORY_ALIAS_MAP.get(directMatch) ??
+    IMPORT_CATEGORY_ALIAS_MAP.get(normalizedMatch);
+
+  if (!resolvedSlug || !IMPORT_CATEGORY_SLUG_SET.has(resolvedSlug)) {
+    return undefined;
+  }
+
+  return [resolvedSlug];
+}
+
+function normalizeImportItem(raw: Record<string, unknown>): PromptImportItemInput {
+  const title = toNonEmptyString(raw.title) || toNonEmptyString(raw.name);
+  const slugInput = toNonEmptyString(raw.slug) || toNonEmptyString(raw.id);
+  const summary =
+    toNonEmptyString(raw.summary) || toNonEmptyString(raw.description);
+  const content = toNonEmptyString(raw.content) || toNonEmptyString(raw.prompt);
+  const categorySlug = toNonEmptyString(raw.categorySlug) || undefined;
+  const categorySlugs = Array.isArray(raw.categorySlugs)
+    ? raw.categorySlugs
+        .map((slug) => (typeof slug === "string" ? slug.trim() : ""))
+        .filter((slug) => slug.length > 0)
+    : undefined;
+  const cherryGroupCategorySlugs =
+    categorySlug || (categorySlugs && categorySlugs.length > 0)
+      ? undefined
+      : resolveCherryGroupCategorySlugs(raw.group);
+
+  return {
+    title,
+    slug: slugInput || generateSlugFromTitle(title),
+    summary,
+    categorySlug,
+    categorySlugs: categorySlugs ?? cherryGroupCategorySlugs,
+    content,
+  };
 }
 
 function validateImportItems(body: unknown): {
@@ -67,20 +138,7 @@ function validateImportItems(body: unknown): {
     }
 
     const item = raw as Record<string, unknown>;
-    const title = toNonEmptyString(item.title);
-    const slugInput = toNonEmptyString(item.slug);
-    const normalizedItem: PromptImportItemInput = {
-      title,
-      slug: slugInput || generateSlugFromTitle(title),
-      summary: toNonEmptyString(item.summary),
-      categorySlug: toNonEmptyString(item.categorySlug) || undefined,
-      categorySlugs: Array.isArray(item.categorySlugs)
-        ? item.categorySlugs
-            .map((slug) => (typeof slug === "string" ? slug.trim() : ""))
-            .filter((slug) => slug.length > 0)
-        : undefined,
-      content: toNonEmptyString(item.content),
-    };
+    const normalizedItem = normalizeImportItem(item);
 
     const requiredFields: Array<keyof PromptImportItemInput> = [
       "title",
