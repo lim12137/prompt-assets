@@ -12,12 +12,14 @@ const distDir = process.env.PLAYWRIGHT_WEB_DIST ?? ".next-e2e";
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
+  globalSetup: "./tests/e2e/global-setup.ts",
+  globalTeardown: "./tests/e2e/global-teardown.ts",
   use: {
     baseURL: `http://${host}:${port}`,
   },
   webServer: {
     command:
-      `pnpm --filter @prompt-management/web exec node ./scripts/prebuild-clean.mjs --target ${distDir} && pnpm --filter @prompt-management/web exec node ./scripts/run-next.mjs dev --dist ${distDir} --hostname ${host} --port ${port}`,
+      `pnpm --filter @prompt-management/web exec node ./scripts/run-playwright-webserver.mjs --dist ${distDir} --hostname ${host} --port ${port}`,
     port,
     reuseExistingServer: false,
     timeout: 120_000,

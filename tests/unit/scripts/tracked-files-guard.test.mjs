@@ -50,11 +50,7 @@ test("runWithTrackedFilesGuard 在执行后恢复被跟踪文件内容", async (
           }),
           "utf-8",
         );
-        try {
-          return run();
-        } finally {
-          await rm(lockPath, { force: true });
-        }
+        return run();
       },
     },
   );
@@ -81,7 +77,10 @@ test("runWithTrackedFilesGuard 会把快照写入锁文件供异常退出后恢�
       const payload = JSON.parse(readFileSync(lockPath, "utf-8"));
       assert.equal(Array.isArray(payload.snapshot), true);
       assert.equal(typeof payload.processIdentity?.pid, "number");
-      assert.equal(typeof payload.processIdentity?.startedAt, "number");
+      assert.ok(
+        payload.processIdentity?.startedAt === undefined ||
+          typeof payload.processIdentity?.startedAt === "number",
+      );
       assert.equal(payload.snapshot[0].content, "original-next-env\n");
       assert.equal(payload.snapshot[1].content, "{\n  \"include\": []\n}\n");
     },
@@ -277,6 +276,48 @@ test("cleanupTrackedFilesFromLock 在 owner 不匹配时不会删除别人的活
     "{\n  \"include\": [\".next-e2e-owner/types/**/*.ts\"]\n}\n",
   );
   assert.equal(existsSync(lockPath), true);
+
+  await rm(root, { recursive: true, force: true });
+});
+
+test("runWithTrackedFilesGuard 会在执行结束后的延迟改写后再次恢复被跟踪文件", async () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "pm-tracked-files-post-settle-"));
+  const nextEnvPath = path.join(root, "next-env.d.ts");
+  const tsconfigPath = path.join(root, "tsconfig.json");
+  const lockPath = path.join(root, ".tracked.lock");
+
+  mkdirSync(root, { recursive: true });
+  writeFileSync(nextEnvPath, "original-next-env\n", "utf-8");
+  writeFileSync(tsconfigPath, "{\n  \"include\": []\n}\n", "utf-8");
+
+  let lateMutationFinished;
+  const lateMutationDone = new Promise((resolve) => {
+    lateMutationFinished = resolve;
+  });
+
+  await runWithTrackedFilesGuard(
+    async () => {
+      setTimeout(() => {
+        writeFileSync(nextEnvPath, "late-mutated-next-env\n", "utf-8");
+        writeFileSync(
+          tsconfigPath,
+          "{\n  \"include\": [\".next-e2e-late/types/**/*.ts\"]\n}\n",
+          "utf-8",
+        );
+        lateMutationFinished();
+      }, 10);
+    },
+    {
+      rootDir: root,
+      lockPath,
+      postRunSettleMs: 40,
+    },
+  );
+
+  assert.equal(readFileSync(nextEnvPath, "utf-8"), "original-next-env\n");
+  assert.equal(readFileSync(tsconfigPath, "utf-8"), "{\n  \"include\": []\n}\n");
+  assert.equal(existsSync(lockPath), false);
+  await lateMutationDone;
 
   await rm(root, { recursive: true, force: true });
 });

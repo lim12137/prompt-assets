@@ -7,6 +7,7 @@ import { withTestDbLock } from "../../../scripts/with-test-db-lock.mjs";
 const TRACKED_FILES = ["next-env.d.ts", "tsconfig.json"];
 const DEFAULT_STALE_MS = 10 * 60 * 1000;
 const DEFAULT_OWNER_TOKEN_PREFIX = "tracked-files";
+const DEFAULT_POST_RUN_SETTLE_MS = 250;
 
 export function resolveTrackedFilePaths(rootDir = process.cwd()) {
   return TRACKED_FILES.map((file) => path.join(rootDir, file));
@@ -176,6 +177,7 @@ export async function runWithTrackedFilesGuard(run, options = {}) {
   const lockPath = options.lockPath ?? path.join(rootDir, ".next-tracked-files.lock");
   const installSignalHandlers = options.installSignalHandlers !== false;
   const staleMs = options.staleMs ?? DEFAULT_STALE_MS;
+  const postRunSettleMs = Number(options.postRunSettleMs ?? DEFAULT_POST_RUN_SETTLE_MS);
   const trackedFilesOwnerToken =
     options.trackedFilesOwnerToken ??
     process.env.TRACKED_FILES_OWNER_TOKEN?.trim() ??
@@ -227,7 +229,13 @@ export async function runWithTrackedFilesGuard(run, options = {}) {
     }
     process.once("exit", exitHandler);
     try {
-      return await run();
+      const result = await run();
+      if (Number.isFinite(postRunSettleMs) && postRunSettleMs > 0) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, postRunSettleMs);
+        });
+      }
+      return result;
     } finally {
       if (installSignalHandlers) {
         process.removeListener("SIGINT", signalHandler);

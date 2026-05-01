@@ -1,7 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { signLoginToken } from "../../../apps/web/lib/auth/session.ts";
+import { requireWorkspaceEnvValue } from "../../../scripts/workspace-env.mjs";
 
 function generateSlugFromTitle(title: string): string {
   const normalized = title
@@ -22,23 +21,11 @@ function generateSlugFromTitle(title: string): string {
   return `prompt-${Math.abs(hash)}`;
 }
 
-function readSecretFromDotEnv(): string {
-  try {
-    const content = readFileSync(join(process.cwd(), ".env"), "utf8");
-    const line = content
-      .split(/\r?\n/)
-      .find((item) => item.trim().startsWith("LOGIN_TOKEN_SECRET="));
-    return line?.split("=")[1]?.trim() ?? "";
-  } catch {
-    return "";
-  }
-}
-
 function createAdminToken(): string {
-  const secret = process.env.LOGIN_TOKEN_SECRET?.trim() || readSecretFromDotEnv();
-  if (!secret) {
-    return "";
-  }
+  const secret = requireWorkspaceEnvValue("LOGIN_TOKEN_SECRET", {
+    cwd: process.cwd(),
+    env: process.env,
+  });
   return signLoginToken(
     {
       uid: "e2e-admin-prompts-real-db",
@@ -53,7 +40,6 @@ function createAdminToken(): string {
 
 async function addAdminCookie(page: Page) {
   const token = createAdminToken();
-  test.skip(!token, "未配置 LOGIN_TOKEN_SECRET，无法生成登录 token。");
 
   await page.context().addCookies([
     {
