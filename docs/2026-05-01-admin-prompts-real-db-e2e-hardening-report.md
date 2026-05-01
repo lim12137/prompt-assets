@@ -70,7 +70,7 @@ node --test tests/unit/scripts/workspace-env.test.mjs tests/unit/scripts/tracked
 node --test tests/unit/scripts/workspace-env.test.mjs tests/unit/scripts/tracked-files-guard.test.mjs tests/unit/scripts/admin-prompts-management-real-db-runner.test.mjs
 ```
 
-结果：`7 passed / 0 failed`
+结果：`10 passed / 0 failed`
 
 ## 本轮执行命令
 
@@ -96,7 +96,7 @@ Test-Path apps/web/.next-tracked-files.lock
 
 ## 结果摘要
 
-- `workspace-env / tracked-files-guard / runner` 单测：`7 passed / 0 failed`
+- `workspace-env / tracked-files-guard / runner` 单测：`10 passed / 0 failed`
 - Playwright webServer 命令单测：`1 passed / 0 failed`
 - 真实库管理页 E2E：`1 passed / 0 failed`
 - E2E 结束后检查：
