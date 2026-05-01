@@ -1,63 +1,14 @@
-import { spawnSync } from "node:child_process";
-import fs from "node:fs";
+import { spawn } from "node:child_process";
 import net from "node:net";
-import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { loadWorkspaceEnv as loadWorkspaceEnvIntoProcess } from "../../../scripts/workspace-env.mjs";
+import { runWithTrackedFilesGuard } from "./tracked-files-guard.mjs";
 
 const require = createRequire(import.meta.url);
 
-function parseDotEnv(content) {
-  const env = {};
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-    const separatorIndex = trimmed.indexOf("=");
-    if (separatorIndex <= 0) {
-      continue;
-    }
-    const key = trimmed.slice(0, separatorIndex).trim();
-    let value = trimmed.slice(separatorIndex + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    env[key] = value;
-  }
-  return env;
-}
-
 function loadWorkspaceEnv() {
-  const envPath = findNearestEnvPath();
-  if (!envPath) {
-    return;
-  }
-
-  const parsed = parseDotEnv(fs.readFileSync(envPath, "utf8"));
-  for (const [key, value] of Object.entries(parsed)) {
-    if (process.env[key] === undefined) {
-      process.env[key] = value;
-    }
-  }
-}
-
-function findNearestEnvPath() {
-  let currentDir = process.cwd();
-  while (true) {
-    const candidate = path.join(currentDir, ".env");
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-    const parentDir = path.dirname(currentDir);
-    if (parentDir === currentDir) {
-      return undefined;
-    }
-    currentDir = parentDir;
-  }
+  return loadWorkspaceEnvIntoProcess({ cwd: process.cwd(), env: process.env });
 }
 
 function parseArgs(argv) {
@@ -187,6 +138,74 @@ function withDefaultNodeOptions(command) {
   return current ? `${current} --max-old-space-size=4096` : "--max-old-space-size=4096";
 }
 
+function signalToExitCode(signal) {
+  if (signal === "SIGINT") {
+    return 130;
+  }
+  if (signal === "SIGTERM") {
+    return 143;
+  }
+  return 1;
+}
+
+async function runNextCli(nextCliPath, command, forwarded, env) {
+  return await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [nextCliPath, command, ...forwarded], {
+      stdio: "inherit",
+      shell: false,
+      env,
+    });
+
+    let killTimer = null;
+    const cleanupSignalHandlers = () => {
+      process.removeListener("SIGINT", handleSigint);
+      process.removeListener("SIGTERM", handleSigterm);
+      if (killTimer) {
+        clearTimeout(killTimer);
+        killTimer = null;
+      }
+    };
+
+    const forwardSignal = (signal) => {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        return;
+      }
+      try {
+        child.kill(signal);
+      } catch {
+        return;
+      }
+      killTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          try {
+            child.kill("SIGKILL");
+          } catch {}
+        }
+      }, 5_000);
+      if (typeof killTimer.unref === "function") {
+        killTimer.unref();
+      }
+    };
+
+    const handleSigint = () => forwardSignal("SIGINT");
+    const handleSigterm = () => forwardSignal("SIGTERM");
+    process.once("SIGINT", handleSigint);
+    process.once("SIGTERM", handleSigterm);
+
+    child.once("error", (error) => {
+      cleanupSignalHandlers();
+      reject(error);
+    });
+    child.once("exit", (code, signal) => {
+      cleanupSignalHandlers();
+      resolve({
+        status: typeof code === "number" ? code : signal ? signalToExitCode(signal) : 1,
+        signal: signal ?? null,
+      });
+    });
+  });
+}
+
 async function main() {
   loadWorkspaceEnv();
 
@@ -201,19 +220,18 @@ async function main() {
     ".next";
 
   const nextCliPath = require.resolve("next/dist/bin/next");
-  const result = spawnSync(process.execPath, [nextCliPath, command, ...forwarded], {
-    stdio: "inherit",
-    shell: false,
-    env: {
-      ...process.env,
-      NEXT_DIST_DIR: resolvedDistDir,
-      NODE_OPTIONS: withDefaultNodeOptions(command),
+  const result = await runWithTrackedFilesGuard(
+    async () =>
+      runNextCli(nextCliPath, command, forwarded, {
+        ...process.env,
+        NEXT_DIST_DIR: resolvedDistDir,
+        NODE_OPTIONS: withDefaultNodeOptions(command),
+      }),
+    {
+      rootDir: process.cwd(),
+      installSignalHandlers: false,
     },
-  });
-
-  if (result.error) {
-    throw result.error;
-  }
+  );
 
   process.exit(result.status ?? 1);
 }

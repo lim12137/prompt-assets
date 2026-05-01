@@ -1,5 +1,8 @@
 import { spawnSync } from "node:child_process";
+import path from "node:path";
 import { withTestDbLock } from "./with-test-db-lock.mjs";
+import { requireWorkspaceEnvValue } from "./workspace-env.mjs";
+import { cleanupTrackedFilesFromLock } from "../apps/web/scripts/tracked-files-guard.mjs";
 
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const testDbPort = process.env.TEST_DB_PORT ?? "55435";
@@ -13,11 +16,17 @@ const testSpecPath =
   "tests/e2e/admin/prompts-management-real-db.spec.ts";
 const playwrightWebPort = process.env.PLAYWRIGHT_WEB_PORT ?? "3114";
 const playwrightWebDist = process.env.PLAYWRIGHT_WEB_DIST ?? ".next-e2e-admin-prompts-fix";
+const trackedFilesLockPath = path.join(process.cwd(), "apps/web/.next-tracked-files.lock");
+const loginTokenSecret = requireWorkspaceEnvValue("LOGIN_TOKEN_SECRET", {
+  cwd: process.cwd(),
+  env: process.env,
+});
 const testDbEnv = {
   ...process.env,
   TEST_DB_PORT: testDbPort,
   TEST_DB_CONTAINER: testDbContainer,
   TEST_DATABASE_URL: testDatabaseUrl,
+  LOGIN_TOKEN_SECRET: loginTokenSecret,
 };
 
 function runStep(args, label, env = process.env, allowFailure = false) {
@@ -55,6 +64,7 @@ await withTestDbLock(async () => {
       },
     );
   } finally {
+    cleanupTrackedFilesFromLock(trackedFilesLockPath);
     runStep(["db:test:down"], "清理提示词管理测试数据库容器", testDbEnv, true);
   }
 });
