@@ -29,8 +29,10 @@ test("admin prompts management real-db runner uses lock and isolated port/contai
   assert.ok(script.includes("TEST_DB_CONTAINER: testDbContainer"), "应透传独立容器名到各步骤");
   assert.ok(script.includes("TEST_DATABASE_URL: testDatabaseUrl"), "应透传独立测试库连接串");
   assert.ok(script.includes("LOGIN_TOKEN_SECRET: loginTokenSecret"), "应显式透传 LOGIN_TOKEN_SECRET");
+  assert.ok(script.includes("TRACKED_FILES_OWNER_TOKEN"), "应显式透传 tracked files owner token");
   assert.ok(script.includes("PLAYWRIGHT_WEB_PORT: playwrightWebPort"), "应透传独立 web 端口");
   assert.ok(script.includes("PLAYWRIGHT_WEB_DIST: playwrightWebDist"), "应透传独立构建目录");
   assert.ok(script.includes("cleanupTrackedFilesFromLock"), "runner 收尾应主动清理 tracked files");
+  assert.ok(script.includes("expectedTrackedFilesOwnerToken"), "runner 清理 tracked files 时应校验 owner");
   assert.ok(script.includes(".next-tracked-files.lock"), "runner 应显式定位 tracked files 锁文件");
 });

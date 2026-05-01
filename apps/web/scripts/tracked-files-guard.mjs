@@ -5,6 +5,7 @@ import { withTestDbLock } from "../../../scripts/with-test-db-lock.mjs";
 
 const TRACKED_FILES = ["next-env.d.ts", "tsconfig.json"];
 const DEFAULT_STALE_MS = 10 * 60 * 1000;
+const DEFAULT_OWNER_TOKEN_PREFIX = "tracked-files";
 
 export function resolveTrackedFilePaths(rootDir = process.cwd()) {
   return TRACKED_FILES.map((file) => path.join(rootDir, file));
@@ -53,12 +54,20 @@ function writeTrackedFilesLock(lockPath, payload) {
   fs.writeFileSync(lockPath, JSON.stringify(payload), "utf8");
 }
 
+function createTrackedFilesOwnerToken() {
+  return `${DEFAULT_OWNER_TOKEN_PREFIX}-${process.pid}-${Date.now()}-${Math.random()
+    .toString(16)
+    .slice(2)}`;
+}
+
 function isTrackedFilesLockStale(payload, staleMs) {
   const pid = Number(payload?.pid ?? 0);
   const createdAt = Number(payload?.createdAt ?? 0);
-  const staleByPid = pid > 0 && !isProcessAlive(pid);
-  const staleByTime = Number.isFinite(createdAt) && createdAt > 0 && Date.now() - createdAt > staleMs;
-  return staleByPid || staleByTime;
+  if (pid > 0) {
+    return !isProcessAlive(pid);
+  }
+
+  return Number.isFinite(createdAt) && createdAt > 0 && Date.now() - createdAt > staleMs;
 }
 
 export function cleanupTrackedFilesFromLock(lockPath, options = {}) {
@@ -69,6 +78,15 @@ export function cleanupTrackedFilesFromLock(lockPath, options = {}) {
 
   const staleMs = Number(options.staleMs ?? DEFAULT_STALE_MS);
   if (options.onlyIfStale && !isTrackedFilesLockStale(payload, staleMs)) {
+    return false;
+  }
+
+  const expectedTrackedFilesOwnerToken = options.expectedTrackedFilesOwnerToken;
+  if (
+    typeof expectedTrackedFilesOwnerToken === "string" &&
+    expectedTrackedFilesOwnerToken.length > 0 &&
+    payload?.trackedFilesOwnerToken !== expectedTrackedFilesOwnerToken
+  ) {
     return false;
   }
 
@@ -84,6 +102,10 @@ export async function runWithTrackedFilesGuard(run, options = {}) {
   const lockPath = options.lockPath ?? path.join(rootDir, ".next-tracked-files.lock");
   const installSignalHandlers = options.installSignalHandlers !== false;
   const staleMs = options.staleMs ?? DEFAULT_STALE_MS;
+  const trackedFilesOwnerToken =
+    options.trackedFilesOwnerToken ??
+    process.env.TRACKED_FILES_OWNER_TOKEN?.trim() ??
+    createTrackedFilesOwnerToken();
   const lock =
     options.lock ??
     ((callback) =>
@@ -103,6 +125,7 @@ export async function runWithTrackedFilesGuard(run, options = {}) {
       writeTrackedFilesLock(lockPath, {
         ...lockPayload,
         snapshot,
+        trackedFilesOwnerToken,
       });
     }
     let cleanedUp = false;
@@ -111,8 +134,9 @@ export async function runWithTrackedFilesGuard(run, options = {}) {
         return;
       }
       cleanedUp = true;
-      restoreTrackedFiles(snapshot);
-      fs.rmSync(lockPath, { force: true });
+      cleanupTrackedFilesFromLock(lockPath, {
+        expectedTrackedFilesOwnerToken: trackedFilesOwnerToken,
+      });
     };
     const signalHandler = (signal) => {
       cleanup();

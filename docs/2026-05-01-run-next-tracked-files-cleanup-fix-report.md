@@ -16,8 +16,9 @@
 
 1. `run-next` 通过 `tracked-files-guard` 包裹执行 `next` CLI，保留对子进程信号转发。
 2. `tracked-files-guard` 锁文件新增快照内容，异常退出后可用遗留锁恢复 `next-env.d.ts` 与 `tsconfig.json`。
-3. `tracked-files-guard` 在启动前会尝试清理 stale lock，并在进程 `exit` 时做同步兜底清理。
-4. 真实库管理页 E2E runner 在 Playwright 返回后，主动清理 `apps/web/.next-tracked-files.lock` 遗留。
+3. stale 判定改为“优先看持锁进程是否仍存活”，不会仅因锁存活时间长就误清仍在运行的 `run-next`。
+4. `tracked-files-guard` 在启动前会尝试清理 stale lock，并在进程 `exit` 时做同步兜底清理。
+5. 真实库管理页 E2E runner 在 Playwright 返回后，仅清理“owner 匹配且已 stale”的 tracked-files lock，避免误删别人的活锁。
 
 ## TDD 记录
 
@@ -25,6 +26,8 @@
 
 - `cleanupTrackedFilesFromLock` 应能根据 stale lock 快照恢复 tracked files
 - runner 收尾应主动清理 tracked files lock
+- 活锁即使超时也不能被误判 stale
+- owner 不匹配时不能删掉别人的活锁
 
 随后补实现，再增加一条回归：
 
@@ -40,7 +43,7 @@ node --test tests/unit/scripts/tracked-files-guard.test.mjs tests/unit/scripts/a
 
 结果摘要：
 
-- `5 passed / 0 failed`
+- `7 passed / 0 failed`
 
 ### 2. 验证 tracked files 已恢复为受控内容
 
@@ -69,14 +72,15 @@ console.log(JSON.stringify({ cleaned: cleanupTrackedFilesFromLock('./apps/web/.n
 
 ## 结论
 
-已补上两层兜底：
+已补上三层保护：
 
 - `run-next` 侧：启动前清 stale lock，运行时落快照，退出时恢复
-- runner 侧：Playwright 返回后再做一次 lock 清理
+- stale 判定侧：活锁只按“进程是否仍存活”判断，不按年龄误删
+- runner 侧：Playwright 返回后仅对 owner 匹配的 stale lock 再做一次清理
 
 这样即使 Playwright 停服时 `run-next` 父子进程退出时序不稳定，也能在下一次启动或本次 runner 收尾时把 tracked files 拉回受控状态。
 
 ## 残余风险
 
 1. 这次补的是 `apps/web/.next-tracked-files.lock` 恢复链路；如果某次异常场景下 lock 被外部提前删掉、但 `next dev` 仍在更晚时刻改写 tracked files，这条链路拿不到快照，只能靠后续新的 run 重新覆盖。
-2. 本轮只对提示词管理真实库 E2E runner 加了主动收尾；其他 real-db runner 若复用同类停服路径，建议后续统一接入同样的 cleanup 调用。
+2. 本轮只对提示词管理真实库 E2E runner 加了 owner-aware 收尾；其他 real-db runner 若复用同类停服路径，建议后续统一接入同样的 cleanup 调用。

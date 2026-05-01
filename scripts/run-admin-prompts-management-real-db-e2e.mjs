@@ -16,6 +16,8 @@ const testSpecPath =
   "tests/e2e/admin/prompts-management-real-db.spec.ts";
 const playwrightWebPort = process.env.PLAYWRIGHT_WEB_PORT ?? "3114";
 const playwrightWebDist = process.env.PLAYWRIGHT_WEB_DIST ?? ".next-e2e-admin-prompts-fix";
+const trackedFilesOwnerToken =
+  process.env.TRACKED_FILES_OWNER_TOKEN ?? `admin-prompts-real-db-${process.pid}-${Date.now()}`;
 const trackedFilesLockPath = path.join(process.cwd(), "apps/web/.next-tracked-files.lock");
 const loginTokenSecret = requireWorkspaceEnvValue("LOGIN_TOKEN_SECRET", {
   cwd: process.cwd(),
@@ -27,6 +29,7 @@ const testDbEnv = {
   TEST_DB_CONTAINER: testDbContainer,
   TEST_DATABASE_URL: testDatabaseUrl,
   LOGIN_TOKEN_SECRET: loginTokenSecret,
+  TRACKED_FILES_OWNER_TOKEN: trackedFilesOwnerToken,
 };
 
 function runStep(args, label, env = process.env, allowFailure = false) {
@@ -64,7 +67,10 @@ await withTestDbLock(async () => {
       },
     );
   } finally {
-    cleanupTrackedFilesFromLock(trackedFilesLockPath);
+    cleanupTrackedFilesFromLock(trackedFilesLockPath, {
+      onlyIfStale: true,
+      expectedTrackedFilesOwnerToken: trackedFilesOwnerToken,
+    });
     runStep(["db:test:down"], "清理提示词管理测试数据库容器", testDbEnv, true);
   }
 });
