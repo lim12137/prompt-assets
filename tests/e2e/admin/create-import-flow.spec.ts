@@ -1,4 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { signLoginToken } from "../../../apps/web/lib/auth/session.ts";
 
 type MockCategory = {
   slug: string;
@@ -36,6 +39,61 @@ function createDefaultCategories(): MockCategory[] {
       promptCount: 2,
     },
   ];
+}
+
+function readSecretFromDotEnv(): string {
+  try {
+    const content = readFileSync(join(process.cwd(), ".env"), "utf8");
+    const line = content
+      .split(/\r?\n/)
+      .find((item) => item.trim().startsWith("LOGIN_TOKEN_SECRET="));
+    return line?.split("=")[1]?.trim() ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function createAdminToken(): string {
+  const secret = process.env.LOGIN_TOKEN_SECRET?.trim() || readSecretFromDotEnv();
+  if (!secret) {
+    return "";
+  }
+
+  return signLoginToken(
+    {
+      uid: "e2e-admin-create-import",
+      name: "E2E管理员",
+      department: "测试部",
+      can_manage: true,
+      can_manage_whitelist: false,
+    },
+    { secret },
+  );
+}
+
+async function addAdminCookie(page: Page) {
+  const token = createAdminToken();
+  test.skip(!token, "未配置 LOGIN_TOKEN_SECRET，无法生成登录 token。");
+
+  await page.context().addCookies([
+    {
+      name: "auth_token",
+      value: token,
+      domain: "127.0.0.1",
+      path: "/",
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+}
+
+async function fillJsonInput(page: Page, payload: unknown) {
+  const jsonInput = page.getByLabel("JSON 内容");
+  const text = JSON.stringify(payload, null, 2);
+  await jsonInput.clear();
+  await jsonInput.fill(text);
+  await expect(jsonInput).toHaveValue(text);
+  return jsonInput;
 }
 
 test("管理页展示分类管理区并可新增/删除（含预检查确认）", async ({ page }) => {
@@ -192,29 +250,47 @@ test("管理创建页使用多选分类，且待分类不可手动选择", async
 });
 
 test("管理导入页示例与校验改为 categorySlugs[]", async ({ page }) => {
+  await addAdminCookie(page);
   let importRequestCount = 0;
+  let lastImportBody: unknown = null;
 
   await page.route("**/api/admin/prompts/import", async (route) => {
     importRequestCount += 1;
+    lastImportBody = route.request().postDataJSON();
+    const importedItems = Array.isArray(lastImportBody) ? lastImportBody : [];
+    const prompts = importedItems.map((item, index) => {
+      const record = item as Record<string, unknown>;
+      const title =
+        typeof record.title === "string" && record.title.trim().length > 0
+          ? record.title.trim()
+          : typeof record.name === "string" && record.name.trim().length > 0
+            ? record.name.trim()
+            : `mock-import-${index + 1}`;
+
+      return {
+        slug: `mock-import-${index + 1}`,
+        title,
+        summary:
+          typeof record.summary === "string" && record.summary.trim().length > 0
+            ? record.summary.trim()
+            : typeof record.description === "string"
+              ? record.description.trim()
+              : "",
+        categorySlug: "programming",
+        categorySlugs: ["programming"],
+        currentVersion: {
+          versionNo: "v0001",
+          sourceType: "create",
+        },
+      };
+    });
     await route.fulfill({
       status: 201,
       contentType: "application/json",
       body: JSON.stringify({
-        total: 1,
+        total: prompts.length,
         mode: "all_or_nothing",
-        prompts: [
-          {
-            slug: "internal-import-slug",
-            title: "E2E 导入标题",
-            summary: "用于验证导入页闭环。",
-            categorySlug: "programming",
-            categorySlugs: ["programming", "design"],
-            currentVersion: {
-              versionNo: "v0001",
-              sourceType: "create",
-            },
-          },
-        ],
+        prompts,
       }),
     });
   });
@@ -223,58 +299,63 @@ test("管理导入页示例与校验改为 categorySlugs[]", async ({ page }) =>
   const jsonInput = page.getByLabel("JSON 内容");
   await expect(jsonInput).toContainText("categorySlugs");
 
-  await jsonInput.fill(
-    JSON.stringify(
-      [
-        {
-          title: "导入旧字段",
-          summary: "使用 categorySlug 应被前端校验拒绝",
-          categorySlug: "programming",
-          content: "invalid import payload",
-        },
-      ],
-      null,
-      2,
-    ),
-  );
+  await fillJsonInput(page, [
+    {
+      title: "导入旧字段",
+      summary: "使用 categorySlug 应被前端校验拒绝",
+      categorySlug: "programming",
+      content: "invalid import payload",
+    },
+  ]);
   await page.getByRole("button", { name: "提交导入" }).click();
   await expect(page.getByRole("status")).toContainText("categorySlugs 必须为非空数组");
   expect(importRequestCount).toBe(0);
 
-  await jsonInput.fill(
-    JSON.stringify(
-      [
-        {
-          title: "导入待分类",
-          summary: "待分类不能手动导入",
-          categorySlugs: ["uncategorized"],
-          content: "invalid uncategorized",
-        },
-      ],
-      null,
-      2,
-    ),
-  );
+  await fillJsonInput(page, [
+    {
+      title: "导入待分类",
+      summary: "待分类不能手动导入",
+      categorySlugs: ["uncategorized"],
+      content: "invalid uncategorized",
+    },
+  ]);
   await page.getByRole("button", { name: "提交导入" }).click();
   await expect(page.getByRole("status")).toContainText("待分类不能手动选择");
   expect(importRequestCount).toBe(0);
 
-  await jsonInput.fill(
-    JSON.stringify(
-      [
-        {
-          title: "E2E 导入标题",
-          summary: "用于验证导入页闭环。",
-          categorySlugs: ["programming", "design"],
-          content: "请输出导入测试结论。",
-        },
-      ],
-      null,
-      2,
-    ),
-  );
+  await fillJsonInput(page, [
+    {
+      title: "E2E 导入标题",
+      summary: "用于验证导入页闭环。",
+      categorySlugs: ["programming", "design"],
+      content: "请输出导入测试结论。",
+    },
+  ]);
   await page.getByRole("button", { name: "提交导入" }).click();
   await expect(page.getByRole("status")).toContainText("导入成功");
   await expect(page.getByRole("status")).toContainText("E2E 导入标题");
   expect(importRequestCount).toBe(1);
+
+  await fillJsonInput(page, [
+    {
+      id: "cherry-js-reviewer",
+      name: "Cherry 助手标题",
+      description: "Cherry Studio 官方助手对象数组",
+      group: "编程",
+      prompt: "请输出代码审查结论和修复建议。",
+    },
+  ]);
+  await page.getByRole("button", { name: "提交导入" }).click();
+  await expect(page.getByRole("status")).toContainText("导入成功");
+  await expect(page.getByRole("status")).toContainText("Cherry 助手标题");
+  expect(importRequestCount).toBe(2);
+  expect(lastImportBody).toEqual([
+    {
+      id: "cherry-js-reviewer",
+      name: "Cherry 助手标题",
+      description: "Cherry Studio 官方助手对象数组",
+      group: "编程",
+      prompt: "请输出代码审查结论和修复建议。",
+    },
+  ]);
 });

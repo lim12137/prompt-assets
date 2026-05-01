@@ -6,15 +6,31 @@ import { BackHomeLink } from "../../_shared/back-home-link.jsx";
 const DEFAULT_IMPORT_SAMPLE = JSON.stringify(
   [
     {
-      title: "导入示例标题",
-      summary: "导入示例摘要",
+      title: "内部导入示例标题",
+      summary: "内部导入格式示例摘要",
       categorySlugs: ["programming", "design"],
       content: "你是助手，请输出结构化结果。",
+    },
+    {
+      id: "cherry-official-assistant",
+      name: "Cherry 助手示例标题",
+      description: "Cherry Studio 官方助手对象数组示例",
+      group: "编程",
+      prompt: "你是 Cherry 助手，请输出结构化结果。",
     },
   ],
   null,
   2,
 );
+
+function isCherryAssistantItem(item) {
+  const name = typeof item?.name === "string" ? item.name.trim() : "";
+  const description =
+    typeof item?.description === "string" ? item.description.trim() : "";
+  const prompt = typeof item?.prompt === "string" ? item.prompt.trim() : "";
+
+  return name.length > 0 && description.length > 0 && prompt.length > 0;
+}
 
 function validateImportItems(items) {
   if (!Array.isArray(items) || items.length === 0) {
@@ -26,6 +42,10 @@ function validateImportItems(items) {
       return "每个导入项都必须是对象。";
     }
     const record = item;
+    if (isCherryAssistantItem(record)) {
+      continue;
+    }
+
     if (
       !Array.isArray(record.categorySlugs) ||
       record.categorySlugs.length === 0 ||
@@ -121,7 +141,8 @@ export default function AdminImportPromptPage() {
           批量导入提示词
         </h1>
         <p style={{ margin: 0, color: "var(--pm-muted)" }}>
-          使用 JSON 数组批量创建首版 Prompt（全有或全无）。
+          支持两种 JSON 数组：内部导入格式（`title`/`summary`/`categorySlugs`/`content`）与
+          Cherry Studio 官方助手对象数组（`name`/`description`/`group`/`prompt`）。
         </p>
         <div style={{ display: "flex", gap: "8px" }}>
           <a className="pm-secondary-button pm-button-link" href="/admin/create">
