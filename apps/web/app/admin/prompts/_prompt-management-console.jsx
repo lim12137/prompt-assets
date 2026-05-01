@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BackHomeLink } from "../../_shared/back-home-link.jsx";
 
 function adminHeaders() {
@@ -131,9 +131,17 @@ export function AdminPromptManagementConsole() {
   const [loading, setLoading] = useState(true);
   const [busySlug, setBusySlug] = useState("");
   const [feedback, setFeedback] = useState("可在这里管理已发布/已归档提示词，并进入详情页重分类。");
+  const filtersRef = useRef(filters);
+  const latestPromptsRequestIdRef = useRef(0);
+
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
 
   useEffect(() => {
     let disposed = false;
+    const requestId = latestPromptsRequestIdRef.current + 1;
+    latestPromptsRequestIdRef.current = requestId;
 
     async function loadData() {
       setLoading(true);
@@ -142,19 +150,19 @@ export function AdminPromptManagementConsole() {
           fetchAdminCategories(),
           fetchAdminPrompts(filters),
         ]);
-        if (disposed) {
+        if (disposed || requestId !== latestPromptsRequestIdRef.current) {
           return;
         }
         setCategories(nextCategories);
         setPrompts(nextPrompts);
       } catch (error) {
-        if (disposed) {
+        if (disposed || requestId !== latestPromptsRequestIdRef.current) {
           return;
         }
         const message = error instanceof Error ? error.message : "加载失败";
         setFeedback(`加载失败：${message}`);
       } finally {
-        if (!disposed) {
+        if (!disposed && requestId === latestPromptsRequestIdRef.current) {
           setLoading(false);
         }
       }
@@ -185,7 +193,12 @@ export function AdminPromptManagementConsole() {
 
     try {
       await mutatePromptStatus(prompt.slug, action);
-      const nextPrompts = await fetchAdminPrompts(filters);
+      const requestId = latestPromptsRequestIdRef.current + 1;
+      latestPromptsRequestIdRef.current = requestId;
+      const nextPrompts = await fetchAdminPrompts(filtersRef.current);
+      if (requestId !== latestPromptsRequestIdRef.current) {
+        return;
+      }
       setPrompts(nextPrompts);
       setFeedback(
         action === "archive"

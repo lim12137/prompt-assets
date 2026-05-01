@@ -381,6 +381,124 @@ test("后台提示词管理列表在状态筛选下归档和恢复后会重新�
   await expect(page.getByTestId("admin-prompts-row-beta-prompt")).toHaveCount(0);
 });
 
+test("后台提示词管理列表在状态操作后切换筛选时不会被旧请求回填", async ({ page }) => {
+  await addAdminCookie(page);
+
+  const categories: ManagedCategory[] = [
+    {
+      slug: "programming",
+      name: "编程",
+      isSystem: false,
+      isSelectable: true,
+      isCollapsedByDefault: false,
+      promptCount: 2,
+    },
+    {
+      slug: "design",
+      name: "设计",
+      isSystem: false,
+      isSelectable: true,
+      isCollapsedByDefault: false,
+      promptCount: 1,
+    },
+  ];
+
+  const promptStore = new Map<string, ManagedPrompt>([
+    [
+      "alpha-prompt",
+      createPromptRecord({
+        slug: "alpha-prompt",
+        title: "Alpha Prompt",
+        summary: "用于验证旧请求回填竞态。",
+        status: "published",
+        primaryCategorySlug: "programming",
+        primaryCategoryName: "编程",
+        categorySlugs: ["programming"],
+        categories: [{ slug: "programming", name: "编程" }],
+      }),
+    ],
+    [
+      "beta-prompt",
+      createPromptRecord({
+        slug: "beta-prompt",
+        title: "Beta Prompt",
+        summary: "用于验证已归档筛选结果。",
+        status: "archived",
+        primaryCategorySlug: "design",
+        primaryCategoryName: "设计",
+        categorySlugs: ["design"],
+        categories: [{ slug: "design", name: "设计" }],
+      }),
+    ],
+    [
+      "gamma-prompt",
+      createPromptRecord({
+        slug: "gamma-prompt",
+        title: "Gamma Prompt",
+        summary: "只应出现在全部状态里。",
+        status: "published",
+        primaryCategorySlug: "programming",
+        primaryCategoryName: "编程",
+        categorySlugs: ["programming"],
+        categories: [{ slug: "programming", name: "编程" }],
+      }),
+    ],
+  ]);
+
+  let archiveTriggered = false;
+  let releaseStaleAllResponse;
+  const staleAllResponseReleased = new Promise((resolve) => {
+    releaseStaleAllResponse = resolve;
+  });
+
+  await page.route("**/api/admin/categories", async (route) => {
+    await fulfillJson(route, { categories });
+  });
+
+  await page.route("**/api/admin/prompts?**", async (route) => {
+    const url = new URL(route.request().url());
+    const status = url.searchParams.get("status") ?? "";
+
+    if (archiveTriggered && status === "") {
+      await staleAllResponseReleased;
+    }
+
+    const prompts = [...promptStore.values()].filter((item) =>
+      status ? item.status === status : true,
+    );
+    await fulfillJson(route, { prompts });
+  });
+
+  await page.route("**/api/admin/prompts/alpha-prompt/archive", async (route) => {
+    const prompt = promptStore.get("alpha-prompt");
+    if (!prompt) {
+      await fulfillJson(route, { error: "prompt not found" }, 404);
+      return;
+    }
+    archiveTriggered = true;
+    const updated = { ...prompt, status: "archived" as const };
+    promptStore.set(updated.slug, updated);
+    await fulfillJson(route, { prompt: updated });
+  });
+
+  await page.goto("/admin/prompts");
+  await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).toBeVisible();
+
+  await page.getByTestId("admin-prompts-row-alpha-prompt").getByRole("button", { name: "归档" }).click();
+  await page.getByRole("button", { name: "仅看已归档" }).click();
+
+  await expect(page.getByTestId("admin-prompts-row-alpha-prompt")).toBeVisible();
+  await expect(page.getByTestId("admin-prompts-row-beta-prompt")).toBeVisible();
+  await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).toHaveCount(0);
+
+  releaseStaleAllResponse?.();
+
+  await expect(page.getByRole("button", { name: "仅看已归档" })).toHaveClass(
+    /pm-filter-button-active/,
+  );
+  await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).toHaveCount(0);
+});
+
 test("后台提示词管理详情页状态标签样式跟随真实状态", async ({ page }) => {
   await addAdminCookie(page);
   await setupPromptManagementRoutes(page);
