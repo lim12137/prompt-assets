@@ -34,6 +34,7 @@
     "test:e2e:admin:create-import:db": "node ./scripts/run-admin-create-import-real-db-e2e.mjs",
     "test:e2e:admin:category-management:db": "node ./scripts/run-admin-category-management-real-db-e2e.mjs",
     "test:e2e:admin:management-flow": "node ./scripts/run-admin-real-db-e2e.mjs",
+    "test:e2e:admin:prompts:db": "node ./scripts/run-admin-prompts-management-real-db-e2e.mjs",
     "test:e2e:detail:db": "node ./scripts/run-detail-real-db-e2e.mjs"
     ,
     "perf:nav:home-detail": "node ./scripts/perf-home-detail-nav.mjs"
