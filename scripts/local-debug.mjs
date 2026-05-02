@@ -27,6 +27,8 @@ const defaultConfig = {
   webHealthIntervalMs: 1000,
   webHealthRequestTimeoutMs: 5000,
   webHealthRestarts: 1,
+  webRuntimeHealthIntervalMs: 30000,
+  webRuntimeHealthFailureThreshold: 1,
 };
 
 function toNonEmptyString(value, fallback) {
@@ -84,6 +86,18 @@ export function resolveLocalDebugConfig(env = process.env) {
     ),
     webHealthRestarts: Number(
       toNonEmptyString(env.LOCAL_WEB_HEALTH_RESTARTS, String(defaultConfig.webHealthRestarts)),
+    ),
+    webRuntimeHealthIntervalMs: Number(
+      toNonEmptyString(
+        env.LOCAL_WEB_RUNTIME_HEALTH_INTERVAL_MS,
+        String(defaultConfig.webRuntimeHealthIntervalMs),
+      ),
+    ),
+    webRuntimeHealthFailureThreshold: Number(
+      toNonEmptyString(
+        env.LOCAL_WEB_RUNTIME_HEALTH_FAILURE_THRESHOLD,
+        String(defaultConfig.webRuntimeHealthFailureThreshold),
+      ),
     ),
   };
 }
@@ -341,8 +355,13 @@ function runDockerCompose(config, args) {
   runCommand("docker", ["compose", "-f", config.composeFile, ...args]);
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms, options = {}) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    if (options.unref && typeof timer.unref === "function") {
+      timer.unref();
+    }
+  });
 }
 
 export function buildWebHealthUrl(config) {
@@ -450,9 +469,11 @@ function spawnWebProcess(config) {
   });
 }
 
-function attachPersistentWebLifecycle(child) {
+function attachPersistentWebLifecycle(state) {
   const stopChild = (signal) => {
-    if (!child.killed) {
+    const child = state.currentChild;
+    state.terminating = true;
+    if (child && !child.killed) {
       child.kill(signal);
     }
   };
@@ -462,9 +483,22 @@ function attachPersistentWebLifecycle(child) {
   process.on("SIGINT", handleSigint);
   process.on("SIGTERM", handleSigterm);
 
-  child.on("exit", (code, signal) => {
+  state.detachLifecycle = () => {
     process.removeListener("SIGINT", handleSigint);
     process.removeListener("SIGTERM", handleSigterm);
+  };
+}
+
+function attachPersistentWebExit(child, state) {
+  child.once("exit", (code, signal) => {
+    if (state.restarting) {
+      return;
+    }
+
+    if (state.detachLifecycle) {
+      state.detachLifecycle();
+    }
+
     if (signal) {
       process.kill(process.pid, signal);
       return;
@@ -536,12 +570,11 @@ async function stopChildForRestart(child, deps = {}) {
   });
 }
 
-export async function startPersistentWebWithHealth(config, deps = {}) {
+async function startWebWithStartupHealth(config, deps = {}) {
   const spawnProcess = deps.spawnWebProcess ?? spawnWebProcess;
   const waitForHealthy = deps.waitForWebHealthy ?? waitForWebHealthy;
   const reclaimWebPort = deps.reclaimWebPort ?? (() => reclaimWebPortIfNeeded(config));
   const log = deps.log ?? ((message) => console.warn(message));
-  const attachLifecycle = deps.attachLifecycle ?? attachPersistentWebLifecycle;
   const maxRestarts = Number.isFinite(config.webHealthRestarts)
     ? Math.max(0, config.webHealthRestarts)
     : defaultConfig.webHealthRestarts;
@@ -558,7 +591,6 @@ export async function startPersistentWebWithHealth(config, deps = {}) {
 
     try {
       await waitForChildWebHealthy(child, config, waitForHealthy);
-      attachLifecycle(child);
       return child;
     } catch (error) {
       lastError = error;
@@ -576,6 +608,100 @@ export async function startPersistentWebWithHealth(config, deps = {}) {
 
   const reason = lastError instanceof Error && lastError.message ? ` ${lastError.message}` : "";
   throw new Error(`Web did not become healthy after ${maxRestarts + 1} attempt(s).${reason}`);
+}
+
+async function launchHealthyWeb(config, deps = {}) {
+  return await startWebWithStartupHealth(config, {
+    ...deps,
+    startRuntimeHealthMonitor: false,
+  });
+}
+
+export async function startRuntimeWebHealthMonitor(config, state, deps = {}) {
+  const waitForHealthy = deps.waitForWebHealthy ?? waitForWebHealthy;
+  const reclaimWebPort = deps.reclaimWebPort ?? (() => reclaimWebPortIfNeeded(config));
+  const launch = deps.launchHealthyWeb ?? ((launchConfig) => launchHealthyWeb(launchConfig, deps));
+  const sleepImpl = deps.sleep ?? ((ms) => sleep(ms, { unref: true }));
+  const log = deps.log ?? ((message) => console.warn(message));
+  const intervalMs = Number.isFinite(config.webRuntimeHealthIntervalMs)
+    ? Math.max(1, config.webRuntimeHealthIntervalMs)
+    : defaultConfig.webRuntimeHealthIntervalMs;
+  const failureThreshold = Number.isFinite(config.webRuntimeHealthFailureThreshold)
+    ? Math.max(1, config.webRuntimeHealthFailureThreshold)
+    : defaultConfig.webRuntimeHealthFailureThreshold;
+  let consecutiveFailures = 0;
+
+  while (!state.terminating) {
+    await sleepImpl(intervalMs);
+    if (state.terminating) {
+      return;
+    }
+
+    try {
+      await waitForHealthy(config);
+      consecutiveFailures = 0;
+      continue;
+    } catch (error) {
+      consecutiveFailures += 1;
+      if (consecutiveFailures < failureThreshold) {
+        continue;
+      }
+
+      const message = error instanceof Error ? error.message : String(error);
+      log(`[local-debug] Web runtime health check failed: ${message}`);
+    }
+
+    state.restarting = true;
+    try {
+      await stopChildForRestart(state.currentChild, deps);
+      await reclaimWebPort();
+      log("[local-debug] Restarting web process after runtime health check failure.");
+      const child = await launch(config);
+      state.currentChild = child;
+      consecutiveFailures = 0;
+      if (!deps.attachLifecycle) {
+        attachPersistentWebExit(child, state);
+      }
+
+      const shouldContinue = await deps.onRuntimeRestart?.(child);
+      if (shouldContinue === false) {
+        return;
+      }
+    } finally {
+      state.restarting = false;
+    }
+  }
+}
+
+export async function startPersistentWebWithHealth(config, deps = {}) {
+  const child = await startWebWithStartupHealth(config, {
+    ...deps,
+    startRuntimeHealthMonitor: false,
+  });
+  const state = {
+    currentChild: child,
+    restarting: false,
+    terminating: false,
+    detachLifecycle: null,
+  };
+
+  if (deps.attachLifecycle) {
+    deps.attachLifecycle(child);
+  } else {
+    attachPersistentWebLifecycle(state);
+    attachPersistentWebExit(child, state);
+  }
+
+  const monitor = deps.startRuntimeHealthMonitor ?? startRuntimeWebHealthMonitor;
+  if (monitor !== false) {
+    Promise.resolve(monitor(config, state, deps)).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[local-debug] Web runtime health monitor failed: ${message}`);
+      process.exit(1);
+    });
+  }
+
+  return child;
 }
 
 function parseWindowsProcessInfoOutput(output) {

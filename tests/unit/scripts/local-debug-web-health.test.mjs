@@ -60,3 +60,56 @@ test("startPersistentWebWithHealth restarts project web when port listens but he
     "health:2",
   ]);
 });
+
+test("startPersistentWebWithHealth restarts running web when runtime health becomes timeout", async () => {
+  const config = localDebug.resolveLocalDebugConfig({
+    LOCAL_WEB_HEALTH_RESTARTS: "1",
+    LOCAL_WEB_RUNTIME_HEALTH_INTERVAL_MS: "1",
+  });
+  const calls = [];
+  let spawnCount = 0;
+  let healthChecks = 0;
+  let resolveRestarted;
+  const restarted = new Promise((resolve) => {
+    resolveRestarted = resolve;
+  });
+
+  await localDebug.startPersistentWebWithHealth(config, {
+    spawnWebProcess: () => {
+      spawnCount += 1;
+      const current = createChild(`web-${spawnCount}`, calls);
+      calls.push(`spawn:${current.label}`);
+      return current;
+    },
+    waitForWebHealthy: async () => {
+      healthChecks += 1;
+      calls.push(`health:${healthChecks}`);
+      if (healthChecks === 3) {
+        throw new Error("Web health check timed out");
+      }
+    },
+    reclaimWebPort: async () => {
+      calls.push("reclaim");
+    },
+    attachLifecycle: () => {},
+    sleep: async () => {},
+    log: () => {},
+    onRuntimeRestart: () => {
+      resolveRestarted();
+      return false;
+    },
+  });
+
+  await restarted;
+
+  assert.deepEqual(calls, [
+    "spawn:web-1",
+    "health:1",
+    "health:2",
+    "health:3",
+    "kill:web-1:SIGTERM",
+    "reclaim",
+    "spawn:web-2",
+    "health:4",
+  ]);
+});
