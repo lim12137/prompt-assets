@@ -122,6 +122,36 @@ export function buildStartupHealthTarget(command, forwarded, env = process.env) 
   };
 }
 
+export function buildRuntimeHealthTarget(command, forwarded, env = process.env) {
+  if (command !== "dev" && command !== "start") {
+    return undefined;
+  }
+
+  if (env.NEXT_RUNTIME_HEALTH_CHECK === "0") {
+    return undefined;
+  }
+
+  const explicitUrl = env.NEXT_RUNTIME_HEALTH_URL?.trim();
+  const bindTarget = resolveBindTarget(command, forwarded);
+  if (!explicitUrl && !bindTarget) {
+    return undefined;
+  }
+
+  const url =
+    explicitUrl ||
+    new URL(
+      env.NEXT_RUNTIME_HEALTH_PATH?.trim() || "/api/health",
+      `http://${toHealthCheckHost(bindTarget.host)}:${bindTarget.port}`,
+    ).href;
+
+  return {
+    url,
+    intervalMs: parsePositiveInt(env.NEXT_RUNTIME_HEALTH_INTERVAL_MS, 30_000),
+    requestTimeoutMs: parsePositiveInt(env.NEXT_RUNTIME_HEALTH_REQUEST_TIMEOUT_MS, 5_000),
+    failureThreshold: parsePositiveInt(env.NEXT_RUNTIME_HEALTH_FAILURE_THRESHOLD, 1),
+  };
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -166,6 +196,23 @@ async function fetchWithTimeout(url, timeoutMs, fetchImpl, signal) {
   } finally {
     signal?.removeEventListener("abort", abort);
     clearTimeout(timer);
+  }
+}
+
+export async function checkHttpHealth(target, deps = {}) {
+  const fetchImpl = deps.fetch ?? globalThis.fetch;
+  if (typeof fetchImpl !== "function") {
+    throw new Error("[run-next] fetch is not available for runtime health check");
+  }
+
+  const response = await fetchWithTimeout(
+    target.url,
+    target.requestTimeoutMs,
+    fetchImpl,
+    deps.signal,
+  );
+  if (!response?.ok) {
+    throw new Error(`HTTP ${response?.status ?? "unknown"}`);
   }
 }
 
@@ -220,6 +267,44 @@ export async function waitForHttpHealth(target, deps = {}) {
   throw new Error(
     `[run-next] Startup health check timed out after ${target.timeoutMs}ms: ${target.url}.${reason}`,
   );
+}
+
+export async function monitorRuntimeHealth(target, deps = {}) {
+  const sleepImpl = deps.sleep ?? sleep;
+  const checkHealth = deps.checkHttpHealth ?? checkHttpHealth;
+  const failureThreshold = Number.isFinite(target.failureThreshold)
+    ? Math.max(1, target.failureThreshold)
+    : 1;
+  let consecutiveFailures = 0;
+
+  while (!deps.signal?.aborted) {
+    if (sleepImpl === sleep) {
+      await sleepWithAbort(target.intervalMs, deps.signal);
+    } else {
+      await sleepImpl(target.intervalMs);
+    }
+
+    if (deps.signal?.aborted) {
+      return;
+    }
+
+    try {
+      await checkHealth(target, deps);
+      consecutiveFailures = 0;
+    } catch (error) {
+      if (deps.signal?.aborted) {
+        return;
+      }
+
+      consecutiveFailures += 1;
+      if (consecutiveFailures < failureThreshold) {
+        continue;
+      }
+
+      await deps.onFailure?.(error);
+      return;
+    }
+  }
 }
 
 async function ensureBindTargetAvailable(bindTarget) {
@@ -295,19 +380,20 @@ export async function runNextCli(nextCliPath, command, forwarded, env, options =
     const spawnProcess =
       options.spawnProcess ??
       ((commandPath, args, spawnOptions) => spawn(commandPath, args, spawnOptions));
-    const child = spawnProcess(process.execPath, [nextCliPath, command, ...forwarded], {
-      stdio: "inherit",
-      shell: false,
-      env,
-    });
-
+    let child = null;
     let killTimer = null;
-    const healthAbort = new AbortController();
+    let healthAbort = null;
     let settled = false;
+    let restartRequested = false;
+    const runtimeHealthTarget = options.runtimeHealthTarget;
+    const maxRuntimeRestarts = Number.isFinite(options.maxRuntimeRestarts)
+      ? Math.max(0, options.maxRuntimeRestarts)
+      : parsePositiveInt(env.NEXT_RUNTIME_HEALTH_RESTARTS, 1);
+    let runtimeRestartCount = 0;
     const cleanupSignalHandlers = () => {
       process.removeListener("SIGINT", handleSigint);
       process.removeListener("SIGTERM", handleSigterm);
-      healthAbort.abort();
+      healthAbort?.abort();
       if (killTimer) {
         clearTimeout(killTimer);
         killTimer = null;
@@ -315,6 +401,9 @@ export async function runNextCli(nextCliPath, command, forwarded, env, options =
     };
 
     const forwardSignal = (signal) => {
+      if (!child) {
+        return;
+      }
       if (child.exitCode !== null || child.signalCode !== null) {
         return;
       }
@@ -340,36 +429,90 @@ export async function runNextCli(nextCliPath, command, forwarded, env, options =
     process.once("SIGINT", handleSigint);
     process.once("SIGTERM", handleSigterm);
 
-    child.once("error", (error) => {
-      cleanupSignalHandlers();
-      reject(error);
-    });
-    child.once("exit", (code, signal) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      cleanupSignalHandlers();
-      resolve({
-        status: typeof code === "number" ? code : signal ? signalToExitCode(signal) : 1,
-        signal: signal ?? null,
-      });
-    });
+    const waitForHealth = options.waitForHttpHealth ?? waitForHttpHealth;
+    const startRuntimeMonitor = options.monitorRuntimeHealth ?? monitorRuntimeHealth;
+    const logError = options.logError ?? ((message) => console.error(message));
 
-    if (options.healthTarget) {
-      const waitForHealth = options.waitForHttpHealth ?? waitForHttpHealth;
-      const logError = options.logError ?? ((message) => console.error(message));
-      Promise.resolve(waitForHealth(options.healthTarget, { signal: healthAbort.signal })).catch(
-        (error) => {
+    const launchChild = () => {
+      restartRequested = false;
+      healthAbort = new AbortController();
+      child = spawnProcess(process.execPath, [nextCliPath, command, ...forwarded], {
+        stdio: "inherit",
+        shell: false,
+        env,
+      });
+
+      child.once("error", (error) => {
+        cleanupSignalHandlers();
+        reject(error);
+      });
+      child.once("exit", (code, signal) => {
+        if (settled) {
+          return;
+        }
+
+        const shouldRestart =
+          restartRequested && runtimeRestartCount < maxRuntimeRestarts && signal === "SIGTERM";
+        healthAbort?.abort();
+        if (killTimer) {
+          clearTimeout(killTimer);
+          killTimer = null;
+        }
+
+        if (shouldRestart) {
+          runtimeRestartCount += 1;
+          launchChild();
+          return;
+        }
+
+        settled = true;
+        cleanupSignalHandlers();
+        resolve({
+          status: typeof code === "number" ? code : signal ? signalToExitCode(signal) : 1,
+          signal: signal ?? null,
+        });
+      });
+
+      if (options.healthTarget) {
+        Promise.resolve(waitForHealth(options.healthTarget, { signal: healthAbort.signal })).catch(
+          (error) => {
+            if (settled || healthAbort.signal.aborted) {
+              return;
+            }
+            const message = error instanceof Error ? error.message : String(error);
+            logError(message);
+            forwardSignal("SIGTERM");
+          },
+        );
+      }
+
+      if (runtimeHealthTarget) {
+        Promise.resolve(
+          startRuntimeMonitor(runtimeHealthTarget, {
+            signal: healthAbort.signal,
+            onFailure: async (error) => {
+              if (settled || healthAbort.signal.aborted) {
+                return;
+              }
+
+              const message = error instanceof Error ? error.message : String(error);
+              logError(message);
+              restartRequested = runtimeRestartCount < maxRuntimeRestarts;
+              forwardSignal("SIGTERM");
+            },
+          }),
+        ).catch((error) => {
           if (settled || healthAbort.signal.aborted) {
             return;
           }
           const message = error instanceof Error ? error.message : String(error);
           logError(message);
           forwardSignal("SIGTERM");
-        },
-      );
-    }
+        });
+      }
+    };
+
+    launchChild();
   });
 }
 
@@ -380,6 +523,7 @@ async function main() {
   const bindTarget = resolveBindTarget(command, forwarded);
   await ensureBindTargetAvailable(bindTarget);
   const healthTarget = buildStartupHealthTarget(command, forwarded, process.env);
+  const runtimeHealthTarget = buildRuntimeHealthTarget(command, forwarded, process.env);
 
   const resolvedDistDir =
     distDir?.trim() ||
@@ -395,7 +539,7 @@ async function main() {
         NEXT_DIST_DIR: resolvedDistDir,
         NODE_OPTIONS: withDefaultNodeOptions(command),
       },
-      { healthTarget },
+      { healthTarget, runtimeHealthTarget },
     ),
     {
       rootDir: process.cwd(),

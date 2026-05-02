@@ -348,6 +348,8 @@ function buildRuntimeEnv(config) {
     LOCAL_WEB_HOST: config.webHost,
     LOCAL_WEB_PORT: config.webPort,
     LOCAL_POSTGRES_IMAGE: config.postgresImage,
+    NEXT_STARTUP_HEALTH_CHECK: "0",
+    NEXT_RUNTIME_HEALTH_CHECK: "0",
   };
 }
 
