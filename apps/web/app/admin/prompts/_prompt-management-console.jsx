@@ -36,6 +36,35 @@ function normalizePrompts(payload) {
   return Array.isArray(payload?.prompts) ? payload.prompts : [];
 }
 
+function doesPromptMatchFilters(prompt, filters) {
+  if (filters.status && prompt.status !== filters.status) {
+    return false;
+  }
+  if (filters.category && !prompt.categorySlugs.includes(filters.category)) {
+    return false;
+  }
+  const keyword = filters.keyword.trim().toLowerCase();
+  if (!keyword) {
+    return true;
+  }
+  return (
+    prompt.slug.toLowerCase().includes(keyword) ||
+    prompt.title.toLowerCase().includes(keyword) ||
+    prompt.summary.toLowerCase().includes(keyword)
+  );
+}
+
+function mergeUpdatedPromptsIntoList(currentPrompts, updatedPrompts, filters) {
+  const updatedBySlug = new Map(updatedPrompts.map((prompt) => [prompt.slug, prompt]));
+  return currentPrompts.flatMap((prompt) => {
+    const updatedPrompt = updatedBySlug.get(prompt.slug);
+    if (!updatedPrompt) {
+      return [prompt];
+    }
+    return doesPromptMatchFilters(updatedPrompt, filters) ? [updatedPrompt] : [];
+  });
+}
+
 async function fetchAdminCategories() {
   const response = await fetch("/api/admin/categories", {
     method: "GET",
@@ -85,6 +114,72 @@ async function mutatePromptStatus(slug, action) {
     );
   }
   return payload?.prompt ?? null;
+}
+
+async function mutatePromptsBatchCategories({
+  slugs,
+  addCategorySlugs = [],
+  removeCategorySlugs = [],
+}) {
+  const response = await fetch("/api/admin/prompts/batch-categories", {
+    method: "PATCH",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      slugs,
+      addCategorySlugs,
+      removeCategorySlugs,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      typeof payload.error === "string" && payload.error.length > 0
+        ? payload.error
+        : "批量分类更新失败",
+    );
+  }
+  return Array.isArray(payload?.prompts) ? payload.prompts : [];
+}
+
+async function previewDeletePromptsBatch(slugs) {
+  const response = await fetch("/api/admin/prompts/batch-delete", {
+    method: "DELETE",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      slugs,
+      dryRun: true,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      typeof payload.error === "string" && payload.error.length > 0
+        ? payload.error
+        : "批量删除预检查失败",
+    );
+  }
+  return payload;
+}
+
+async function confirmDeletePromptsBatch(slugs, confirmationToken) {
+  const response = await fetch("/api/admin/prompts/batch-delete", {
+    method: "DELETE",
+    headers: adminHeaders(),
+    body: JSON.stringify({
+      slugs,
+      confirm: true,
+      confirmationToken,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      typeof payload.error === "string" && payload.error.length > 0
+        ? payload.error
+        : "批量删除提示词失败",
+    );
+  }
+  return payload;
 }
 
 function getPromptStatusLabel(status) {
@@ -169,10 +264,15 @@ export function AdminPromptManagementConsole() {
   const [bulkActionBarHeight, setBulkActionBarHeight] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busySlug, setBusySlug] = useState("");
+  const [bulkActionType, setBulkActionType] = useState("");
+  const [bulkCategorySlugs, setBulkCategorySlugs] = useState([]);
+  const [bulkDeletePreview, setBulkDeletePreview] = useState(null);
+  const [bulkMutating, setBulkMutating] = useState(false);
   const [feedback, setFeedback] = useState("可在这里管理已发布/已归档提示词，并进入详情页重分类。");
   const filtersRef = useRef(filters);
   const bulkActionBarRef = useRef(null);
   const latestPromptsRequestIdRef = useRef(0);
+  const latestBulkDeletePreviewRequestIdRef = useRef(0);
 
   useEffect(() => {
     filtersRef.current = filters;
@@ -218,6 +318,7 @@ export function AdminPromptManagementConsole() {
     () => categories.filter((item) => item.isSelectable !== false && !item.isSystem),
     [categories],
   );
+  const visiblePromptSlugs = useMemo(() => prompts.map((prompt) => prompt.slug), [prompts]);
   const selectedCount = selectedPromptSlugs.length;
 
   useLayoutEffect(() => {
@@ -264,6 +365,150 @@ export function AdminPromptManagementConsole() {
       }
       return current.filter((item) => item !== slug);
     });
+  }
+
+  function handleOpenBulkAction(type) {
+    if (bulkMutating) {
+      return;
+    }
+    setBulkActionType(type);
+    setBulkCategorySlugs([]);
+    setBulkDeletePreview(null);
+  }
+
+  async function handleOpenBulkDeletePrompt() {
+    if (bulkMutating || selectedPromptSlugs.length === 0) {
+      return;
+    }
+    const selectedSlugsAtSubmit = [...selectedPromptSlugs];
+    const requestId = latestBulkDeletePreviewRequestIdRef.current + 1;
+    latestBulkDeletePreviewRequestIdRef.current = requestId;
+    setBulkActionType("delete-prompts");
+    setBulkDeletePreview(null);
+    setBulkMutating(true);
+    setFeedback(`正在批量删除预检查（${selectedSlugsAtSubmit.length} 项）...`);
+    try {
+      const preview = await previewDeletePromptsBatch(selectedSlugsAtSubmit);
+      if (requestId !== latestBulkDeletePreviewRequestIdRef.current) {
+        return;
+      }
+      setBulkDeletePreview(preview);
+      setFeedback(`批量删除预检查完成（${selectedSlugsAtSubmit.length} 项）`);
+    } catch (error) {
+      if (requestId !== latestBulkDeletePreviewRequestIdRef.current) {
+        return;
+      }
+      const message = error instanceof Error ? error.message : "请求失败";
+      setBulkActionType("");
+      setBulkDeletePreview(null);
+      setFeedback(`批量删除预检查失败：${message}`);
+    } finally {
+      if (requestId === latestBulkDeletePreviewRequestIdRef.current) {
+        setBulkMutating(false);
+      }
+    }
+  }
+
+  function handleSelectAllVisiblePrompts() {
+    setSelectedPromptSlugs(visiblePromptSlugs);
+  }
+
+  function handleInvertVisiblePrompts() {
+    setSelectedPromptSlugs((current) => {
+      const currentSet = new Set(current);
+      return visiblePromptSlugs.filter((slug) => !currentSet.has(slug));
+    });
+  }
+
+  function handleToggleBulkCategory(slug, checked) {
+    setBulkCategorySlugs((current) => {
+      if (checked) {
+        if (current.includes(slug)) {
+          return current;
+        }
+        return [...current, slug];
+      }
+      return current.filter((item) => item !== slug);
+    });
+  }
+
+  async function handleSubmitBulkAction() {
+    if (
+      bulkMutating ||
+      !bulkActionType ||
+      bulkCategorySlugs.length === 0 ||
+      selectedPromptSlugs.length === 0
+    ) {
+      return;
+    }
+    const requestIdAtSubmit = latestPromptsRequestIdRef.current;
+    const filtersAtSubmit = filtersRef.current;
+    setBulkMutating(true);
+    setFeedback(
+      bulkActionType === "add"
+        ? `正在批量增加分类（${selectedPromptSlugs.length} 项）...`
+        : `正在批量删除分类（${selectedPromptSlugs.length} 项）...`,
+    );
+    try {
+      const updatedPrompts = await mutatePromptsBatchCategories({
+        slugs: selectedPromptSlugs,
+        addCategorySlugs: bulkActionType === "add" ? bulkCategorySlugs : [],
+        removeCategorySlugs: bulkActionType === "remove" ? bulkCategorySlugs : [],
+      });
+      if (requestIdAtSubmit === latestPromptsRequestIdRef.current) {
+        setPrompts((current) =>
+          mergeUpdatedPromptsIntoList(current, updatedPrompts, filtersAtSubmit),
+        );
+      }
+      setFeedback(
+        bulkActionType === "add"
+          ? `已批量增加分类（${updatedPrompts.length} 项）`
+          : `已批量删除分类（${updatedPrompts.length} 项）`,
+      );
+      setSelectedPromptSlugs([]);
+      setBulkActionType("");
+      setBulkCategorySlugs([]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "请求失败";
+      setFeedback(
+        bulkActionType === "add"
+          ? `批量增加分类失败：${message}`
+          : `批量删除分类失败：${message}`,
+      );
+    } finally {
+      setBulkMutating(false);
+    }
+  }
+
+  async function handleConfirmDeletePromptsBatch() {
+    if (
+      bulkMutating ||
+      bulkActionType !== "delete-prompts" ||
+      !bulkDeletePreview?.confirmationToken ||
+      selectedPromptSlugs.length === 0
+    ) {
+      return;
+    }
+
+    const selectedSlugsAtSubmit = [...selectedPromptSlugs];
+    setBulkMutating(true);
+    setFeedback(`正在批量删除提示词（${selectedSlugsAtSubmit.length} 项）...`);
+    try {
+      await confirmDeletePromptsBatch(selectedSlugsAtSubmit, bulkDeletePreview.confirmationToken);
+      setPrompts((current) =>
+        current.filter((prompt) => !selectedSlugsAtSubmit.includes(prompt.slug)),
+      );
+      setSelectedPromptSlugs([]);
+      setBulkActionType("");
+      setBulkCategorySlugs([]);
+      setBulkDeletePreview(null);
+      setFeedback(`已批量删除提示词（${selectedSlugsAtSubmit.length} 项）`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "请求失败";
+      setFeedback(`批量删除提示词失败：${message}`);
+    } finally {
+      setBulkMutating(false);
+    }
   }
 
   async function handleStatusAction(prompt, action) {
@@ -422,6 +667,25 @@ export function AdminPromptManagementConsole() {
             </select>
           </label>
         </div>
+
+        {!loading && visiblePromptSlugs.length > 0 ? (
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="pm-secondary-button"
+              onClick={handleSelectAllVisiblePrompts}
+            >
+              全选
+            </button>
+            <button
+              type="button"
+              className="pm-secondary-button"
+              onClick={handleInvertVisiblePrompts}
+            >
+              反选
+            </button>
+          </div>
+        ) : null}
       </section>
 
       {loading ? (
@@ -564,35 +828,162 @@ export function AdminPromptManagementConsole() {
               id="admin-prompts-bulk-action-note"
               style={{ margin: 0, color: "var(--pm-muted)", fontSize: "13px" }}
             >
-              批量操作暂未接入，当前仅保留 UI 占位。
+              批量更新所选提示词的分类标签，不会刷新整页。
             </p>
           </div>
 
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             <button
               type="button"
-              className="pm-secondary-button pm-placeholder-action"
-              disabled
+              className="pm-secondary-button"
               aria-describedby="admin-prompts-bulk-action-note"
+              disabled={bulkMutating}
+              onClick={() => handleOpenBulkAction("add")}
             >
               批量增加分类
             </button>
             <button
               type="button"
-              className="pm-secondary-button pm-placeholder-action"
-              disabled
+              className="pm-secondary-button"
               aria-describedby="admin-prompts-bulk-action-note"
+              disabled={bulkMutating}
+              onClick={() => handleOpenBulkAction("remove")}
             >
               批量删除分类
             </button>
             <button
               type="button"
+              className="pm-secondary-button"
+              aria-describedby="admin-prompts-bulk-action-note"
+              disabled={bulkMutating}
+              onClick={() => void handleOpenBulkDeletePrompt()}
+            >
+              批量删除提示词
+            </button>
+            <button
+              type="button"
               className="pm-primary-button"
+              disabled={bulkMutating}
               onClick={() => setSelectedPromptSlugs([])}
             >
               清空选择
             </button>
           </div>
+
+          {bulkActionType === "add" || bulkActionType === "remove" ? (
+            <div
+              style={{
+                marginTop: "8px",
+                borderTop: "1px solid var(--pm-border)",
+                paddingTop: "10px",
+                display: "grid",
+                gap: "10px",
+              }}
+            >
+              <p style={{ margin: 0, color: "var(--pm-title)", fontSize: "14px" }}>
+                {bulkActionType === "add" ? "选择要增加的分类" : "选择要删除的分类"}
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "10px 14px" }}>
+                {selectableCategories.map((category) => (
+                  <label
+                    key={`bulk-category-${category.slug}`}
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={bulkCategorySlugs.includes(category.slug)}
+                      onChange={(event) =>
+                        handleToggleBulkCategory(category.slug, event.target.checked)
+                      }
+                    />
+                    {category.name}
+                  </label>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  className="pm-primary-button"
+                  disabled={bulkMutating || bulkCategorySlugs.length === 0}
+                  onClick={() => void handleSubmitBulkAction()}
+                >
+                  {bulkMutating
+                    ? bulkActionType === "add"
+                      ? "增加中..."
+                      : "删除中..."
+                    : bulkActionType === "add"
+                      ? "确认增加分类"
+                      : "确认删除分类"}
+                </button>
+                <button
+                  type="button"
+                  className="pm-secondary-button"
+                  disabled={bulkMutating}
+                  onClick={() => {
+                    setBulkActionType("");
+                    setBulkCategorySlugs([]);
+                    setBulkDeletePreview(null);
+                  }}
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {bulkActionType === "delete-prompts" ? (
+            <div
+              className="pm-bulk-delete-risk-panel"
+              style={{
+                marginTop: "8px",
+                borderTop: "1px solid var(--pm-border)",
+                paddingTop: "10px",
+                display: "grid",
+                gap: "10px",
+              }}
+            >
+              <p style={{ margin: 0, color: "var(--pm-title)", fontSize: "14px", fontWeight: 600 }}>
+                删除后不可恢复，请确认预检查结果
+              </p>
+              {bulkDeletePreview ? (
+                <>
+                  <p style={{ margin: 0, color: "var(--pm-muted)", fontSize: "13px" }}>
+                    将删除 {bulkDeletePreview?.foundPrompts?.length ?? selectedCount} 条提示词，关联数据也会被移除。
+                  </p>
+                  <p style={{ margin: 0, color: "var(--pm-muted)", fontSize: "13px" }}>
+                    关联汇总：版本 {bulkDeletePreview?.summary?.versions ?? 0} · 投稿{" "}
+                    {bulkDeletePreview?.summary?.submissions ?? 0} · 收藏{" "}
+                    {bulkDeletePreview?.summary?.likes ?? 0}
+                  </p>
+                </>
+              ) : (
+                <p style={{ margin: 0, color: "var(--pm-muted)", fontSize: "13px" }}>
+                  正在加载预检查结果...
+                </p>
+              )}
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  className="pm-primary-button"
+                  disabled={bulkMutating || !bulkDeletePreview?.confirmationToken}
+                  onClick={() => void handleConfirmDeletePromptsBatch()}
+                >
+                  {bulkMutating ? "删除中..." : "确认删除提示词"}
+                </button>
+                <button
+                  type="button"
+                  className="pm-secondary-button"
+                  disabled={bulkMutating}
+                  onClick={() => {
+                    setBulkActionType("");
+                    setBulkDeletePreview(null);
+                  }}
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          ) : null}
         </section>
       ) : null}
     </main>

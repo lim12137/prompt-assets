@@ -637,6 +637,19 @@ body {
   transform: translateX(-50%);
 }
 
+.pm-bulk-delete-risk-panel {
+  border-top-color: #f59e0b;
+}
+
+.pm-bulk-delete-risk-panel .pm-primary-button {
+  border-color: #dc2626;
+  background-color: #dc2626;
+}
+
+.pm-bulk-delete-risk-panel .pm-primary-button:hover {
+  background-color: #b91c1c;
+}
+
 @media (max-width: 768px) {
   .pm-floating-action-bar {
     left: 12px;

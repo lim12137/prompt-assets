@@ -109,7 +109,20 @@ async function fulfillJson(route: Route, body: unknown, status = 200) {
   });
 }
 
-async function setupPromptManagementRoutes(page: Page) {
+async function setupPromptManagementRoutes(
+  page: Page,
+  options?: {
+    onPromptsListRequest?: (url: URL) => void | Promise<void>;
+    onBatchCategoriesRequest?: () => void | Promise<void>;
+    onBatchDeleteRequest?: (payload: {
+      slugs?: string[];
+      dryRun?: boolean;
+      confirm?: boolean;
+      confirmationToken?: string;
+    }) => void | Promise<void>;
+    waitForBatchCategoriesResponse?: Promise<void>;
+  },
+) {
   const categories: ManagedCategory[] = [
     {
       slug: "content-creation",
@@ -189,6 +202,7 @@ async function setupPromptManagementRoutes(page: Page) {
 
   await page.route("**/api/admin/prompts?**", async (route) => {
     const url = new URL(route.request().url());
+    await options?.onPromptsListRequest?.(url);
     const status = url.searchParams.get("status");
     const category = url.searchParams.get("category");
     const keyword = (url.searchParams.get("keyword") ?? "").trim().toLowerCase();
@@ -318,6 +332,125 @@ async function setupPromptManagementRoutes(page: Page) {
         dailyInteractions: 1,
       },
     });
+  });
+
+  await page.route("**/api/admin/prompts/batch-categories", async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.fallback();
+      return;
+    }
+    await options?.onBatchCategoriesRequest?.();
+    await options?.waitForBatchCategoriesResponse;
+    const payload = route.request().postDataJSON() as {
+      slugs?: string[];
+      addCategorySlugs?: string[];
+      removeCategorySlugs?: string[];
+    };
+    const slugs = Array.isArray(payload.slugs) ? payload.slugs : [];
+    const addCategorySlugs = Array.isArray(payload.addCategorySlugs)
+      ? payload.addCategorySlugs
+      : [];
+    const removeCategorySlugs = Array.isArray(payload.removeCategorySlugs)
+      ? payload.removeCategorySlugs
+      : [];
+
+    const prompts = slugs
+      .map((slug) => promptStore.get(slug))
+      .filter((item): item is ManagedPrompt => Boolean(item))
+      .map((prompt) => {
+        const merged = prompt.categorySlugs
+          .filter((slug) => !removeCategorySlugs.includes(slug))
+          .concat(addCategorySlugs)
+          .filter((slug, index, all) => slug && all.indexOf(slug) === index);
+        const fallback = merged.length > 0 ? merged : ["uncategorized"];
+        const nextCategories = categories
+          .filter((item) => fallback.includes(item.slug))
+          .map((item) => ({ slug: item.slug, name: item.name }));
+        const updated: ManagedPrompt = {
+          ...prompt,
+          category: nextCategories[0] ?? { slug: "uncategorized", name: "待分类" },
+          categories: nextCategories,
+          categorySlugs: fallback,
+        };
+        promptStore.set(updated.slug, updated);
+        return updated;
+      });
+
+    await fulfillJson(route, { prompts });
+  });
+
+  await page.route("**/api/admin/prompts/batch-delete", async (route) => {
+    if (route.request().method() !== "DELETE") {
+      await route.fallback();
+      return;
+    }
+
+    const payload = route.request().postDataJSON() as {
+      slugs?: string[];
+      dryRun?: boolean;
+      confirm?: boolean;
+      confirmationToken?: string;
+    };
+    await options?.onBatchDeleteRequest?.(payload);
+
+    const slugs = Array.isArray(payload.slugs) ? payload.slugs : [];
+    if (payload.dryRun === true) {
+      const foundPrompts = slugs
+        .map((slug) => promptStore.get(slug))
+        .filter((item): item is ManagedPrompt => Boolean(item))
+        .map((item) => ({
+          slug: item.slug,
+          title: item.title,
+          status: item.status,
+          primaryCategory: item.categories[0] ?? { slug: "uncategorized", name: "待分类" },
+          categories: item.categories,
+          relatedCounts: {
+            versions: 1,
+            submissions: 0,
+            likes: 0,
+            versionLikes: 0,
+            versionScores: 0,
+            dailyInteractions: 0,
+          },
+        }));
+      await fulfillJson(route, {
+        dryRun: true,
+        slugs,
+        foundPrompts,
+        summary: {
+          versions: foundPrompts.length,
+          submissions: 0,
+          likes: 0,
+          versionLikes: 0,
+          versionScores: 0,
+          dailyInteractions: 0,
+        },
+        confirmationToken: "batch-delete-token",
+        confirmationExpiresAt: "2026-05-01T10:00:00.000Z",
+      });
+      return;
+    }
+
+    if (payload.confirm === true && payload.confirmationToken === "batch-delete-token") {
+      for (const slug of slugs) {
+        promptStore.delete(slug);
+      }
+      await fulfillJson(route, {
+        deleted: true,
+        slugs,
+        deletedCounts: {
+          versions: slugs.length,
+          submissions: 0,
+          likes: 0,
+          versionLikes: 0,
+          versionScores: 0,
+          dailyInteractions: 0,
+        },
+      });
+      return;
+    }
+
+    await fulfillJson(route, { error: "invalid confirmation token" }, 400);
   });
 }
 
@@ -578,7 +711,35 @@ test("后台提示词管理列表支持多选并显示浮动操作条", async ({
   await expect(page.getByLabel("选择提示词 Beta Prompt")).not.toBeChecked();
 });
 
-test("后台提示词管理列表在长列表中仍固定显示批量条且批量按钮为禁用态", async ({
+test("后台提示词管理列表支持基于当前筛选结果集全选与反选", async ({ page }) => {
+  await addAdminCookie(page);
+  await setupPromptManagementRoutes(page);
+
+  await page.goto("/admin/prompts");
+  await page.getByRole("button", { name: "仅看已发布" }).click();
+
+  await expect(page.getByTestId("admin-prompts-row-alpha-prompt")).toBeVisible();
+  await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).toBeVisible();
+  await expect(page.getByTestId("admin-prompts-row-beta-prompt")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "全选" }).click();
+  await expect(page.getByLabel("选择提示词 Alpha Prompt")).toBeChecked();
+  await expect(page.getByLabel("选择提示词 Gamma Prompt")).toBeChecked();
+  await expect(page.getByTestId("admin-prompts-bulk-action-bar")).toContainText("已选 2 项");
+
+  await page.getByRole("button", { name: "反选" }).click();
+  await expect(page.getByLabel("选择提示词 Alpha Prompt")).not.toBeChecked();
+  await expect(page.getByLabel("选择提示词 Gamma Prompt")).not.toBeChecked();
+  await expect(page.getByTestId("admin-prompts-bulk-action-bar")).toHaveCount(0);
+
+  await page.getByLabel("选择提示词 Alpha Prompt").check();
+  await page.getByRole("button", { name: "反选" }).click();
+  await expect(page.getByLabel("选择提示词 Alpha Prompt")).not.toBeChecked();
+  await expect(page.getByLabel("选择提示词 Gamma Prompt")).toBeChecked();
+  await expect(page.getByTestId("admin-prompts-bulk-action-bar")).toContainText("已选 1 项");
+});
+
+test("后台提示词管理列表在长列表中仍固定显示批量条", async ({
   page,
 }) => {
   await addAdminCookie(page);
@@ -594,13 +755,194 @@ test("后台提示词管理列表在长列表中仍固定显示批量条且批�
   const actionBar = page.getByTestId("admin-prompts-bulk-action-bar");
   await expect(actionBar).toHaveCSS("position", "fixed");
   await expect(actionBar).toBeInViewport();
-  await expect(actionBar).toContainText("批量操作暂未接入");
-  await expect(actionBar.getByRole("button", { name: "批量增加分类" })).toBeDisabled();
-  await expect(actionBar.getByRole("button", { name: "批量删除分类" })).toBeDisabled();
+  await expect(actionBar.getByRole("button", { name: "批量增加分类" })).toBeEnabled();
+  await expect(actionBar.getByRole("button", { name: "批量删除分类" })).toBeEnabled();
 
   await page.getByTestId("admin-prompts-row-long-prompt-20").scrollIntoViewIfNeeded();
   await expect(actionBar).toBeInViewport();
   await expect(actionBar).toContainText("已选 1 项");
+});
+
+test("后台提示词管理列表支持批量增加和删除分类并局部更新标签", async ({ page }) => {
+  await addAdminCookie(page);
+  let promptsListRequestCount = 0;
+  await setupPromptManagementRoutes(page, {
+    onPromptsListRequest(url) {
+      if (url.pathname === "/api/admin/prompts") {
+        promptsListRequestCount += 1;
+      }
+    },
+  });
+  await page.addInitScript(() => {
+    window.__pmPageLoadCount = (window.__pmPageLoadCount ?? 0) + 1;
+  });
+
+  await page.goto("/admin/prompts");
+  await page.getByRole("button", { name: "仅看已发布" }).click();
+  await page.getByLabel("关键词").fill("prompt");
+
+  const beforeUrl = page.url();
+  const beforeLoadCount = await page.evaluate(() => window.__pmPageLoadCount ?? 0);
+  await expect(page.getByRole("button", { name: "仅看已发布" })).toHaveClass(
+    /pm-filter-button-active/,
+  );
+  await expect(page.getByLabel("分类")).toHaveValue("");
+  await expect(page.getByLabel("关键词")).toHaveValue("prompt");
+
+  await page.getByLabel("选择提示词 Alpha Prompt").check();
+  await page.getByLabel("选择提示词 Gamma Prompt").check();
+
+  const actionBar = page.getByTestId("admin-prompts-bulk-action-bar");
+  await actionBar.getByRole("button", { name: "批量增加分类" }).click();
+  await page.getByLabel("内容创作").check();
+  await page.getByLabel("设计").check();
+  await page.getByRole("button", { name: "确认增加分类" }).click();
+
+  await expect(page.getByRole("status")).toContainText("已批量增加分类");
+  await expect(page.getByTestId("admin-prompts-row-alpha-prompt")).toContainText("内容创作");
+  await expect(page.getByTestId("admin-prompts-row-alpha-prompt")).toContainText("设计");
+  await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).toContainText("内容创作");
+  await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).toContainText("设计");
+  await expect(page.getByTestId("admin-prompts-bulk-action-bar")).toHaveCount(0);
+
+  await page.getByLabel("选择提示词 Alpha Prompt").check();
+  await page.getByLabel("选择提示词 Gamma Prompt").check();
+
+  await page.getByTestId("admin-prompts-bulk-action-bar").getByRole("button", { name: "批量删除分类" }).click();
+  await page.getByLabel("内容创作").check();
+  await page.getByRole("button", { name: "确认删除分类" }).click();
+
+  await expect(page.getByRole("status")).toContainText("已批量删除分类");
+  await expect(page.getByTestId("admin-prompts-row-alpha-prompt")).not.toContainText("内容创作");
+  await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).not.toContainText("内容创作");
+  await expect(page.getByTestId("admin-prompts-row-alpha-prompt")).toContainText("设计");
+  await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).toContainText("设计");
+
+  await expect(page).toHaveURL(beforeUrl);
+  await expect(page.getByRole("button", { name: "仅看已发布" })).toHaveClass(
+    /pm-filter-button-active/,
+  );
+  await expect(page.getByLabel("分类")).toHaveValue("");
+  await expect(page.getByLabel("关键词")).toHaveValue("prompt");
+  const afterLoadCount = await page.evaluate(() => window.__pmPageLoadCount ?? 0);
+  expect(afterLoadCount).toBe(beforeLoadCount);
+  expect(promptsListRequestCount).toBe(3);
+});
+
+test("后台提示词管理列表在分类筛选下批量分类后会收敛结果", async ({ page }) => {
+  await addAdminCookie(page);
+  await setupPromptManagementRoutes(page);
+
+  await page.goto("/admin/prompts");
+  await page.getByLabel("分类").selectOption("programming");
+
+  const alphaRow = page.getByTestId("admin-prompts-row-alpha-prompt");
+  const gammaRow = page.getByTestId("admin-prompts-row-gamma-prompt");
+  const betaRow = page.getByTestId("admin-prompts-row-beta-prompt");
+  await expect(alphaRow).toBeVisible();
+  await expect(gammaRow).toHaveCount(0);
+  await expect(betaRow).toHaveCount(0);
+
+  await page.getByLabel("选择提示词 Alpha Prompt").check();
+  await page.getByTestId("admin-prompts-bulk-action-bar").getByRole("button", { name: "批量删除分类" }).click();
+  await page.getByLabel("编程").check();
+  await page.getByRole("button", { name: "确认删除分类" }).click();
+
+  await expect(page.getByRole("status")).toContainText("已批量删除分类");
+  await expect(alphaRow).toHaveCount(0);
+  await expect(gammaRow).toHaveCount(0);
+  await expect(betaRow).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 2, name: "当前筛选下没有提示词" })).toBeVisible();
+  await expect(page.getByLabel("分类")).toHaveValue("programming");
+  await expect(page).toHaveURL(/\/admin\/prompts$/);
+});
+
+test("后台提示词管理列表在批量分类请求未返回时切换筛选不会被旧响应污染", async ({ page }) => {
+  await addAdminCookie(page);
+
+  let releaseBatchCategoriesResponse: (() => void) | undefined;
+  const batchCategoriesResponseReleased = new Promise<void>((resolve) => {
+    releaseBatchCategoriesResponse = resolve;
+  });
+
+  await setupPromptManagementRoutes(page, {
+    waitForBatchCategoriesResponse: batchCategoriesResponseReleased,
+  });
+
+  await page.goto("/admin/prompts");
+  await page.getByRole("button", { name: "仅看已发布" }).click();
+  await page.getByLabel("选择提示词 Alpha Prompt").check();
+  await page.getByTestId("admin-prompts-bulk-action-bar").getByRole("button", { name: "批量增加分类" }).click();
+  await page.getByLabel("设计").check();
+  await page.getByRole("button", { name: "确认增加分类" }).click();
+
+  await expect(page.getByRole("status")).toContainText("正在批量增加分类");
+  await page.getByRole("button", { name: "仅看已归档" }).click();
+  await expect(page.getByRole("button", { name: "仅看已归档" })).toHaveClass(
+    /pm-filter-button-active/,
+  );
+  await expect(page.getByTestId("admin-prompts-row-beta-prompt")).toBeVisible();
+  await expect(page.getByTestId("admin-prompts-row-alpha-prompt")).toHaveCount(0);
+  await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).toHaveCount(0);
+
+  releaseBatchCategoriesResponse?.();
+
+  await expect(page.getByRole("button", { name: "仅看已归档" })).toHaveClass(
+    /pm-filter-button-active/,
+  );
+  await expect(page.getByTestId("admin-prompts-row-beta-prompt")).toBeVisible();
+  await expect(page.getByTestId("admin-prompts-row-alpha-prompt")).toHaveCount(0);
+  await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).toHaveCount(0);
+});
+
+test("后台提示词管理列表支持二段式批量删除提示词并收敛当前列表", async ({ page }) => {
+  await addAdminCookie(page);
+  const batchDeleteRequests: Array<{ dryRun?: boolean; confirm?: boolean }> = [];
+  await setupPromptManagementRoutes(page, {
+    onBatchDeleteRequest(payload) {
+      batchDeleteRequests.push({
+        dryRun: payload.dryRun === true,
+        confirm: payload.confirm === true,
+      });
+    },
+  });
+  await page.addInitScript(() => {
+    window.__pmPageLoadCount = (window.__pmPageLoadCount ?? 0) + 1;
+  });
+
+  await page.goto("/admin/prompts");
+  await page.getByRole("button", { name: "仅看已发布" }).click();
+  await page.getByLabel("关键词").fill("prompt");
+  const beforeUrl = page.url();
+  const beforeLoadCount = await page.evaluate(() => window.__pmPageLoadCount ?? 0);
+
+  await page.getByLabel("选择提示词 Alpha Prompt").check();
+  await page.getByLabel("选择提示词 Gamma Prompt").check();
+  const actionBar = page.getByTestId("admin-prompts-bulk-action-bar");
+  await actionBar.getByRole("button", { name: "批量删除提示词" }).click();
+
+  await expect(page.getByText("删除后不可恢复")).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("批量删除预检查完成");
+  expect(batchDeleteRequests).toEqual([{ dryRun: true, confirm: false }]);
+
+  await page.getByRole("button", { name: "确认删除提示词" }).click();
+  await expect(page.getByRole("status")).toContainText("已批量删除提示词（2 项）");
+  expect(batchDeleteRequests).toEqual([
+    { dryRun: true, confirm: false },
+    { dryRun: false, confirm: true },
+  ]);
+
+  await expect(page.getByTestId("admin-prompts-row-alpha-prompt")).toHaveCount(0);
+  await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 2, name: "当前筛选下没有提示词" })).toBeVisible();
+  await expect(page.getByTestId("admin-prompts-bulk-action-bar")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "仅看已发布" })).toHaveClass(
+    /pm-filter-button-active/,
+  );
+  await expect(page.getByLabel("关键词")).toHaveValue("prompt");
+  await expect(page).toHaveURL(beforeUrl);
+  const afterLoadCount = await page.evaluate(() => window.__pmPageLoadCount ?? 0);
+  expect(afterLoadCount).toBe(beforeLoadCount);
 });
 
 test("后台提示词管理详情页状态标签样式跟随真实状态", async ({ page }) => {
