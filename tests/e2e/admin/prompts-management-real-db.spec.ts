@@ -224,7 +224,7 @@ test("真实 DB: 列表页支持二段式批量删除提示词并保持当前筛
   });
   await page.goto("/admin/prompts");
   await page.getByRole("button", { name: "仅看已发布" }).click();
-  await page.getByLabel("关键词").fill(`真实db批量删除`);
+  await page.getByLabel("关键词").fill(String(marker));
   const beforeUrl = page.url();
   const beforeLoadCount = await page.evaluate(() => window.__pmPageLoadCount ?? 0);
 
@@ -238,9 +238,23 @@ test("真实 DB: 列表页支持二段式批量删除提示词并保持当前筛
   await page.getByTestId("admin-prompts-bulk-action-bar").getByRole("button", { name: "批量删除提示词" }).click();
 
   await expect(page.getByText("删除后不可恢复")).toBeVisible();
+  await expect(page.getByText("删除的是提示词本体，不是分类关联")).toBeVisible();
   await expect(page.getByRole("status")).toContainText("批量删除预检查完成");
 
+  const refreshListResponse = page.waitForResponse((response) => {
+    if (response.request().method() !== "GET") {
+      return false;
+    }
+    const url = new URL(response.url());
+    return (
+      url.pathname === "/api/admin/prompts" &&
+      url.searchParams.get("status") === "published" &&
+      url.searchParams.get("keyword") === String(marker)
+    );
+  });
+
   await page.getByRole("button", { name: "确认删除提示词" }).click();
+  await expect((await refreshListResponse).ok()).toBe(true);
   await expect(page.getByRole("status")).toContainText("已批量删除提示词（2 项）");
   await expect(rowA).toHaveCount(0);
   await expect(rowB).toHaveCount(0);
@@ -249,7 +263,7 @@ test("真实 DB: 列表页支持二段式批量删除提示词并保持当前筛
   await expect(page.getByRole("button", { name: "仅看已发布" })).toHaveClass(
     /pm-filter-button-active/,
   );
-  await expect(page.getByLabel("关键词")).toHaveValue("真实db批量删除");
+  await expect(page.getByLabel("关键词")).toHaveValue(String(marker));
   await expect(page).toHaveURL(beforeUrl);
   const afterLoadCount = await page.evaluate(() => window.__pmPageLoadCount ?? 0);
   expect(afterLoadCount).toBe(beforeLoadCount);

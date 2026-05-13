@@ -898,7 +898,15 @@ test("后台提示词管理列表在批量分类请求未返回时切换筛选�
 test("后台提示词管理列表支持二段式批量删除提示词并收敛当前列表", async ({ page }) => {
   await addAdminCookie(page);
   const batchDeleteRequests: Array<{ dryRun?: boolean; confirm?: boolean }> = [];
+  const promptsListRequests: Array<{ status: string; category: string; keyword: string }> = [];
   await setupPromptManagementRoutes(page, {
+    onPromptsListRequest(url) {
+      promptsListRequests.push({
+        status: url.searchParams.get("status") ?? "",
+        category: url.searchParams.get("category") ?? "",
+        keyword: url.searchParams.get("keyword") ?? "",
+      });
+    },
     onBatchDeleteRequest(payload) {
       batchDeleteRequests.push({
         dryRun: payload.dryRun === true,
@@ -922,15 +930,23 @@ test("后台提示词管理列表支持二段式批量删除提示词并收敛�
   await actionBar.getByRole("button", { name: "批量删除提示词" }).click();
 
   await expect(page.getByText("删除后不可恢复")).toBeVisible();
+  await expect(page.getByText("删除的是提示词本体，不是分类关联")).toBeVisible();
   await expect(page.getByRole("status")).toContainText("批量删除预检查完成");
   expect(batchDeleteRequests).toEqual([{ dryRun: true, confirm: false }]);
 
+  const promptsListRequestCountBeforeDelete = promptsListRequests.length;
   await page.getByRole("button", { name: "确认删除提示词" }).click();
   await expect(page.getByRole("status")).toContainText("已批量删除提示词（2 项）");
   expect(batchDeleteRequests).toEqual([
     { dryRun: true, confirm: false },
     { dryRun: false, confirm: true },
   ]);
+  expect(promptsListRequests).toHaveLength(promptsListRequestCountBeforeDelete + 1);
+  expect(promptsListRequests.at(-1)).toEqual({
+    status: "published",
+    category: "",
+    keyword: "prompt",
+  });
 
   await expect(page.getByTestId("admin-prompts-row-alpha-prompt")).toHaveCount(0);
   await expect(page.getByTestId("admin-prompts-row-gamma-prompt")).toHaveCount(0);

@@ -495,9 +495,13 @@ export function AdminPromptManagementConsole() {
     setFeedback(`正在批量删除提示词（${selectedSlugsAtSubmit.length} 项）...`);
     try {
       await confirmDeletePromptsBatch(selectedSlugsAtSubmit, bulkDeletePreview.confirmationToken);
-      setPrompts((current) =>
-        current.filter((prompt) => !selectedSlugsAtSubmit.includes(prompt.slug)),
-      );
+      const requestId = latestPromptsRequestIdRef.current + 1;
+      latestPromptsRequestIdRef.current = requestId;
+      const nextPrompts = await fetchAdminPrompts(filtersRef.current);
+      if (requestId !== latestPromptsRequestIdRef.current) {
+        return;
+      }
+      setPrompts(nextPrompts);
       setSelectedPromptSlugs([]);
       setBulkActionType("");
       setBulkCategorySlugs([]);
@@ -949,6 +953,9 @@ export function AdminPromptManagementConsole() {
                 <>
                   <p style={{ margin: 0, color: "var(--pm-muted)", fontSize: "13px" }}>
                     将删除 {bulkDeletePreview?.foundPrompts?.length ?? selectedCount} 条提示词，关联数据也会被移除。
+                  </p>
+                  <p style={{ margin: 0, color: "var(--pm-muted)", fontSize: "13px" }}>
+                    删除的是提示词本体，不是分类关联。
                   </p>
                   <p style={{ margin: 0, color: "var(--pm-muted)", fontSize: "13px" }}>
                     关联汇总：版本 {bulkDeletePreview?.summary?.versions ?? 0} · 投稿{" "}
