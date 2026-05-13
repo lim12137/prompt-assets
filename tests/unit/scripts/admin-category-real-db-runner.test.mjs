@@ -19,14 +19,27 @@ test("admin category real-db runner uses lock and isolated port/container strate
     "应接入 withTestDbLock 全程加锁",
   );
   assert.ok(script.includes("await withTestDbLock(async () => {"), "应使用 withTestDbLock 包裹主流程");
-  assert.ok(script.includes('const testDbPort = process.env.TEST_DB_PORT ?? "55434";'));
+  assert.ok(script.includes("const explicitTestDbMode = process.env.TEST_DB_MODE ?? process.env.TEST_DB_PREPARE_MODE;"));
+  assert.ok(script.includes('const testDbMode = process.env.TEST_DB_MODE ?? explicitTestDbMode ?? "remote";'));
+  assert.ok(script.includes('const testDbPort = process.env.TEST_DB_PORT ?? (useDockerDefaults ? "55434" : "55432");'));
   assert.match(
     script,
     /const testDbContainer\s*=\s*process\.env\.TEST_DB_CONTAINER\s*\?\?\s*"prompt-management-test-db-admin-category";/,
   );
   assert.ok(script.includes("TEST_DB_PREPARE_SKIP_LOCK: \"1\""), "prepare 阶段应跳过内层锁");
   assert.ok(script.includes("TEST_DB_PORT: testDbPort"), "应透传独立端口到各步骤");
+  assert.ok(script.includes("TEST_DB_HOST: testDbHost"), "应透传测试库主机到各步骤");
+  assert.ok(script.includes("TEST_DB_USER: testDbUser"), "应透传测试库用户到各步骤");
+  assert.ok(script.includes("TEST_DB_PASSWORD: testDbPassword"), "应透传测试库密码到各步骤");
+  assert.ok(script.includes("TEST_DB_MODE: testDbMode"), "应显式透传测试库模式");
   assert.ok(script.includes("TEST_DB_CONTAINER: testDbContainer"), "应透传独立容器名到各步骤");
+  assert.ok(script.includes("TEST_DATABASE_URL: testDatabaseUrl"), "应透传独立测试库连接串");
+  assert.ok(script.includes("TEST_DB_ADMIN_URL: testDbAdminUrl"), "应透传管理库连接串");
+  assert.ok(script.includes("LOGIN_TOKEN_SECRET: loginTokenSecret"), "应显式透传 LOGIN_TOKEN_SECRET");
+  assert.ok(script.includes("TRACKED_FILES_OWNER_TOKEN"), "应显式透传 tracked files owner token");
   assert.ok(script.includes("PLAYWRIGHT_WEB_PORT: playwrightWebPort"), "应透传独立 web 端口");
   assert.ok(script.includes("PLAYWRIGHT_WEB_DIST: playwrightWebDist"), "应透传独立构建目录");
+  assert.ok(script.includes("cleanupTrackedFilesFromLock"), "runner 收尾应主动清理 tracked files");
+  assert.ok(script.includes("expectedTrackedFilesOwnerToken"), "runner 清理 tracked files 时应校验 owner");
+  assert.ok(script.includes(".next-tracked-files.lock"), "runner 应显式定位 tracked files 锁文件");
 });

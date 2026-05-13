@@ -19,14 +19,21 @@ test("admin prompts management real-db runner uses lock and isolated port/contai
     "应接入 withTestDbLock 全程加锁",
   );
   assert.ok(script.includes("await withTestDbLock(async () => {"), "应使用 withTestDbLock 包裹主流程");
-  assert.ok(script.includes('const testDbPort = process.env.TEST_DB_PORT ?? "55435";'));
+  assert.ok(script.includes("const explicitTestDbMode = process.env.TEST_DB_MODE ?? process.env.TEST_DB_PREPARE_MODE;"));
+  assert.ok(script.includes('const testDbMode = process.env.TEST_DB_MODE ?? explicitTestDbMode ?? "remote";'));
+  assert.ok(script.includes('const testDbPort = process.env.TEST_DB_PORT ?? (useDockerDefaults ? "55435" : "55432");'));
   assert.match(
     script,
     /const testDbContainer\s*=\s*process\.env\.TEST_DB_CONTAINER\s*\?\?\s*"prompt-management-test-db-admin-prompts";/,
   );
   assert.ok(script.includes("TEST_DB_PREPARE_SKIP_LOCK: \"1\""), "prepare 阶段应跳过内层锁");
   assert.ok(script.includes("TEST_DB_PORT: testDbPort"), "应透传独立端口到各步骤");
+  assert.ok(script.includes("TEST_DB_HOST: testDbHost"), "应透传测试库主机到各步骤");
+  assert.ok(script.includes("TEST_DB_USER: testDbUser"), "应透传测试库用户到各步骤");
+  assert.ok(script.includes("TEST_DB_PASSWORD: testDbPassword"), "应透传测试库密码到各步骤");
+  assert.ok(script.includes("TEST_DB_MODE: testDbMode"), "应显式透传测试库模式");
   assert.ok(script.includes("TEST_DB_CONTAINER: testDbContainer"), "应透传独立容器名到各步骤");
+  assert.ok(script.includes("TEST_DB_ADMIN_URL: testDbAdminUrl"), "应透传管理库连接串");
   assert.ok(script.includes("TEST_DATABASE_URL: testDatabaseUrl"), "应透传独立测试库连接串");
   assert.ok(script.includes("LOGIN_TOKEN_SECRET: loginTokenSecret"), "应显式透传 LOGIN_TOKEN_SECRET");
   assert.ok(script.includes("TRACKED_FILES_OWNER_TOKEN"), "应显式透传 tracked files owner token");
