@@ -72,6 +72,36 @@ type AdminPromptDeleteConfirmResponse = {
   deletedCounts: AdminPromptDeletePreviewResponse["relatedCounts"];
 };
 
+type AdminPromptBatchDeletePreviewResponse = {
+  dryRun: true;
+  slugs: string[];
+  foundPrompts: Array<{
+    slug: string;
+    title: string;
+    status: PromptStatus;
+    primaryCategory: {
+      slug: string;
+      name: string;
+    };
+    categories: Array<{
+      slug: string;
+      name: string;
+    }>;
+    relatedCounts: AdminPromptDeletePreviewResponse["relatedCounts"];
+  }>;
+  summary: AdminPromptDeletePreviewResponse["relatedCounts"] & {
+    prompts: number;
+  };
+  confirmationToken: string;
+  confirmationExpiresAt: string;
+};
+
+type AdminPromptBatchDeleteConfirmResponse = {
+  deleted: true;
+  slugs: string[];
+  deletedCounts: AdminPromptBatchDeletePreviewResponse["summary"];
+};
+
 let modulesLoaded = false;
 let dbReachabilityChecked = false;
 let dbReachable = false;
@@ -100,6 +130,10 @@ let repositoryModule: {
     content: string;
   }) => Promise<{ ok: boolean }>;
   __resetPromptLikeFixtureStateForTests: () => void;
+  __getAuditLogFixtureStateForTests: () => Array<{
+    action: string;
+    payloadJson: Record<string, unknown>;
+  }>;
 };
 let adminPromptsRouteModule: {
   GET: (request: Request) => Promise<Response>;
@@ -109,6 +143,12 @@ let adminPromptRouteModule: {
     request: Request,
     context: { params: { slug: string } },
   ) => Promise<Response>;
+};
+let adminPromptsBatchCategoriesRouteModule: {
+  PATCH: (request: Request) => Promise<Response>;
+};
+let adminPromptsBatchDeleteRouteModule: {
+  DELETE: (request: Request) => Promise<Response>;
 };
 let archiveRouteModule: {
   POST: (
@@ -152,6 +192,12 @@ async function loadModules(): Promise<void> {
   adminPromptsRouteModule = await import("../../../apps/web/app/api/admin/prompts/route.ts");
   adminPromptRouteModule = await import(
     "../../../apps/web/app/api/admin/prompts/[slug]/route.ts"
+  );
+  adminPromptsBatchCategoriesRouteModule = await import(
+    "../../../apps/web/app/api/admin/prompts/batch-categories/route.ts"
+  );
+  adminPromptsBatchDeleteRouteModule = await import(
+    "../../../apps/web/app/api/admin/prompts/batch-delete/route.ts"
   );
   archiveRouteModule = await import(
     "../../../apps/web/app/api/admin/prompts/[slug]/archive/route.ts"
@@ -201,6 +247,16 @@ function adminPatchPromptRequest(
   });
 }
 
+function adminBatchPatchPromptsCategoriesRequest(
+  body: Record<string, unknown>,
+): Request {
+  return new Request("http://localhost:3000/api/admin/prompts/batch-categories", {
+    method: "PATCH",
+    headers: adminHeaders(),
+    body: JSON.stringify(body),
+  });
+}
+
 function adminPostPromptActionRequest(
   slug: string,
   action: "archive" | "restore",
@@ -208,6 +264,14 @@ function adminPostPromptActionRequest(
 ): Request {
   return new Request(`http://localhost:3000/api/admin/prompts/${slug}/${action}`, {
     method: "POST",
+    headers: adminHeaders(),
+    body: JSON.stringify(body),
+  });
+}
+
+function adminBatchDeletePromptsRequest(body: Record<string, unknown>): Request {
+  return new Request("http://localhost:3000/api/admin/prompts/batch-delete", {
+    method: "DELETE",
     headers: adminHeaders(),
     body: JSON.stringify(body),
   });
@@ -222,6 +286,20 @@ function adminDeletePromptRequest(
     headers: adminHeaders(),
     body: JSON.stringify(body),
   });
+}
+
+async function withFixtureDataSource<T>(run: () => Promise<T>): Promise<T> {
+  const previous = process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+  process.env.PROMPT_REPOSITORY_DATA_SOURCE = "fixture";
+  try {
+    return await run();
+  } finally {
+    if (typeof previous === "string") {
+      process.env.PROMPT_REPOSITORY_DATA_SOURCE = previous;
+    } else {
+      delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+    }
+  }
 }
 
 async function ensureDbReady(t: test.TestContext): Promise<boolean> {
@@ -876,6 +954,152 @@ test("PATCH /api/admin/prompts/[slug] 可更新多分类与主分类并自动移
   });
 });
 
+test("PATCH /api/admin/prompts/batch-categories 支持批量增删分类并返回更新摘要", async (t) => {
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
+
+    const marker = Date.now();
+    const addSlug = `mgmt-batch-add-${marker}`;
+    const removeSlug = `mgmt-batch-remove-${marker}`;
+    const keepSlug = `mgmt-batch-keep-${marker}`;
+    const slugA = `mgmt-batch-prompt-a-${marker}`;
+    const slugB = `mgmt-batch-prompt-b-${marker}`;
+    await createCategory({ name: "批量新增分类", slug: addSlug });
+    await createCategory({ name: "批量移除分类", slug: removeSlug });
+    await createCategory({ name: "批量保留分类", slug: keepSlug });
+
+    await createPrompt({
+      slug: slugA,
+      title: "批量分类 Prompt A",
+      summary: "验证批量分类 A",
+      categorySlugs: [removeSlug, keepSlug],
+    });
+    await createPrompt({
+      slug: slugB,
+      title: "批量分类 Prompt B",
+      summary: "验证批量分类 B",
+      categorySlugs: [removeSlug],
+    });
+
+    const response = await adminPromptsBatchCategoriesRouteModule.PATCH(
+      adminBatchPatchPromptsCategoriesRequest({
+        slugs: [slugA, slugB],
+        addCategorySlugs: [addSlug, keepSlug],
+        removeCategorySlugs: [removeSlug],
+      }),
+    );
+    const payload = (await response.json()) as {
+      prompts: Array<{
+        slug: string;
+        categorySlugs: string[];
+      }>;
+    };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.prompts.length, 2);
+    const promptA = payload.prompts.find((item) => item.slug === slugA);
+    const promptB = payload.prompts.find((item) => item.slug === slugB);
+    assert.deepEqual(promptA?.categorySlugs, [keepSlug, addSlug]);
+    assert.deepEqual(promptB?.categorySlugs, [addSlug, keepSlug]);
+
+    const snapshotA = await queryPromptSnapshot(slugA);
+    const snapshotB = await queryPromptSnapshot(slugB);
+    assert.deepEqual(snapshotA?.categorySlugs, [addSlug, keepSlug]);
+    assert.deepEqual(snapshotB?.categorySlugs, [addSlug, keepSlug]);
+  });
+});
+
+test("PATCH /api/admin/prompts/batch-categories 支持 remove-only 批量删除分类", async () => {
+  await loadModules();
+  await withFixtureDataSource(async () => {
+    repositoryModule.__resetPromptLikeFixtureStateForTests();
+
+    const response = await adminPromptsBatchCategoriesRouteModule.PATCH(
+      adminBatchPatchPromptsCategoriesRequest({
+        slugs: ["js-code-reviewer"],
+        removeCategorySlugs: ["programming"],
+      }),
+    );
+    const payload = (await response.json()) as {
+      prompts: Array<{
+        slug: string;
+        categorySlugs: string[];
+      }>;
+    };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.prompts.length, 1);
+    assert.equal(payload.prompts[0]?.slug, "js-code-reviewer");
+    assert.deepEqual(payload.prompts[0]?.categorySlugs, ["uncategorized"]);
+  });
+});
+
+test("PATCH /api/admin/prompts/batch-categories 在真实库 remove-only 删空后自动回落 uncategorized", async (t) => {
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
+
+    const slug = `mgmt-batch-remove-only-db-${Date.now()}`;
+    await createPrompt({
+      slug,
+      title: "批量 remove-only DB 回落",
+      summary: "验证删空后回落 uncategorized",
+      categorySlugs: ["programming"],
+    });
+
+    const response = await adminPromptsBatchCategoriesRouteModule.PATCH(
+      adminBatchPatchPromptsCategoriesRequest({
+        slugs: [slug],
+        removeCategorySlugs: ["programming"],
+      }),
+    );
+    const payload = (await response.json()) as {
+      prompts: Array<{
+        slug: string;
+        categorySlugs: string[];
+      }>;
+    };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.prompts[0]?.slug, slug);
+    assert.deepEqual(payload.prompts[0]?.categorySlugs, ["uncategorized"]);
+
+    const snapshot = await queryPromptSnapshot(slug);
+    assert.deepEqual(snapshot?.categorySlugs, ["uncategorized"]);
+  });
+});
+
+test("PATCH /api/admin/prompts/batch-categories 请求重复 slugs 时去重返回且仅更新一次", async () => {
+  await loadModules();
+  await withFixtureDataSource(async () => {
+    repositoryModule.__resetPromptLikeFixtureStateForTests();
+
+    const response = await adminPromptsBatchCategoriesRouteModule.PATCH(
+      adminBatchPatchPromptsCategoriesRequest({
+        slugs: ["js-code-reviewer", "js-code-reviewer"],
+        addCategorySlugs: ["design"],
+      }),
+    );
+    const payload = (await response.json()) as {
+      prompts: Array<{
+        slug: string;
+        categorySlugs: string[];
+      }>;
+    };
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.prompts.length, 1);
+    assert.equal(payload.prompts[0]?.slug, "js-code-reviewer");
+
+    const logs = repositoryModule.__getAuditLogFixtureStateForTests();
+    const updateLogs = logs.filter(
+      (entry) =>
+        entry.action === "prompt.categories.updated" &&
+        entry.payloadJson.promptSlug === "js-code-reviewer",
+    );
+    assert.equal(updateLogs.length, 1);
+  });
+});
+
 test("DELETE /api/admin/prompts/[slug]/delete 先 dry-run 再 confirm，并级联删除关联业务数据", async (t) => {
   await withDbLifecycleLock(t, async () => {
     await resetDbSeed();
@@ -1006,6 +1230,123 @@ test("DELETE /api/admin/prompts/[slug]/delete 在 0 个已发布 prompt 时仍�
       promptVersionScores: 0,
       promptVersionDailyInteractions: 0,
     });
+  });
+});
+
+test("DELETE /api/admin/prompts/batch-delete 先 dry-run 再 confirm，并级联删除关联业务数据", async (t) => {
+  await withDbLifecycleLock(t, async () => {
+    await resetDbSeed();
+
+    const marker = Date.now();
+    const slugA = `mgmt-batch-hard-delete-a-${marker}`;
+    const slugB = `mgmt-batch-hard-delete-b-${marker}`;
+    await createPrompt({
+      slug: slugA,
+      title: "批量彻底删除 Prompt A",
+      summary: "验证批量 dry-run + confirm 物理删除",
+      categorySlugs: ["programming", "design"],
+    });
+    await createPrompt({
+      slug: slugB,
+      title: "批量彻底删除 Prompt B",
+      summary: "验证批量 dry-run + confirm 物理删除",
+      categorySlugs: ["programming"],
+    });
+    await addPromptOperationalData(slugA);
+    await addPromptOperationalData(slugB);
+
+    const previewResponse = await adminPromptsBatchDeleteRouteModule.DELETE(
+      adminBatchDeletePromptsRequest({
+        slugs: [slugA, slugB],
+        dryRun: true,
+      }),
+    );
+    const previewPayload = (await previewResponse.json()) as AdminPromptBatchDeletePreviewResponse;
+
+    assert.equal(previewResponse.status, 200);
+    assert.equal(previewPayload.dryRun, true);
+    assert.deepEqual(previewPayload.slugs, [slugA, slugB]);
+    assert.equal(previewPayload.foundPrompts.length, 2);
+    assert.equal(previewPayload.summary.prompts, 2);
+    assert.ok(previewPayload.confirmationToken.length > 20);
+
+    const confirmResponse = await adminPromptsBatchDeleteRouteModule.DELETE(
+      adminBatchDeletePromptsRequest({
+        slugs: [slugA, slugB],
+        confirm: true,
+        confirmationToken: previewPayload.confirmationToken,
+        reason: "后台批量样例治理",
+      }),
+    );
+    const confirmPayload = (await confirmResponse.json()) as AdminPromptBatchDeleteConfirmResponse;
+
+    assert.equal(confirmResponse.status, 200);
+    assert.equal(confirmPayload.deleted, true);
+    assert.deepEqual(confirmPayload.slugs, [slugA, slugB]);
+    assert.equal(confirmPayload.deletedCounts.prompts, 2);
+    assert.deepEqual(confirmPayload.deletedCounts, previewPayload.summary);
+
+    assert.deepEqual(await countPromptBusinessRelations(slugA), {
+      prompts: 0,
+      promptCategories: 0,
+      promptVersions: 0,
+      submissions: 0,
+      promptLikes: 0,
+      promptVersionLikes: 0,
+      promptVersionScores: 0,
+      promptVersionDailyInteractions: 0,
+    });
+    assert.deepEqual(await countPromptBusinessRelations(slugB), {
+      prompts: 0,
+      promptCategories: 0,
+      promptVersions: 0,
+      submissions: 0,
+      promptLikes: 0,
+      promptVersionLikes: 0,
+      promptVersionScores: 0,
+      promptVersionDailyInteractions: 0,
+    });
+  });
+});
+
+test("DELETE /api/admin/prompts/batch-delete 传空 slugs 返回 invalid_request", async () => {
+  await loadModules();
+  await withFixtureDataSource(async () => {
+    const response = await adminPromptsBatchDeleteRouteModule.DELETE(
+      adminBatchDeletePromptsRequest({
+        slugs: [],
+        dryRun: true,
+      }),
+    );
+    const payload = (await response.json()) as { code?: string };
+    assert.equal(response.status, 400);
+    assert.equal(payload.code, "invalid_request");
+  });
+});
+
+test("DELETE /api/admin/prompts/batch-delete 使用非法 confirmationToken 返回 invalid_confirmation_token", async () => {
+  await loadModules();
+  await withFixtureDataSource(async () => {
+    const previewResponse = await adminPromptsBatchDeleteRouteModule.DELETE(
+      adminBatchDeletePromptsRequest({
+        slugs: ["js-code-reviewer"],
+        dryRun: true,
+      }),
+    );
+    const previewPayload = (await previewResponse.json()) as AdminPromptBatchDeletePreviewResponse;
+    assert.equal(previewResponse.status, 200);
+    assert.equal(previewPayload.dryRun, true);
+
+    const confirmResponse = await adminPromptsBatchDeleteRouteModule.DELETE(
+      adminBatchDeletePromptsRequest({
+        slugs: ["js-code-reviewer"],
+        confirm: true,
+        confirmationToken: "invalid.token",
+      }),
+    );
+    const confirmPayload = (await confirmResponse.json()) as { code?: string };
+    assert.equal(confirmResponse.status, 400);
+    assert.equal(confirmPayload.code, "invalid_confirmation_token");
   });
 });
 

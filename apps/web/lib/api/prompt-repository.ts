@@ -398,6 +398,32 @@ export type AdminPromptCategoryUpdateResult =
       message: string;
     };
 
+export type AdminPromptBatchCategoryUpdateInput = {
+  reviewerEmail: string;
+  reviewerRole: "user" | "admin";
+  slugs: string[];
+  addCategorySlugs: string[];
+  removeCategorySlugs: string[];
+};
+
+export type AdminPromptBatchCategoryUpdateResult =
+  | {
+      ok: true;
+      value: {
+        prompts: AdminPromptListItem[];
+      };
+    }
+  | {
+      ok: false;
+      code: "forbidden" | "not_found" | "bad_request";
+      reason:
+        | "admin_role_required"
+        | "prompt_not_found"
+        | "invalid_request"
+        | "category_not_found";
+      message: string;
+    };
+
 type AdminPromptStatusAction = "archive" | "restore";
 
 export type AdminPromptStatusMutationInput = {
@@ -468,6 +494,57 @@ export type AdminPromptDeleteResult =
       reason:
         | "admin_role_required"
         | "prompt_not_found"
+        | "prompt_delete_confirmation_required"
+        | "invalid_confirmation_token";
+      message: string;
+    };
+
+export type AdminPromptBatchDeleteInput = {
+  reviewerEmail: string;
+  reviewerRole: "user" | "admin";
+  slugs: string[];
+  dryRun: boolean;
+  confirm: boolean;
+  confirmationToken?: string;
+  reason?: string;
+};
+
+export type AdminPromptBatchDeletePreview = {
+  dryRun: true;
+  slugs: string[];
+  foundPrompts: Array<{
+    slug: string;
+    title: string;
+    status: PromptLifecycleStatus;
+    primaryCategory: PromptCategoryDto;
+    categories: PromptCategoryDto[];
+    relatedCounts: AdminPromptDeletePreview["relatedCounts"];
+  }>;
+  summary: AdminPromptDeletePreview["relatedCounts"] & {
+    prompts: number;
+  };
+  confirmationToken: string;
+  confirmationExpiresAt: string;
+};
+
+export type AdminPromptBatchDeleteConfirmed = {
+  deleted: true;
+  slugs: string[];
+  deletedCounts: AdminPromptBatchDeletePreview["summary"];
+};
+
+export type AdminPromptBatchDeleteResult =
+  | {
+      ok: true;
+      value: AdminPromptBatchDeletePreview | AdminPromptBatchDeleteConfirmed;
+    }
+  | {
+      ok: false;
+      code: "forbidden" | "not_found" | "bad_request";
+      reason:
+        | "admin_role_required"
+        | "prompt_not_found"
+        | "invalid_request"
         | "prompt_delete_confirmation_required"
         | "invalid_confirmation_token";
       message: string;
@@ -703,6 +780,12 @@ type CategoryDeleteTokenPayload = {
 type PromptDeleteTokenPayload = {
   slug: string;
   relatedCounts: AdminPromptDeletePreview["relatedCounts"];
+  exp: number;
+};
+
+type PromptBatchDeleteTokenPayload = {
+  slugs: string[];
+  summary: AdminPromptBatchDeletePreview["summary"];
   exp: number;
 };
 
@@ -1112,6 +1195,86 @@ function verifyPromptDeleteConfirmationToken(
     return {
       slug: payload.slug,
       relatedCounts: { ...relatedCounts },
+      exp: payload.exp,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function createPromptBatchDeleteConfirmationToken(input: {
+  slugs: string[];
+  summary: AdminPromptBatchDeletePreview["summary"];
+}): {
+  token: string;
+  expiresAt: string;
+} {
+  const exp = Date.now() + PROMPT_DELETE_TOKEN_TTL_MS;
+  const payload: PromptBatchDeleteTokenPayload = {
+    slugs: [...input.slugs],
+    summary: { ...input.summary },
+    exp,
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payload), "utf-8").toString(
+    "base64url",
+  );
+  const signature = signPromptDeleteToken(encodedPayload);
+  return {
+    token: `${encodedPayload}.${signature}`,
+    expiresAt: new Date(exp).toISOString(),
+  };
+}
+
+function verifyPromptBatchDeleteConfirmationToken(
+  token: string,
+): PromptBatchDeleteTokenPayload | null {
+  const parts = token.split(".");
+  if (parts.length !== 2) {
+    return null;
+  }
+
+  const encodedPayload = parts[0] ?? "";
+  const providedSignature = parts[1] ?? "";
+  if (!encodedPayload || !providedSignature) {
+    return null;
+  }
+
+  const expectedSignature = signPromptDeleteToken(encodedPayload);
+  const providedBuffer = Buffer.from(providedSignature, "utf-8");
+  const expectedBuffer = Buffer.from(expectedSignature, "utf-8");
+  if (providedBuffer.length !== expectedBuffer.length) {
+    return null;
+  }
+  if (!timingSafeEqual(providedBuffer, expectedBuffer)) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload, "base64url").toString("utf-8"),
+    ) as Partial<PromptBatchDeleteTokenPayload>;
+    const summary = payload.summary as AdminPromptBatchDeletePreview["summary"] | undefined;
+    if (!Array.isArray(payload.slugs) || !summary || typeof payload.exp !== "number") {
+      return null;
+    }
+    if (
+      payload.slugs.some((item) => typeof item !== "string") ||
+      typeof summary.prompts !== "number" ||
+      typeof summary.versions !== "number" ||
+      typeof summary.submissions !== "number" ||
+      typeof summary.likes !== "number" ||
+      typeof summary.versionLikes !== "number" ||
+      typeof summary.versionScores !== "number" ||
+      typeof summary.dailyInteractions !== "number"
+    ) {
+      return null;
+    }
+    if (payload.exp < Date.now()) {
+      return null;
+    }
+    return {
+      slugs: [...payload.slugs],
+      summary: { ...summary },
       exp: payload.exp,
     };
   } catch {
@@ -3076,6 +3239,273 @@ async function updateAdminPromptCategoriesInDb(
   });
 }
 
+async function updateAdminPromptsBatchCategoriesInDb(
+  input: AdminPromptBatchCategoryUpdateInput,
+): Promise<AdminPromptBatchCategoryUpdateResult> {
+  if (input.reviewerRole !== "admin") {
+    return {
+      ok: false,
+      code: "forbidden",
+      reason: "admin_role_required",
+      message: "admin role is required",
+    };
+  }
+
+  if (
+    input.slugs.length === 0 ||
+    (input.addCategorySlugs.length === 0 && input.removeCategorySlugs.length === 0)
+  ) {
+    return {
+      ok: false,
+      code: "bad_request",
+      reason: "invalid_request",
+      message: "slugs and at least one category mutation are required",
+    };
+  }
+
+  return withPgClient(databaseUrl, async (client) => {
+    await client.query("BEGIN;");
+    try {
+      const lockedPromptResult = await client.query<{ id: number; slug: string }>(
+        `
+          SELECT p.id, p.slug
+          FROM prompts p
+          WHERE p.slug = ANY($1::text[])
+          FOR UPDATE;
+        `,
+        [input.slugs],
+      );
+      const lockedPromptSlugSet = new Set(
+        lockedPromptResult.rows.map((row) => row.slug),
+      );
+      for (const slug of input.slugs) {
+        if (!lockedPromptSlugSet.has(slug)) {
+          await client.query("ROLLBACK;");
+          return {
+            ok: false,
+            code: "not_found",
+            reason: "prompt_not_found",
+            message: "prompt not found",
+          };
+        }
+      }
+
+      const promptResult = await client.query<DbPromptHeadRow>(
+        `
+          SELECT
+            p.id,
+            p.slug,
+            p.title,
+            p.summary,
+            p.status,
+            p.updated_at,
+            c.slug AS category_slug,
+            c.name AS category_name,
+            relation_categories.categories_json
+          FROM prompts p
+          INNER JOIN categories c ON c.id = p.category_id
+          LEFT JOIN LATERAL (
+            SELECT json_agg(
+              json_build_object(
+                'slug', c_rel.slug,
+                'name', c_rel.name
+              )
+              ORDER BY c_rel.is_system ASC, c_rel.sort_order ASC, c_rel.id ASC
+            ) AS categories_json
+            FROM prompt_categories pc_rel
+            INNER JOIN categories c_rel ON c_rel.id = pc_rel.category_id
+            WHERE pc_rel.prompt_id = p.id
+          ) relation_categories ON TRUE
+          WHERE p.slug = ANY($1::text[])
+          ;
+        `,
+        [input.slugs],
+      );
+      const promptBySlug = new Map(
+        promptResult.rows.map((row) => [row.slug, row]),
+      );
+      for (const slug of input.slugs) {
+        if (!promptBySlug.has(slug)) {
+          await client.query("ROLLBACK;");
+          return {
+            ok: false,
+            code: "not_found",
+            reason: "prompt_not_found",
+            message: "prompt not found",
+          };
+        }
+      }
+
+      const categoryResolveSet = new Set<string>();
+      for (const slug of input.addCategorySlugs) {
+        categoryResolveSet.add(slug);
+      }
+      for (const row of promptResult.rows) {
+        const normalizedCategories = normalizePromptCategories(row.categories_json, {
+          slug: row.category_slug,
+          name: row.category_name,
+        });
+        for (const category of normalizedCategories.categorySlugs) {
+          categoryResolveSet.add(category);
+        }
+      }
+      categoryResolveSet.add(UNCATEGORIZED_CATEGORY.slug);
+
+      const resolvedCategories = await findCategoriesBySlugs(client, [
+        ...categoryResolveSet,
+      ]);
+      const resolvedCategoryBySlug = new Map(
+        resolvedCategories.map((item) => [item.slug, item]),
+      );
+      for (const slug of input.addCategorySlugs) {
+        if (!resolvedCategoryBySlug.has(slug)) {
+          await client.query("ROLLBACK;");
+          return {
+            ok: false,
+            code: "bad_request",
+            reason: "category_not_found",
+            message: "category not found",
+          };
+        }
+      }
+
+      const addSet = new Set(input.addCategorySlugs);
+      const removeSet = new Set(input.removeCategorySlugs);
+      const reviewerId = await upsertAdminReviewerId(client, input.reviewerEmail);
+      const updatedSlugs: string[] = [];
+
+      for (const promptSlug of input.slugs) {
+        const prompt = promptBySlug.get(promptSlug) as DbPromptHeadRow;
+        const normalizedCategories = normalizePromptCategories(prompt.categories_json, {
+          slug: prompt.category_slug,
+          name: prompt.category_name,
+        });
+        const nextSet = new Set(normalizedCategories.categorySlugs);
+        for (const slug of removeSet) {
+          nextSet.delete(slug);
+        }
+        for (const slug of addSet) {
+          nextSet.add(slug);
+        }
+        if (nextSet.size === 0) {
+          nextSet.add(UNCATEGORIZED_CATEGORY.slug);
+        }
+
+        const nextCategorySlugs = [...nextSet];
+        const hasFormalCategory = nextCategorySlugs.some(
+          (slug) => !SYSTEM_CATEGORY_SLUGS.has(slug),
+        );
+        const sanitizedCategorySlugs = hasFormalCategory
+          ? nextCategorySlugs.filter((slug) => slug !== UNCATEGORIZED_CATEGORY.slug)
+          : nextCategorySlugs;
+        const compatibilityCategorySlug =
+          normalizedCategories.categorySlugs.find((slug) =>
+            sanitizedCategorySlugs.includes(slug),
+          ) ??
+          sanitizedCategorySlugs.find((slug) => !SYSTEM_CATEGORY_SLUGS.has(slug)) ??
+          sanitizedCategorySlugs[0] ??
+          UNCATEGORIZED_CATEGORY.slug;
+        const compatibilityCategory = resolvedCategoryBySlug.get(compatibilityCategorySlug);
+        if (!compatibilityCategory) {
+          await client.query("ROLLBACK;");
+          return {
+            ok: false,
+            code: "bad_request",
+            reason: "category_not_found",
+            message: "category not found",
+          };
+        }
+
+        const promptId = asNumber(prompt.id);
+        const categoryIds = sanitizedCategorySlugs
+          .map((slug) => resolvedCategoryBySlug.get(slug)?.id ?? 0)
+          .filter((id) => id > 0);
+        await client.query(
+          `
+            DELETE FROM prompt_categories
+            WHERE prompt_id = $1
+              AND NOT (category_id = ANY($2::int[]));
+          `,
+          [promptId, categoryIds],
+        );
+        for (const categoryId of categoryIds) {
+          await insertPromptCategoryRelation(client, promptId, categoryId);
+        }
+
+        await client.query(
+          `
+            UPDATE prompts
+            SET category_id = $2, updated_at = NOW()
+            WHERE id = $1;
+          `,
+          [promptId, compatibilityCategory.id],
+        );
+
+        await writeAuditLog(client, {
+          actorId: reviewerId,
+          action: "prompt.categories.updated",
+          targetType: "prompt",
+          targetId: promptId,
+          payload: {
+            promptSlug,
+            categorySlugs: sanitizedCategorySlugs,
+            categoryIdSyncSlug: compatibilityCategorySlug,
+          },
+        });
+        updatedSlugs.push(promptSlug);
+      }
+
+      const updated = await client.query<DbPromptHeadRow>(
+        `
+          SELECT
+            p.id,
+            p.slug,
+            p.title,
+            p.summary,
+            p.status,
+            p.updated_at,
+            c.slug AS category_slug,
+            c.name AS category_name,
+            relation_categories.categories_json
+          FROM prompts p
+          INNER JOIN categories c ON c.id = p.category_id
+          LEFT JOIN LATERAL (
+            SELECT json_agg(
+              json_build_object(
+                'slug', c_rel.slug,
+                'name', c_rel.name
+              )
+              ORDER BY c_rel.is_system ASC, c_rel.sort_order ASC, c_rel.id ASC
+            ) AS categories_json
+            FROM prompt_categories pc_rel
+            INNER JOIN categories c_rel ON c_rel.id = pc_rel.category_id
+            WHERE pc_rel.prompt_id = p.id
+          ) relation_categories ON TRUE
+          WHERE p.slug = ANY($1::text[]);
+        `,
+        [updatedSlugs],
+      );
+      const updatedBySlug = new Map(
+        updated.rows.map((row) => [row.slug, row]),
+      );
+
+      await client.query("COMMIT;");
+      return {
+        ok: true,
+        value: {
+          prompts: input.slugs
+            .map((slug) => updatedBySlug.get(slug))
+            .filter((item): item is DbPromptHeadRow => Boolean(item))
+            .map((row) => mapAdminPromptHeadRow(row)),
+        },
+      };
+    } catch (error) {
+      await client.query("ROLLBACK;");
+      throw error;
+    }
+  });
+}
+
 function updateAdminPromptCategoriesInFixtures(
   input: AdminPromptCategoryUpdateInput,
 ): AdminPromptCategoryUpdateResult {
@@ -3164,6 +3594,141 @@ function updateAdminPromptCategoriesInFixtures(
         categories: mapCategoryDtosFromSlugs(updatedPrompt.categorySlugs),
         categorySlugs: updatedPrompt.categorySlugs,
       }),
+    },
+  };
+}
+
+function updateAdminPromptsBatchCategoriesInFixtures(
+  input: AdminPromptBatchCategoryUpdateInput,
+): AdminPromptBatchCategoryUpdateResult {
+  if (input.reviewerRole !== "admin") {
+    return {
+      ok: false,
+      code: "forbidden",
+      reason: "admin_role_required",
+      message: "admin role is required",
+    };
+  }
+
+  if (
+    input.slugs.length === 0 ||
+    (input.addCategorySlugs.length === 0 && input.removeCategorySlugs.length === 0)
+  ) {
+    return {
+      ok: false,
+      code: "bad_request",
+      reason: "invalid_request",
+      message: "slugs and at least one category mutation are required",
+    };
+  }
+
+  const addSet = new Set(input.addCategorySlugs);
+  const removeSet = new Set(input.removeCategorySlugs);
+  const updates = new Map<string, FixturePromptRecord>();
+  for (const slug of input.slugs) {
+    const prompt = findAnyFixturePromptRecord(slug);
+    if (!prompt) {
+      return {
+        ok: false,
+        code: "not_found",
+        reason: "prompt_not_found",
+        message: "prompt not found",
+      };
+    }
+    const nextSet = new Set(prompt.categorySlugs);
+    for (const removeSlug of removeSet) {
+      nextSet.delete(removeSlug);
+    }
+    for (const addSlug of addSet) {
+      nextSet.add(addSlug);
+    }
+    if (nextSet.size === 0) {
+      nextSet.add(UNCATEGORIZED_CATEGORY.slug);
+    }
+    const nextCategorySlugs = [...nextSet];
+    const hasFormalCategory = nextCategorySlugs.some(
+      (item) => !SYSTEM_CATEGORY_SLUGS.has(item),
+    );
+    const sanitizedCategorySlugs = hasFormalCategory
+      ? nextCategorySlugs.filter((item) => item !== UNCATEGORIZED_CATEGORY.slug)
+      : nextCategorySlugs;
+    const compatibilityCategorySlug =
+      prompt.categorySlugs.find((item) => sanitizedCategorySlugs.includes(item)) ??
+      sanitizedCategorySlugs.find((item) => !SYSTEM_CATEGORY_SLUGS.has(item)) ??
+      sanitizedCategorySlugs[0] ??
+      UNCATEGORIZED_CATEGORY.slug;
+    updates.set(slug, {
+      slug: prompt.slug,
+      title: prompt.title,
+      summary: prompt.summary,
+      categorySlug: compatibilityCategorySlug,
+      categorySlugs: sanitizedCategorySlugs,
+      status: prompt.status,
+      createdAt: prompt.createdAt,
+      createdByEmail: prompt.createdByEmail,
+    });
+  }
+
+  for (const slug of input.addCategorySlugs) {
+    if (!CATEGORY_MAP.has(slug)) {
+      return {
+        ok: false,
+        code: "bad_request",
+        reason: "category_not_found",
+        message: "category not found",
+      };
+    }
+  }
+  for (const prompt of updates.values()) {
+    const missingCategorySlug = prompt.categorySlugs.find(
+      (slug) => !CATEGORY_MAP.has(slug),
+    );
+    if (missingCategorySlug) {
+      return {
+        ok: false,
+        code: "bad_request",
+        reason: "category_not_found",
+        message: "category not found",
+      };
+    }
+  }
+
+  const updatedPrompts: AdminPromptListItem[] = [];
+  for (const slug of input.slugs) {
+    const updatedPrompt = updates.get(slug) as FixturePromptRecord;
+    fixtureCreatedPrompts.set(slug, updatedPrompt);
+    fixtureAuditLogs.push(
+      buildAuditLogEntry({
+        actorId: fixtureActorId(input.reviewerEmail),
+        action: "prompt.categories.updated",
+        targetType: "prompt",
+        targetId: fixturePromptId(slug),
+        payload: {
+          promptSlug: slug,
+          categorySlugs: updatedPrompt.categorySlugs,
+          categoryIdSyncSlug: updatedPrompt.categorySlug,
+        },
+      }),
+    );
+    updatedPrompts.push(
+      mapAdminPromptListItem({
+        slug: updatedPrompt.slug,
+        title: updatedPrompt.title,
+        summary: updatedPrompt.summary,
+        status: updatedPrompt.status,
+        updatedAt: new Date().toISOString(),
+        categorySlug: updatedPrompt.categorySlug,
+        categoryName: CATEGORY_MAP.get(updatedPrompt.categorySlug)?.name ?? updatedPrompt.categorySlug,
+        categories: mapCategoryDtosFromSlugs(updatedPrompt.categorySlugs),
+        categorySlugs: updatedPrompt.categorySlugs,
+      }),
+    );
+  }
+
+  return {
+    ok: true,
+    value: {
+      prompts: updatedPrompts,
     },
   };
 }
@@ -3416,6 +3981,94 @@ function isPromptDeleteTokenValid(input: {
   );
 }
 
+function summarizePromptDeleteCounts(
+  countsList: AdminPromptDeletePreview["relatedCounts"][],
+): AdminPromptBatchDeletePreview["summary"] {
+  return countsList.reduce<AdminPromptBatchDeletePreview["summary"]>(
+    (acc, item) => ({
+      prompts: acc.prompts + 1,
+      versions: acc.versions + item.versions,
+      submissions: acc.submissions + item.submissions,
+      likes: acc.likes + item.likes,
+      versionLikes: acc.versionLikes + item.versionLikes,
+      versionScores: acc.versionScores + item.versionScores,
+      dailyInteractions: acc.dailyInteractions + item.dailyInteractions,
+    }),
+    {
+      prompts: 0,
+      versions: 0,
+      submissions: 0,
+      likes: 0,
+      versionLikes: 0,
+      versionScores: 0,
+      dailyInteractions: 0,
+    },
+  );
+}
+
+function isPromptBatchDeleteTokenValid(input: {
+  token: string;
+  slugs: string[];
+  summary: AdminPromptBatchDeletePreview["summary"];
+}): boolean {
+  const payload = verifyPromptBatchDeleteConfirmationToken(input.token);
+  if (!payload) {
+    return false;
+  }
+  if (payload.slugs.length !== input.slugs.length) {
+    return false;
+  }
+  for (let index = 0; index < payload.slugs.length; index += 1) {
+    if (payload.slugs[index] !== input.slugs[index]) {
+      return false;
+    }
+  }
+  return (
+    payload.summary.prompts === input.summary.prompts &&
+    payload.summary.versions === input.summary.versions &&
+    payload.summary.submissions === input.summary.submissions &&
+    payload.summary.likes === input.summary.likes &&
+    payload.summary.versionLikes === input.summary.versionLikes &&
+    payload.summary.versionScores === input.summary.versionScores &&
+    payload.summary.dailyInteractions === input.summary.dailyInteractions
+  );
+}
+
+async function deletePromptBusinessDataById(client: SqlClient, promptId: number): Promise<void> {
+  await client.query(`DELETE FROM submissions WHERE prompt_id = $1;`, [promptId]);
+  await client.query(`DELETE FROM prompt_likes WHERE prompt_id = $1;`, [promptId]);
+  await client.query(
+    `
+      DELETE FROM prompt_version_likes
+      WHERE prompt_version_id IN (
+        SELECT id FROM prompt_versions WHERE prompt_id = $1
+      );
+    `,
+    [promptId],
+  );
+  await client.query(
+    `
+      DELETE FROM prompt_version_scores
+      WHERE prompt_version_id IN (
+        SELECT id FROM prompt_versions WHERE prompt_id = $1
+      );
+    `,
+    [promptId],
+  );
+  await client.query(
+    `
+      DELETE FROM prompt_version_daily_interactions
+      WHERE prompt_version_id IN (
+        SELECT id FROM prompt_versions WHERE prompt_id = $1
+      );
+    `,
+    [promptId],
+  );
+  await client.query(`DELETE FROM prompt_versions WHERE prompt_id = $1;`, [promptId]);
+  await client.query(`DELETE FROM prompt_categories WHERE prompt_id = $1;`, [promptId]);
+  await client.query(`DELETE FROM prompts WHERE id = $1;`, [promptId]);
+}
+
 async function deleteAdminPromptInDb(
   input: AdminPromptDeleteInput,
 ): Promise<AdminPromptDeleteResult> {
@@ -3534,38 +4187,7 @@ async function deleteAdminPromptInDb(
         },
       });
 
-      await client.query(`DELETE FROM submissions WHERE prompt_id = $1;`, [promptId]);
-      await client.query(`DELETE FROM prompt_likes WHERE prompt_id = $1;`, [promptId]);
-      await client.query(
-        `
-          DELETE FROM prompt_version_likes
-          WHERE prompt_version_id IN (
-            SELECT id FROM prompt_versions WHERE prompt_id = $1
-          );
-        `,
-        [promptId],
-      );
-      await client.query(
-        `
-          DELETE FROM prompt_version_scores
-          WHERE prompt_version_id IN (
-            SELECT id FROM prompt_versions WHERE prompt_id = $1
-          );
-        `,
-        [promptId],
-      );
-      await client.query(
-        `
-          DELETE FROM prompt_version_daily_interactions
-          WHERE prompt_version_id IN (
-            SELECT id FROM prompt_versions WHERE prompt_id = $1
-          );
-        `,
-        [promptId],
-      );
-      await client.query(`DELETE FROM prompt_versions WHERE prompt_id = $1;`, [promptId]);
-      await client.query(`DELETE FROM prompt_categories WHERE prompt_id = $1;`, [promptId]);
-      await client.query(`DELETE FROM prompts WHERE id = $1;`, [promptId]);
+      await deletePromptBusinessDataById(client, promptId);
 
       await client.query("COMMIT;");
       return {
@@ -3695,6 +4317,322 @@ function deleteAdminPromptInFixtures(
       deleted: true,
       slug: prompt.slug,
       deletedCounts: relatedCounts,
+    },
+  };
+}
+
+async function deleteAdminPromptsBatchInDb(
+  input: AdminPromptBatchDeleteInput,
+): Promise<AdminPromptBatchDeleteResult> {
+  if (input.reviewerRole !== "admin") {
+    return {
+      ok: false,
+      code: "forbidden",
+      reason: "admin_role_required",
+      message: "admin role is required",
+    };
+  }
+  if (input.slugs.length === 0) {
+    return {
+      ok: false,
+      code: "bad_request",
+      reason: "invalid_request",
+      message: "slugs must be a non-empty array",
+    };
+  }
+  if (input.dryRun === input.confirm) {
+    return {
+      ok: false,
+      code: "bad_request",
+      reason: "invalid_request",
+      message: "exactly one of dryRun=true or confirm=true is required",
+    };
+  }
+
+  return withPgClient(databaseUrl, async (client) => {
+    await client.query("BEGIN;");
+    try {
+      const promptResult = await client.query<DbPromptHeadRow>(
+        `
+          SELECT
+            p.id,
+            p.slug,
+            p.title,
+            p.status,
+            c.slug AS category_slug,
+            c.name AS category_name,
+            COALESCE(
+              (
+                SELECT jsonb_agg(
+                  jsonb_build_object('slug', c2.slug, 'name', c2.name)
+                  ORDER BY c2.slug
+                )
+                FROM prompt_categories pc2
+                INNER JOIN categories c2 ON c2.id = pc2.category_id
+                WHERE pc2.prompt_id = p.id
+              ),
+              '[]'::jsonb
+            ) AS categories_json
+          FROM prompts p
+          INNER JOIN categories c ON c.id = p.category_id
+          WHERE p.slug = ANY($1::text[])
+          FOR UPDATE;
+        `,
+        [input.slugs],
+      );
+      const promptBySlug = new Map(promptResult.rows.map((row) => [row.slug, row]));
+      for (const slug of input.slugs) {
+        if (!promptBySlug.has(slug)) {
+          await client.query("ROLLBACK;");
+          return {
+            ok: false,
+            code: "not_found",
+            reason: "prompt_not_found",
+            message: "prompt not found",
+          };
+        }
+      }
+
+      const promptRows = input.slugs.map((slug) => promptBySlug.get(slug) as DbPromptHeadRow);
+      const promptWithCounts = await Promise.all(
+        promptRows.map(async (row) => {
+          const relatedCounts = await readPromptDeleteCounts(client, asNumber(row.id));
+          return { row, relatedCounts };
+        }),
+      );
+      const summary = summarizePromptDeleteCounts(promptWithCounts.map((item) => item.relatedCounts));
+
+      if (input.dryRun) {
+        const token = createPromptBatchDeleteConfirmationToken({
+          slugs: input.slugs,
+          summary,
+        });
+        await client.query("COMMIT;");
+        return {
+          ok: true,
+          value: {
+            dryRun: true,
+            slugs: [...input.slugs],
+            foundPrompts: promptWithCounts.map(({ row, relatedCounts }) => ({
+              slug: row.slug,
+              title: row.title,
+              status: normalizeAdminPromptStatus(row.status) ?? "published",
+              primaryCategory: {
+                slug: row.category_slug,
+                name: row.category_name,
+              },
+              categories: normalizePromptCategories(row.categories_json, {
+                slug: row.category_slug,
+                name: row.category_name,
+              }).categories,
+              relatedCounts,
+            })),
+            summary,
+            confirmationToken: token.token,
+            confirmationExpiresAt: token.expiresAt,
+          },
+        };
+      }
+
+      const confirmationToken = input.confirmationToken?.trim() ?? "";
+      if (!confirmationToken) {
+        await client.query("ROLLBACK;");
+        return {
+          ok: false,
+          code: "bad_request",
+          reason: "prompt_delete_confirmation_required",
+          message: "confirmation token is required",
+        };
+      }
+      if (!isPromptBatchDeleteTokenValid({ token: confirmationToken, slugs: input.slugs, summary })) {
+        await client.query("ROLLBACK;");
+        return {
+          ok: false,
+          code: "bad_request",
+          reason: "invalid_confirmation_token",
+          message: "invalid confirmation token",
+        };
+      }
+
+      const reviewerId = await upsertAdminReviewerId(client, input.reviewerEmail);
+      for (const { row, relatedCounts } of promptWithCounts) {
+        const promptId = asNumber(row.id);
+        const categories = normalizePromptCategories(row.categories_json, {
+          slug: row.category_slug,
+          name: row.category_name,
+        });
+        await writeAuditLog(client, {
+          actorId: reviewerId,
+          action: "prompt.deleted",
+          targetType: "prompt",
+          targetId: promptId,
+          payload: {
+            promptSlug: row.slug,
+            title: row.title,
+            status: normalizeAdminPromptStatus(row.status) ?? "published",
+            primaryCategorySlug: row.category_slug,
+            categorySlugs: categories.categorySlugs,
+            relatedCounts,
+            reason: input.reason?.trim() || undefined,
+          },
+        });
+        await deletePromptBusinessDataById(client, promptId);
+      }
+
+      await client.query("COMMIT;");
+      return {
+        ok: true,
+        value: {
+          deleted: true,
+          slugs: [...input.slugs],
+          deletedCounts: summary,
+        },
+      };
+    } catch (error) {
+      await client.query("ROLLBACK;");
+      throw error;
+    }
+  });
+}
+
+function deleteAdminPromptsBatchInFixtures(
+  input: AdminPromptBatchDeleteInput,
+): AdminPromptBatchDeleteResult {
+  if (input.reviewerRole !== "admin") {
+    return {
+      ok: false,
+      code: "forbidden",
+      reason: "admin_role_required",
+      message: "admin role is required",
+    };
+  }
+  if (input.slugs.length === 0) {
+    return {
+      ok: false,
+      code: "bad_request",
+      reason: "invalid_request",
+      message: "slugs must be a non-empty array",
+    };
+  }
+  if (input.dryRun === input.confirm) {
+    return {
+      ok: false,
+      code: "bad_request",
+      reason: "invalid_request",
+      message: "exactly one of dryRun=true or confirm=true is required",
+    };
+  }
+
+  const foundPrompts: AdminPromptBatchDeletePreview["foundPrompts"] = [];
+  for (const slug of input.slugs) {
+    const prompt = findAnyFixturePromptRecord(slug);
+    if (!prompt) {
+      return {
+        ok: false,
+        code: "not_found",
+        reason: "prompt_not_found",
+        message: "prompt not found",
+      };
+    }
+    foundPrompts.push({
+      slug: prompt.slug,
+      title: prompt.title,
+      status: prompt.status,
+      primaryCategory: {
+        slug: prompt.categorySlug,
+        name: CATEGORY_MAP.get(prompt.categorySlug)?.name ?? prompt.categorySlug,
+      },
+      categories: mapCategoryDtosFromSlugs(prompt.categorySlugs),
+      relatedCounts: readPromptDeleteCountsFromFixtures(prompt.slug),
+    });
+  }
+
+  const summary = summarizePromptDeleteCounts(foundPrompts.map((item) => item.relatedCounts));
+  if (input.dryRun) {
+    const token = createPromptBatchDeleteConfirmationToken({
+      slugs: input.slugs,
+      summary,
+    });
+    return {
+      ok: true,
+      value: {
+        dryRun: true,
+        slugs: [...input.slugs],
+        foundPrompts,
+        summary,
+        confirmationToken: token.token,
+        confirmationExpiresAt: token.expiresAt,
+      },
+    };
+  }
+
+  const confirmationToken = input.confirmationToken?.trim() ?? "";
+  if (!confirmationToken) {
+    return {
+      ok: false,
+      code: "bad_request",
+      reason: "prompt_delete_confirmation_required",
+      message: "confirmation token is required",
+    };
+  }
+  if (!isPromptBatchDeleteTokenValid({ token: confirmationToken, slugs: input.slugs, summary })) {
+    return {
+      ok: false,
+      code: "bad_request",
+      reason: "invalid_confirmation_token",
+      message: "invalid confirmation token",
+    };
+  }
+
+  for (const item of foundPrompts) {
+    fixtureAuditLogs.push(
+      buildAuditLogEntry({
+        actorId: fixtureActorId(input.reviewerEmail),
+        action: "prompt.deleted",
+        targetType: "prompt",
+        targetId: fixturePromptId(item.slug),
+        payload: {
+          promptSlug: item.slug,
+          title: item.title,
+          status: item.status,
+          primaryCategorySlug: item.primaryCategory.slug,
+          categorySlugs: item.categories.map((category) => category.slug),
+          relatedCounts: item.relatedCounts,
+          reason: input.reason?.trim() || undefined,
+        },
+      }),
+    );
+
+    fixtureDeletedPrompts.add(item.slug);
+    fixtureCreatedPrompts.delete(item.slug);
+    fixturePromptLikes.delete(item.slug);
+    fixtureCurrentVersionNoBySlug.delete(item.slug);
+    fixturePromptVersions.delete(item.slug);
+    fixtureSubmissions = fixtureSubmissions.filter((submission) => submission.promptSlug !== item.slug);
+
+    for (const key of [...fixturePromptVersionLikes.keys()]) {
+      if (key.startsWith(`${item.slug}::`)) {
+        fixturePromptVersionLikes.delete(key);
+      }
+    }
+    for (const key of [...fixturePromptVersionScores.keys()]) {
+      if (key.startsWith(`${item.slug}::`)) {
+        fixturePromptVersionScores.delete(key);
+      }
+    }
+    for (const key of [...fixturePromptVersionDailyInteractions]) {
+      if (key.startsWith(`${item.slug}::`)) {
+        fixturePromptVersionDailyInteractions.delete(key);
+      }
+    }
+  }
+
+  return {
+    ok: true,
+    value: {
+      deleted: true,
+      slugs: [...input.slugs],
+      deletedCounts: summary,
     },
   };
 }
@@ -6032,6 +6970,40 @@ export async function updateAdminPromptCategories(
   return updateAdminPromptCategoriesInFixtures(normalizedInput);
 }
 
+export async function updateAdminPromptsBatchCategories(
+  input: AdminPromptBatchCategoryUpdateInput,
+): Promise<AdminPromptBatchCategoryUpdateResult> {
+  const dedupePreserveOrder = (items: string[]): string[] => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const item of items) {
+      if (seen.has(item)) {
+        continue;
+      }
+      seen.add(item);
+      result.push(item);
+    }
+    return result;
+  };
+  const normalizedInput: AdminPromptBatchCategoryUpdateInput = {
+    reviewerEmail: normalizeUserEmail(input.reviewerEmail),
+    reviewerRole: input.reviewerRole,
+    slugs: dedupePreserveOrder(
+      input.slugs.map((item) => item.trim()).filter(Boolean),
+    ),
+    addCategorySlugs: dedupePreserveOrder(
+      input.addCategorySlugs.map((item) => item.trim()).filter(Boolean),
+    ),
+    removeCategorySlugs: dedupePreserveOrder(
+      input.removeCategorySlugs.map((item) => item.trim()).filter(Boolean),
+    ),
+  };
+  if (await canWriteToDatabase()) {
+    return updateAdminPromptsBatchCategoriesInDb(normalizedInput);
+  }
+  return updateAdminPromptsBatchCategoriesInFixtures(normalizedInput);
+}
+
 export async function archiveAdminPrompt(
   input: AdminPromptStatusMutationInput,
 ): Promise<AdminPromptStatusMutationResult> {
@@ -6075,6 +7047,25 @@ export async function deleteAdminPrompt(
     return deleteAdminPromptInDb(normalizedInput);
   }
   return deleteAdminPromptInFixtures(normalizedInput);
+}
+
+export async function deleteAdminPromptsBatch(
+  input: AdminPromptBatchDeleteInput,
+): Promise<AdminPromptBatchDeleteResult> {
+  const dedupedSlugs = [...new Set(input.slugs.map((item) => item.trim()).filter(Boolean))];
+  const normalizedInput: AdminPromptBatchDeleteInput = {
+    reviewerEmail: normalizeUserEmail(input.reviewerEmail),
+    reviewerRole: input.reviewerRole,
+    slugs: dedupedSlugs,
+    dryRun: input.dryRun === true,
+    confirm: input.confirm,
+    confirmationToken: input.confirmationToken?.trim(),
+    reason: input.reason?.trim(),
+  };
+  if (await canWriteToDatabase()) {
+    return deleteAdminPromptsBatchInDb(normalizedInput);
+  }
+  return deleteAdminPromptsBatchInFixtures(normalizedInput);
 }
 
 export async function reviewPromptSubmission(
