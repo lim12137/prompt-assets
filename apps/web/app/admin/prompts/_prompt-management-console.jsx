@@ -165,6 +165,7 @@ export function AdminPromptManagementConsole() {
   const [filters, setFilters] = useState(INITIAL_FILTERS);
   const [categories, setCategories] = useState([]);
   const [prompts, setPrompts] = useState([]);
+  const [selectedPromptSlugs, setSelectedPromptSlugs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busySlug, setBusySlug] = useState("");
   const [feedback, setFeedback] = useState("可在这里管理已发布/已归档提示词，并进入详情页重分类。");
@@ -215,6 +216,25 @@ export function AdminPromptManagementConsole() {
     () => categories.filter((item) => item.isSelectable !== false && !item.isSystem),
     [categories],
   );
+  const selectedCount = selectedPromptSlugs.length;
+
+  useEffect(() => {
+    setSelectedPromptSlugs((current) =>
+      current.filter((slug) => prompts.some((prompt) => prompt.slug === slug)),
+    );
+  }, [prompts]);
+
+  function handleTogglePromptSelection(slug, checked) {
+    setSelectedPromptSlugs((current) => {
+      if (checked) {
+        if (current.includes(slug)) {
+          return current;
+        }
+        return [...current, slug];
+      }
+      return current.filter((item) => item !== slug);
+    });
+  }
 
   async function handleStatusAction(prompt, action) {
     if (busySlug) {
@@ -385,6 +405,7 @@ export function AdminPromptManagementConsole() {
             const actionLabel =
               prompt.status === "archived" ? "恢复发布" : prompt.status === "published" ? "归档" : "";
             const isBusy = busySlug === prompt.slug;
+            const isSelected = selectedPromptSlugs.includes(prompt.slug);
 
             return (
               <article
@@ -407,6 +428,26 @@ export function AdminPromptManagementConsole() {
                   }}
                 >
                   <div style={{ display: "grid", gap: "6px", minWidth: 0 }}>
+                    <label
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        width: "fit-content",
+                        fontSize: "13px",
+                        color: "var(--pm-muted)",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        aria-label={`选择提示词 ${prompt.title}`}
+                        checked={isSelected}
+                        onChange={(event) =>
+                          handleTogglePromptSelection(prompt.slug, event.target.checked)
+                        }
+                      />
+                      选择
+                    </label>
                     <div
                       style={{
                         display: "flex",
@@ -472,6 +513,29 @@ export function AdminPromptManagementConsole() {
           })}
         </section>
       )}
+
+      {selectedCount > 0 ? (
+        <section className="pm-floating-action-bar" data-testid="admin-prompts-bulk-action-bar">
+          <p style={{ margin: 0, color: "var(--pm-title)", fontWeight: 500 }}>
+            已选 {selectedCount} 项
+          </p>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button type="button" className="pm-secondary-button">
+              批量增加分类
+            </button>
+            <button type="button" className="pm-secondary-button">
+              批量删除分类
+            </button>
+            <button
+              type="button"
+              className="pm-primary-button"
+              onClick={() => setSelectedPromptSlugs([])}
+            >
+              清空选择
+            </button>
+          </div>
+        </section>
+      ) : null}
     </main>
   );
 }

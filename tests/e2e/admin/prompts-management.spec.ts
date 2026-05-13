@@ -508,11 +508,36 @@ test("后台提示词管理列表点击卡片非按钮区域可进入详情页",
   const row = page.getByTestId("admin-prompts-row-beta-prompt");
   await expect(row).toBeVisible();
 
-  await row.click({ position: { x: 24, y: 24 } });
+  await row.click({ position: { x: 120, y: 80 } });
 
   await expect(page).toHaveURL(/\/admin\/prompts\/beta-prompt$/);
   await expect(page.getByRole("heading", { level: 1, name: "管理提示词" })).toBeVisible();
   await expect(page.getByText("Beta Prompt")).toBeVisible();
+});
+
+test("后台提示词管理列表支持多选并显示浮动操作条", async ({ page }) => {
+  await addAdminCookie(page);
+  await setupPromptManagementRoutes(page);
+
+  await page.goto("/admin/prompts");
+
+  const actionBar = page.getByTestId("admin-prompts-bulk-action-bar");
+  await expect(actionBar).toHaveCount(0);
+
+  await page.getByLabel("选择提示词 Alpha Prompt").check();
+  await expect(actionBar).toBeVisible();
+  await expect(actionBar).toContainText("已选 1 项");
+  await expect(actionBar.getByRole("button", { name: "批量增加分类" })).toBeVisible();
+  await expect(actionBar.getByRole("button", { name: "批量删除分类" })).toBeVisible();
+  await expect(actionBar.getByRole("button", { name: "清空选择" })).toBeVisible();
+
+  await page.getByLabel("选择提示词 Beta Prompt").check();
+  await expect(actionBar).toContainText("已选 2 项");
+
+  await actionBar.getByRole("button", { name: "清空选择" }).click();
+  await expect(actionBar).toHaveCount(0);
+  await expect(page.getByLabel("选择提示词 Alpha Prompt")).not.toBeChecked();
+  await expect(page.getByLabel("选择提示词 Beta Prompt")).not.toBeChecked();
 });
 
 test("后台提示词管理详情页状态标签样式跟随真实状态", async ({ page }) => {
