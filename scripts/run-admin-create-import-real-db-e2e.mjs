@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { withTestDbLock } from "./with-test-db-lock.mjs";
+import { shouldRunDockerCleanup } from "./test-db-env.mjs";
 
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const testDatabaseUrl =
@@ -45,6 +46,8 @@ await withTestDbLock(async () => {
       },
     );
   } finally {
-    runStep(["db:test:down"], "清理测试数据库容器", process.env, true);
+    if (shouldRunDockerCleanup(process.env)) {
+      runStep(["db:test:down"], "清理测试数据库容器", process.env, true);
+    }
   }
 });

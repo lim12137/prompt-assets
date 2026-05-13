@@ -3,6 +3,7 @@ import path from "node:path";
 import { withTestDbLock } from "./with-test-db-lock.mjs";
 import { requireWorkspaceEnvValue } from "./workspace-env.mjs";
 import { cleanupTrackedFilesFromLock } from "../apps/web/scripts/tracked-files-guard.mjs";
+import { shouldRunDockerCleanup } from "./test-db-env.mjs";
 
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const testDbPort = process.env.TEST_DB_PORT ?? "55435";
@@ -71,6 +72,8 @@ await withTestDbLock(async () => {
       onlyIfStale: true,
       expectedTrackedFilesOwnerToken: trackedFilesOwnerToken,
     });
-    runStep(["db:test:down"], "清理提示词管理测试数据库容器", testDbEnv, true);
+    if (shouldRunDockerCleanup(testDbEnv)) {
+      runStep(["db:test:down"], "清理提示词管理测试数据库容器", testDbEnv, true);
+    }
   }
 });

@@ -1,5 +1,9 @@
 import { spawnSync } from "node:child_process";
+import path from "node:path";
 import { withTestDbLock } from "./with-test-db-lock.mjs";
+import { requireWorkspaceEnvValue } from "./workspace-env.mjs";
+import { cleanupTrackedFilesFromLock } from "../apps/web/scripts/tracked-files-guard.mjs";
+import { shouldRunDockerCleanup } from "./test-db-env.mjs";
 
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const testDbPort = process.env.TEST_DB_PORT ?? "55434";
@@ -14,10 +18,20 @@ const testSpecPath =
 const playwrightWebPort = process.env.PLAYWRIGHT_WEB_PORT ?? "3113";
 const playwrightWebDist =
   process.env.PLAYWRIGHT_WEB_DIST ?? ".next-e2e-real-db-admin-category";
+const trackedFilesOwnerToken =
+  process.env.TRACKED_FILES_OWNER_TOKEN ?? `admin-category-real-db-${process.pid}-${Date.now()}`;
+const trackedFilesLockPath = path.join(process.cwd(), "apps/web/.next-tracked-files.lock");
+const loginTokenSecret = requireWorkspaceEnvValue("LOGIN_TOKEN_SECRET", {
+  cwd: process.cwd(),
+  env: process.env,
+});
 const testDbEnv = {
   ...process.env,
   TEST_DB_PORT: testDbPort,
   TEST_DB_CONTAINER: testDbContainer,
+  TEST_DATABASE_URL: testDatabaseUrl,
+  LOGIN_TOKEN_SECRET: loginTokenSecret,
+  TRACKED_FILES_OWNER_TOKEN: trackedFilesOwnerToken,
 };
 
 function runStep(args, label, env = process.env, allowFailure = false) {
@@ -55,6 +69,12 @@ await withTestDbLock(async () => {
       },
     );
   } finally {
-    runStep(["db:test:down"], "清理测试数据库容器", testDbEnv, true);
+    cleanupTrackedFilesFromLock(trackedFilesLockPath, {
+      onlyIfStale: true,
+      expectedTrackedFilesOwnerToken: trackedFilesOwnerToken,
+    });
+    if (shouldRunDockerCleanup(testDbEnv)) {
+      runStep(["db:test:down"], "清理测试数据库容器", testDbEnv, true);
+    }
   }
 });

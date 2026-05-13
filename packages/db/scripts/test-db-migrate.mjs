@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import pg from "pg";
+import { resolveTestDatabaseName } from "../../../scripts/test-db-env.mjs";
 
 const { Client } = pg;
 
@@ -15,7 +16,7 @@ const port = process.env.TEST_DB_PORT ?? "55432";
 const user = process.env.TEST_DB_USER ?? "postgres";
 const password = process.env.TEST_DB_PASSWORD ?? "postgres";
 const adminDatabase = process.env.TEST_DB_ADMIN_DATABASE ?? "postgres";
-const testDatabase = process.env.TEST_DB_DATABASE ?? "prompt_management_test";
+const testDatabase = resolveTestDatabaseName(process.env, "prompt_management_test");
 
 const adminUrl =
   process.env.TEST_DB_ADMIN_URL ??

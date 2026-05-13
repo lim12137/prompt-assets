@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import net from "node:net";
 import { withTestDbLock } from "./with-test-db-lock.mjs";
+import { resolveDatabaseProbeTarget, resolveTestDbMode } from "./test-db-env.mjs";
 
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const stepTimeoutMs = Number(process.env.TEST_DB_PREPARE_STEP_TIMEOUT_MS ?? 180000);
@@ -47,8 +48,7 @@ function sleep(ms) {
 }
 
 async function waitForHostDatabase(label = "测试数据库主机端口") {
-  const host = process.env.TEST_DB_HOST ?? "127.0.0.1";
-  const port = Number(process.env.TEST_DB_PORT ?? "55432");
+  const { host, port } = resolveDatabaseProbeTarget(process.env);
 
   for (let attempt = 1; attempt <= 10; attempt += 1) {
     try {
@@ -80,13 +80,18 @@ async function waitForHostDatabase(label = "测试数据库主机端口") {
 }
 
 async function runPreparePipeline() {
+  const testDbMode = resolveTestDbMode(process.env);
   let attempt = 0;
   while (attempt < retryCount) {
     attempt += 1;
 
     try {
-      runStep(["db:test:up"], `启动 Docker 测试数据库（第 ${attempt} 次）`);
-      await waitForHostDatabase("启动后测试数据库主机端口");
+      if (testDbMode === "docker") {
+        runStep(["db:test:up"], `启动 Docker 测试数据库（第 ${attempt} 次）`);
+        await waitForHostDatabase("启动后测试数据库主机端口");
+      } else {
+        await waitForHostDatabase("远程测试数据库主机端口");
+      }
 
       runStep(["db:test:migrate"], `执行测试库迁移（第 ${attempt} 次）`);
       await waitForHostDatabase("迁移后测试数据库主机端口");
@@ -94,7 +99,9 @@ async function runPreparePipeline() {
       runStep(["db:test:seed"], `写入测试库 seed（第 ${attempt} 次）`);
       return;
     } catch (error) {
-      runStepAllowFailure(["db:test:down"], "失败后清理测试数据库容器", { timeout: 30000 });
+      if (testDbMode === "docker") {
+        runStepAllowFailure(["db:test:down"], "失败后清理测试数据库容器", { timeout: 30000 });
+      }
       if (attempt >= retryCount) {
         throw error;
       }

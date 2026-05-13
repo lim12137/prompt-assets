@@ -1,15 +1,36 @@
 import { spawnSync } from "node:child_process";
+import path from "node:path";
 import { withTestDbLock } from "./with-test-db-lock.mjs";
+import { requireWorkspaceEnvValue } from "./workspace-env.mjs";
+import { cleanupTrackedFilesFromLock } from "../apps/web/scripts/tracked-files-guard.mjs";
+import { shouldRunDockerCleanup } from "./test-db-env.mjs";
 
 const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+const testDbPort = process.env.TEST_DB_PORT ?? "55436";
+const testDbContainer = process.env.TEST_DB_CONTAINER ?? "prompt-management-test-db-admin";
 const testDatabaseUrl =
   process.env.TEST_DATABASE_URL ??
-  "postgres://postgres:postgres@127.0.0.1:55432/prompt_management_test";
+  `postgres://postgres:postgres@127.0.0.1:${testDbPort}/prompt_management_test`;
 const testSpecPath =
   process.env.ADMIN_E2E_SPEC_PATH ??
   "tests/e2e/admin/management-flow.spec.ts";
 const playwrightWebPort = process.env.PLAYWRIGHT_WEB_PORT ?? "3112";
 const playwrightWebDist = process.env.PLAYWRIGHT_WEB_DIST ?? ".next-e2e-real-db-admin";
+const trackedFilesOwnerToken =
+  process.env.TRACKED_FILES_OWNER_TOKEN ?? `admin-real-db-${process.pid}-${Date.now()}`;
+const trackedFilesLockPath = path.join(process.cwd(), "apps/web/.next-tracked-files.lock");
+const loginTokenSecret = requireWorkspaceEnvValue("LOGIN_TOKEN_SECRET", {
+  cwd: process.cwd(),
+  env: process.env,
+});
+const testDbEnv = {
+  ...process.env,
+  TEST_DB_PORT: testDbPort,
+  TEST_DB_CONTAINER: testDbContainer,
+  TEST_DATABASE_URL: testDatabaseUrl,
+  LOGIN_TOKEN_SECRET: loginTokenSecret,
+  TRACKED_FILES_OWNER_TOKEN: trackedFilesOwnerToken,
+};
 
 function runStep(args, label, env = process.env, allowFailure = false) {
   console.log(`==> ${label}`);
@@ -31,14 +52,14 @@ function runStep(args, label, env = process.env, allowFailure = false) {
 await withTestDbLock(async () => {
   try {
     runStep(["db:test:prepare"], "准备真实测试数据库", {
-      ...process.env,
+      ...testDbEnv,
       TEST_DB_PREPARE_SKIP_LOCK: "1",
     });
     runStep(
       ["exec", "playwright", "test", testSpecPath],
       `执行 admin 真实 DB E2E (${testSpecPath})`,
       {
-        ...process.env,
+        ...testDbEnv,
         DATABASE_URL: testDatabaseUrl,
         PROMPT_REPOSITORY_DATA_SOURCE: "auto",
         PLAYWRIGHT_WEB_PORT: playwrightWebPort,
@@ -46,6 +67,12 @@ await withTestDbLock(async () => {
       },
     );
   } finally {
-    runStep(["db:test:down"], "清理测试数据库容器", process.env, true);
+    cleanupTrackedFilesFromLock(trackedFilesLockPath, {
+      onlyIfStale: true,
+      expectedTrackedFilesOwnerToken: trackedFilesOwnerToken,
+    });
+    if (shouldRunDockerCleanup(testDbEnv)) {
+      runStep(["db:test:down"], "清理测试数据库容器", testDbEnv, true);
+    }
   }
 });
