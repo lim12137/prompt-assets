@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts",
-    "db:migrate": "node ./scripts/migrate.mjs",
-    "db:seed": "node --experimental-strip-types ./scripts/seed.mjs",
+    "db:migrate": "node --env-file=.env ./scripts/migrate.mjs",
+    "db:seed": "node --env-file=.env --experimental-strip-types ./scripts/seed.mjs",
     "db:push": "drizzle-kit push --config=drizzle.config.ts",
     "db:studio": "drizzle-kit studio --config=drizzle.config.ts",
     "db:test:up": "node ./scripts/test-db-up.mjs",
