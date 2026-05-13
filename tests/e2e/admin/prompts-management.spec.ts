@@ -81,21 +81,21 @@ function createPromptRecord(input: {
   title: string;
   summary: string;
   status: PromptStatus;
-  primaryCategorySlug: string;
-  primaryCategoryName: string;
   categorySlugs: string[];
   categories: ManagedPrompt["categories"];
 }): ManagedPrompt {
+  const category = input.categories[0] ?? {
+    slug: input.categorySlugs[0] ?? "",
+    name: "",
+  };
+
   return {
     slug: input.slug,
     title: input.title,
     summary: input.summary,
     status: input.status,
     updatedAt: "2026-05-01T09:30:00.000Z",
-    category: {
-      slug: input.primaryCategorySlug,
-      name: input.primaryCategoryName,
-    },
+    category,
     categories: input.categories,
     categorySlugs: input.categorySlugs,
   };
@@ -153,8 +153,6 @@ async function setupPromptManagementRoutes(page: Page) {
         title: "Alpha Prompt",
         summary: "用于验证已发布列表操作。",
         status: "published",
-        primaryCategorySlug: "programming",
-        primaryCategoryName: "编程",
         categorySlugs: ["programming"],
         categories: [{ slug: "programming", name: "编程" }],
       }),
@@ -166,8 +164,6 @@ async function setupPromptManagementRoutes(page: Page) {
         title: "Beta Prompt",
         summary: "用于验证已归档列表操作。",
         status: "archived",
-        primaryCategorySlug: "design",
-        primaryCategoryName: "设计",
         categorySlugs: ["design"],
         categories: [{ slug: "design", name: "设计" }],
       }),
@@ -179,8 +175,6 @@ async function setupPromptManagementRoutes(page: Page) {
         title: "Gamma Prompt",
         summary: "用于验证重新分类与删除。",
         status: "published",
-        primaryCategorySlug: "uncategorized",
-        primaryCategoryName: "待分类",
         categorySlugs: ["uncategorized"],
         categories: [{ slug: "uncategorized", name: "待分类" }],
       }),
@@ -246,7 +240,6 @@ async function setupPromptManagementRoutes(page: Page) {
 
     const payload = route.request().postDataJSON() as {
       categorySlugs?: string[];
-      primaryCategorySlug?: string;
     };
     const prompt = promptStore.get("gamma-prompt");
     if (!prompt) {
@@ -257,23 +250,18 @@ async function setupPromptManagementRoutes(page: Page) {
     const nextCategorySlugs = Array.isArray(payload.categorySlugs)
       ? payload.categorySlugs.filter(Boolean).filter((slug, index, all) => all.indexOf(slug) === index)
       : [];
-    const primaryCategorySlug = payload.primaryCategorySlug ?? "";
     const nextCategories = categories
       .filter((item) => nextCategorySlugs.includes(item.slug))
       .map((item) => ({ slug: item.slug, name: item.name }));
-    const primaryCategory = categories.find((item) => item.slug === primaryCategorySlug);
 
-    if (!primaryCategory) {
-      await fulfillJson(route, { error: "primary category must exist in categorySlugs" }, 400);
+    if (nextCategories.length === 0) {
+      await fulfillJson(route, { error: "categorySlugs must include at least one category" }, 400);
       return;
     }
 
     const updated: ManagedPrompt = {
       ...prompt,
-      category: {
-        slug: primaryCategory.slug,
-        name: primaryCategory.name,
-      },
+      category: nextCategories[0],
       categories: nextCategories,
       categorySlugs: nextCategorySlugs.filter((slug) => slug !== "uncategorized"),
     };
@@ -293,7 +281,7 @@ async function setupPromptManagementRoutes(page: Page) {
         slug: "gamma-prompt",
         title: "Gamma Prompt",
         status: "published",
-        primaryCategory: {
+        category: {
           slug: "content-creation",
           name: "内容创作",
         },
@@ -330,6 +318,56 @@ async function setupPromptManagementRoutes(page: Page) {
         dailyInteractions: 1,
       },
     });
+  });
+}
+
+async function setupLongPromptListRoutes(page: Page) {
+  const categories: ManagedCategory[] = [
+    {
+      slug: "programming",
+      name: "编程",
+      isSystem: false,
+      isSelectable: true,
+      isCollapsedByDefault: false,
+      promptCount: 30,
+    },
+    {
+      slug: "design",
+      name: "设计",
+      isSystem: false,
+      isSelectable: true,
+      isCollapsedByDefault: false,
+      promptCount: 10,
+    },
+  ];
+
+  const promptStore = new Map<string, ManagedPrompt>();
+  for (let index = 1; index <= 30; index += 1) {
+    const slug = `long-prompt-${String(index).padStart(2, "0")}`;
+    promptStore.set(
+      slug,
+      createPromptRecord({
+        slug,
+        title: `Long Prompt ${index}`,
+        summary: `用于验证长列表下浮动条表现的提示词 ${index}。`,
+        status: "published",
+        categorySlugs: [index % 2 === 0 ? "design" : "programming"],
+        categories: [
+          {
+            slug: index % 2 === 0 ? "design" : "programming",
+            name: index % 2 === 0 ? "设计" : "编程",
+          },
+        ],
+      }),
+    );
+  }
+
+  await page.route("**/api/admin/categories", async (route) => {
+    await fulfillJson(route, { categories });
+  });
+
+  await page.route("**/api/admin/prompts?**", async (route) => {
+    await fulfillJson(route, { prompts: [...promptStore.values()] });
   });
 }
 
@@ -411,8 +449,6 @@ test("后台提示词管理列表在状态操作后切换筛选时不会被旧�
         title: "Alpha Prompt",
         summary: "用于验证旧请求回填竞态。",
         status: "published",
-        primaryCategorySlug: "programming",
-        primaryCategoryName: "编程",
         categorySlugs: ["programming"],
         categories: [{ slug: "programming", name: "编程" }],
       }),
@@ -424,8 +460,6 @@ test("后台提示词管理列表在状态操作后切换筛选时不会被旧�
         title: "Beta Prompt",
         summary: "用于验证已归档筛选结果。",
         status: "archived",
-        primaryCategorySlug: "design",
-        primaryCategoryName: "设计",
         categorySlugs: ["design"],
         categories: [{ slug: "design", name: "设计" }],
       }),
@@ -437,8 +471,6 @@ test("后台提示词管理列表在状态操作后切换筛选时不会被旧�
         title: "Gamma Prompt",
         summary: "只应出现在全部状态里。",
         status: "published",
-        primaryCategorySlug: "programming",
-        primaryCategoryName: "编程",
         categorySlugs: ["programming"],
         categories: [{ slug: "programming", name: "编程" }],
       }),
@@ -530,14 +562,45 @@ test("后台提示词管理列表支持多选并显示浮动操作条", async ({
   await expect(actionBar.getByRole("button", { name: "批量增加分类" })).toBeVisible();
   await expect(actionBar.getByRole("button", { name: "批量删除分类" })).toBeVisible();
   await expect(actionBar.getByRole("button", { name: "清空选择" })).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/prompts$/);
 
   await page.getByLabel("选择提示词 Beta Prompt").check();
   await expect(actionBar).toContainText("已选 2 项");
+  await expect(page).toHaveURL(/\/admin\/prompts$/);
+
+  await page.getByLabel("分类").selectOption("design");
+  await expect(page).toHaveURL(/\/admin\/prompts$/);
+  await page.getByLabel("分类").selectOption("");
 
   await actionBar.getByRole("button", { name: "清空选择" }).click();
   await expect(actionBar).toHaveCount(0);
   await expect(page.getByLabel("选择提示词 Alpha Prompt")).not.toBeChecked();
   await expect(page.getByLabel("选择提示词 Beta Prompt")).not.toBeChecked();
+});
+
+test("后台提示词管理列表在长列表中仍固定显示批量条且批量按钮为禁用态", async ({
+  page,
+}) => {
+  await addAdminCookie(page);
+  await setupLongPromptListRoutes(page);
+
+  await page.goto("/admin/prompts");
+
+  await page
+    .getByTestId("admin-prompts-row-long-prompt-01")
+    .getByRole("checkbox", { name: "选择提示词 Long Prompt 1" })
+    .check();
+
+  const actionBar = page.getByTestId("admin-prompts-bulk-action-bar");
+  await expect(actionBar).toHaveCSS("position", "fixed");
+  await expect(actionBar).toBeInViewport();
+  await expect(actionBar).toContainText("批量操作暂未接入");
+  await expect(actionBar.getByRole("button", { name: "批量增加分类" })).toBeDisabled();
+  await expect(actionBar.getByRole("button", { name: "批量删除分类" })).toBeDisabled();
+
+  await page.getByTestId("admin-prompts-row-long-prompt-20").scrollIntoViewIfNeeded();
+  await expect(actionBar).toBeInViewport();
+  await expect(actionBar).toContainText("已选 1 项");
 });
 
 test("后台提示词管理详情页状态标签样式跟随真实状态", async ({ page }) => {
@@ -561,10 +624,8 @@ test("后台提示词管理详情支持重新分类并自动移除待分类，�
 
   await expect(page.getByRole("heading", { level: 1, name: "管理提示词" })).toBeVisible();
   await expect(page.getByText("Gamma Prompt")).toBeVisible();
-  await expect(page.getByLabel("主分类").getByText("待分类")).toHaveCount(0);
 
   await page.getByLabel("内容创作").check();
-  await page.getByLabel("主分类").selectOption("content-creation");
   await page.getByRole("button", { name: "保存分类" }).click();
 
   await expect(page.getByRole("status")).toContainText("已更新 Gamma Prompt 的分类");

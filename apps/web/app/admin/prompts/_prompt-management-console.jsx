@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { BackHomeLink } from "../../_shared/back-home-link.jsx";
 import { notifyNavigationStart } from "../../_shared/navigation-feedback.js";
 
@@ -166,10 +166,12 @@ export function AdminPromptManagementConsole() {
   const [categories, setCategories] = useState([]);
   const [prompts, setPrompts] = useState([]);
   const [selectedPromptSlugs, setSelectedPromptSlugs] = useState([]);
+  const [bulkActionBarHeight, setBulkActionBarHeight] = useState(0);
   const [loading, setLoading] = useState(true);
   const [busySlug, setBusySlug] = useState("");
   const [feedback, setFeedback] = useState("可在这里管理已发布/已归档提示词，并进入详情页重分类。");
   const filtersRef = useRef(filters);
+  const bulkActionBarRef = useRef(null);
   const latestPromptsRequestIdRef = useRef(0);
 
   useEffect(() => {
@@ -217,6 +219,34 @@ export function AdminPromptManagementConsole() {
     [categories],
   );
   const selectedCount = selectedPromptSlugs.length;
+
+  useLayoutEffect(() => {
+    if (selectedCount === 0) {
+      setBulkActionBarHeight(0);
+      return undefined;
+    }
+
+    const element = bulkActionBarRef.current;
+    if (!(element instanceof HTMLElement)) {
+      return undefined;
+    }
+
+    const measure = () => {
+      setBulkActionBarHeight(Math.ceil(element.getBoundingClientRect().height));
+    };
+
+    measure();
+
+    if (typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, [selectedCount]);
 
   useEffect(() => {
     setSelectedPromptSlugs((current) =>
@@ -276,10 +306,16 @@ export function AdminPromptManagementConsole() {
 
   return (
     <main
+      className="pm-prompt-management-page"
       style={{
         maxWidth: "1180px",
         margin: "0 auto",
         padding: "24px",
+        paddingBottom:
+          selectedCount > 0
+            ? "calc(var(--pm-floating-action-bar-height, 0px) + var(--pm-floating-action-bar-bottom-gap, 20px) + 24px)"
+            : "24px",
+        ["--pm-floating-action-bar-height"]: `${bulkActionBarHeight}px`,
         display: "grid",
         gap: "16px",
       }}
@@ -515,15 +551,38 @@ export function AdminPromptManagementConsole() {
       )}
 
       {selectedCount > 0 ? (
-        <section className="pm-floating-action-bar" data-testid="admin-prompts-bulk-action-bar">
-          <p style={{ margin: 0, color: "var(--pm-title)", fontWeight: 500 }}>
-            已选 {selectedCount} 项
-          </p>
+        <section
+          ref={bulkActionBarRef}
+          className="pm-floating-action-bar"
+          data-testid="admin-prompts-bulk-action-bar"
+        >
+          <div style={{ display: "grid", gap: "4px" }}>
+            <p style={{ margin: 0, color: "var(--pm-title)", fontWeight: 500 }}>
+              已选 {selectedCount} 项
+            </p>
+            <p
+              id="admin-prompts-bulk-action-note"
+              style={{ margin: 0, color: "var(--pm-muted)", fontSize: "13px" }}
+            >
+              批量操作暂未接入，当前仅保留 UI 占位。
+            </p>
+          </div>
+
           <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-            <button type="button" className="pm-secondary-button">
+            <button
+              type="button"
+              className="pm-secondary-button pm-placeholder-action"
+              disabled
+              aria-describedby="admin-prompts-bulk-action-note"
+            >
               批量增加分类
             </button>
-            <button type="button" className="pm-secondary-button">
+            <button
+              type="button"
+              className="pm-secondary-button pm-placeholder-action"
+              disabled
+              aria-describedby="admin-prompts-bulk-action-note"
+            >
               批量删除分类
             </button>
             <button
