@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { addAuthCookie, createAdminLoginToken } from "../auth-helpers.ts";
 
 function generateSlugFromTitle(title: string): string {
   const normalized = title
@@ -19,7 +20,18 @@ function generateSlugFromTitle(title: string): string {
   return `prompt-${Math.abs(hash)}`;
 }
 
+function createAdminToken(): string {
+  return createAdminLoginToken("e2e-admin-category-real-db");
+}
+
+async function addAdminCookie(page: Page) {
+  const token = createAdminToken();
+  test.skip(!token, "未配置 LOGIN_TOKEN_SECRET，无法生成登录 token。");
+  await addAuthCookie(page, token);
+}
+
 test("真实 DB: 分类管理新增/删除与待分类补偿链路可用", async ({ page }) => {
+  await addAdminCookie(page);
   const marker = Date.now();
   const categoryName = `Task6分类-${marker}`;
   const categorySlug = `task6-category-${marker}`;
@@ -42,7 +54,7 @@ test("真实 DB: 分类管理新增/删除与待分类补偿链路可用", async
   await page.getByLabel("摘要").fill("用于验证删除分类后的待分类补偿。");
   await page.getByLabel(categoryName).check();
   await page.getByRole("textbox", { name: "内容" }).fill(`Task6 内容 ${marker}`);
-  await page.getByRole("button", { name: "提交创建" }).click();
+  await page.getByRole("button", { name: "提交审核" }).click();
   await expect(page.getByRole("status")).toContainText("已创建");
   await expect(page.getByRole("status")).toContainText(title);
 

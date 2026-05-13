@@ -1,51 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { signLoginToken } from "../../../apps/web/lib/auth/session.ts";
-
-function readSecretFromDotEnv(): string {
-  try {
-    const content = readFileSync(join(process.cwd(), ".env"), "utf8");
-    const line = content
-      .split(/\r?\n/)
-      .find((item) => item.trim().startsWith("LOGIN_TOKEN_SECRET="));
-    return line?.split("=")[1]?.trim() ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function createAdminToken(): string {
-  const secret = process.env.LOGIN_TOKEN_SECRET?.trim() || readSecretFromDotEnv();
-  if (!secret) {
-    return "";
-  }
-  return signLoginToken(
-    {
-      uid: "e2e-admin-back-link",
-      name: "E2E管理员",
-      department: "测试部",
-      can_manage: true,
-      can_manage_whitelist: false,
-    },
-    { secret },
-  );
-}
+import { addAuthCookie, createAdminLoginToken } from "../auth-helpers.ts";
 
 async function addAdminCookie(page: Page) {
-  const token = createAdminToken();
+  const token = createAdminLoginToken("e2e-admin-back-link");
   test.skip(!token, "未配置 LOGIN_TOKEN_SECRET，无法生成登录 token。");
-
-  await page.context().addCookies([
-    {
-      name: "auth_token",
-      value: token,
-      domain: "127.0.0.1",
-      path: "/",
-      httpOnly: true,
-      sameSite: "Lax",
-    },
-  ]);
+  await addAuthCookie(page, token);
 }
 
 test("首页创建/导入/管理入口均为可直达链接", async ({ page }) => {
@@ -122,7 +81,8 @@ test("管理页在真实 DB 中完成 approve/reject 关键交互", async ({
 
   await page.goto("/admin");
   const rows = page.locator('article[data-testid^="submission-row-"]');
-  await expect(rows).toHaveCount(2);
+  const initialCount = await rows.count();
+  expect(initialCount).toBeGreaterThanOrEqual(2);
 
   const firstRow = rows.first();
   const firstTitle = (await firstRow.getByRole("heading", { level: 2 }).textContent())?.trim();
@@ -131,7 +91,7 @@ test("管理页在真实 DB 中完成 approve/reject 关键交互", async ({
   await expect(page.getByRole("status")).toContainText(
     `已通过 ${firstTitle}`,
   );
-  await expect(rows).toHaveCount(1);
+  await expect(rows).toHaveCount(initialCount - 1);
 
   const remainingRow = rows.first();
   const remainingTitle = (
@@ -142,9 +102,8 @@ test("管理页在真实 DB 中完成 approve/reject 关键交互", async ({
   await expect(page.getByRole("status")).toContainText(
     `已拒绝 ${remainingTitle}`,
   );
-  await expect(rows).toHaveCount(0);
-  await expect(page.getByText("当前没有待审核项")).toBeVisible();
+  await expect(rows).toHaveCount(initialCount - 2);
 
   await page.reload();
-  await expect(rows).toHaveCount(0);
+  await expect(rows).toHaveCount(initialCount - 2);
 });

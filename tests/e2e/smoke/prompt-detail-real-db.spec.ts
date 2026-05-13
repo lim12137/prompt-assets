@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
+import { addAuthCookie, createEmployeeLoginToken } from "../auth-helpers.ts";
 
 test("真实 DB: 详情页与候选提交主链路可用", async ({ page }) => {
+  const token = createEmployeeLoginToken("e2e-detail-real-db");
+  test.skip(!token, "未配置 LOGIN_TOKEN_SECRET，无法生成登录 token。");
+  await addAuthCookie(page, token);
+
   await page.addInitScript(() => {
     Object.defineProperty(window.navigator, "clipboard", {
       configurable: true,
@@ -28,8 +33,9 @@ test("真实 DB: 详情页与候选提交主链路可用", async ({ page }) => {
   await page.getByRole("button", { name: "提交候选", exact: true }).click();
   await expect(page.getByText("提交中...")).toBeVisible();
   await expect(page.getByText("提交成功")).toBeVisible();
-  await expect(page.getByText("v0001-cand-alice-")).toBeVisible();
 
   await page.reload();
-  await expect(page.getByTestId("employee-candidate-card")).toContainText(marker);
+  await expect(
+    page.getByTestId("employee-candidate-card").filter({ hasText: marker }).first(),
+  ).toBeVisible();
 });

@@ -139,3 +139,57 @@ pnpm run test:e2e:detail:db
   - create/import：缺少 admin 登录前置
   - category-management：按钮文案断言过期
   - detail：缺少员工登录前置
+
+## 2026-05-13 补充验收：过期 real-db 用例重写与修复
+
+### 本轮测试相关改动
+
+- `tests/e2e/auth-helpers.ts`
+- `tests/e2e/admin/management-flow.spec.ts`
+- `tests/e2e/admin/create-import-real-db.spec.ts`
+- `tests/e2e/admin/category-management-real-db.spec.ts`
+- `tests/e2e/smoke/prompt-detail-real-db.spec.ts`
+
+### 测试命令
+
+```powershell
+$env:TEST_DATABASE_URL='postgresql://app_user:ChangeMe_2026_Strong!@10.45.131.70:55432/prompt_management_test'
+$env:TEST_DB_ADMIN_URL='postgresql://app_user:ChangeMe_2026_Strong!@10.45.131.70:55432/app_db'
+pnpm run test:e2e:admin:db
+pnpm run test:e2e:admin:create-import:db
+pnpm run test:e2e:admin:category-management:db
+pnpm run test:e2e:detail:db
+```
+
+### 结果摘要
+
+- `pnpm run test:e2e:admin:db`
+  - 结果：通过，`3 passed`
+  - 修复点：把 `management-flow.spec.ts` 中写死的初始待审核数量 `2` 改为基于 seed 实际数据做动态断言，验证 approve/reject 后数量递减。
+
+- `pnpm run test:e2e:admin:create-import:db`
+  - 结果：通过，`1 passed`
+  - 修复点：
+    - 补 admin 登录 cookie 前置
+    - 创建页按钮文案从旧的 `提交创建` 对齐为当前 `提交审核`
+    - 创建状态文案从旧的 `创建请求提交中` 对齐为当前 `审核请求提交中`
+    - 导入页 textarea 不再依赖“精确覆盖默认示例”的旧假设，改为显式替换值并验证导入成功
+
+- `pnpm run test:e2e:admin:category-management:db`
+  - 结果：通过，`1 passed`
+  - 修复点：
+    - 补 admin 登录 cookie 前置
+    - 创建页按钮文案从旧的 `提交创建` 对齐为当前 `提交审核`
+
+- `pnpm run test:e2e:detail:db`
+  - 结果：通过，`1 passed`
+  - 修复点：
+    - 补员工登录 cookie 前置
+    - 去掉硬编码候选版本号断言
+    - reload 后按本次提交 `marker` 过滤候选卡，避免多张候选卡导致 strict mode 失败
+
+### 最终结论
+
+- 四条目标入口均已在远程真实数据库环境下实跑通过。
+- 本轮只修改测试与测试报告；未修改产品代码。
+- 剩余失败：无。

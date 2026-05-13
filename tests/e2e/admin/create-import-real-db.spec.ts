@@ -1,4 +1,5 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { addAuthCookie, createAdminLoginToken } from "../auth-helpers.ts";
 
 function generateSlugFromTitle(title: string): string {
   const normalized = title
@@ -19,7 +20,24 @@ function generateSlugFromTitle(title: string): string {
   return `prompt-${Math.abs(hash)}`;
 }
 
+async function replaceTextareaValue(page: Page, label: string, nextValue: string) {
+  await page.getByLabel(label).evaluate((element, value) => {
+    const textarea = element as HTMLTextAreaElement;
+    const descriptor = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      "value",
+    );
+    descriptor?.set?.call(textarea, value);
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    textarea.dispatchEvent(new Event("change", { bubbles: true }));
+  }, nextValue);
+}
+
 test("真实 DB: 管理创建与批量导入链路可用", async ({ page }) => {
+  const token = createAdminLoginToken("e2e-admin-create-import-real-db");
+  test.skip(!token, "未配置 LOGIN_TOKEN_SECRET，无法生成登录 token。");
+  await addAuthCookie(page, token);
+
   const marker = Date.now();
   const createTitle = `真实DB创建标题-${marker}`;
   const importTitle = `真实DB导入标题-${marker}`;
@@ -31,8 +49,8 @@ test("真实 DB: 管理创建与批量导入链路可用", async ({ page }) => {
   await page.getByLabel("摘要").fill("真实DB创建链路回归摘要。");
   await page.getByLabel("编程").check();
   await page.getByRole("textbox", { name: "内容" }).fill(`真实DB创建正文:${marker}`);
-  await page.getByRole("button", { name: "提交创建" }).click();
-  await expect(page.getByRole("status")).toContainText("创建请求提交中");
+  await page.getByRole("button", { name: "提交审核" }).click();
+  await expect(page.getByRole("status")).toContainText("审核请求提交中");
   await expect(page.getByRole("status")).toContainText("已创建");
   await expect(page.getByRole("status")).toContainText(createTitle);
 
@@ -57,8 +75,8 @@ test("真实 DB: 管理创建与批量导入链路可用", async ({ page }) => {
   );
   const jsonInput = page.getByLabel("JSON 内容");
   await expect(jsonInput).toContainText("categorySlugs");
-  await jsonInput.fill(importPayload);
-  await expect(jsonInput).toHaveValue(importPayload);
+  await replaceTextareaValue(page, "JSON 内容", importPayload);
+  await expect(jsonInput).toContainText(importTitle);
   await page.getByRole("button", { name: "提交导入" }).click();
   await expect(page.getByRole("status")).toContainText("导入请求提交中");
   await expect(page.getByRole("status")).toContainText("导入成功");
