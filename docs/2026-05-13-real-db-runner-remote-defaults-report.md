@@ -30,3 +30,47 @@ pnpm test:e2e:detail:db
 
 - 当前验证覆盖了 5 个 runner 的单测与 1 条真实入口；其余 4 条 real-db 入口本次未逐条回归。
 - 显式 `TEST_DB_MODE=docker` 的兼容行为通过脚本逻辑保留，但本次未做独立 E2E 实跑。
+
+## 2026-05-13 补充实跑结果
+
+### 执行命令
+
+```powershell
+pnpm run test:e2e:admin:db
+pnpm run test:e2e:admin:create-import:db
+pnpm run test:e2e:admin:category-management:db
+pnpm run test:e2e:admin:prompts:db
+```
+
+### 结果汇总
+
+| 命令 | 是否成功进入远程 prepare | 通过情况 | 结果判定 |
+| --- | --- | --- | --- |
+| `pnpm run test:e2e:admin:db` | 是。`db:test:seed` 输出 `databaseUrl=postgresql://app_user:ChangeMe_2026_Strong!@10.45.131.70:55432/prompt_management_test` | 通过，`3/3` 用例通过 | 通过 |
+| `pnpm run test:e2e:admin:create-import:db` | 是。`db:test:seed` 输出远程 `10.45.131.70:55432` | 通过，`1/1` 用例通过 | 通过 |
+| `pnpm run test:e2e:admin:category-management:db` | 是。`db:test:seed` 输出远程 `10.45.131.70:55432` | 通过，`1/1` 用例通过 | 通过 |
+| `pnpm run test:e2e:admin:prompts:db` | 是。`db:test:seed` 输出远程 `10.45.131.70:55432` | 通过，`3/3` 用例通过 | 通过 |
+
+### 单项摘要
+
+- `test:e2e:admin:db`
+  - prepare 阶段完成迁移 `0001` 至 `0005`，随后执行 `tests/e2e/admin/management-flow.spec.ts`。
+  - Playwright 结果：`3 passed (41.4s)`。
+- `test:e2e:admin:create-import:db`
+  - prepare 阶段完成远程测试库 reset 和 seed，未显式注入 `TEST_DB_*`。
+  - Playwright 结果：`1 passed (33.7s)`。
+- `test:e2e:admin:category-management:db`
+  - prepare 阶段完成远程测试库 reset 和 seed，随后执行分类管理真实库用例。
+  - Playwright 结果：`1 passed (32.1s)`。
+- `test:e2e:admin:prompts:db`
+  - prepare 阶段完成远程测试库 reset 和 seed，随后执行提示词管理真实库 3 条用例。
+  - Playwright 结果：`3 passed (43.2s)`。
+
+### 失败归因
+
+- 本次 4 条命令均未失败，因此无测试问题、远程模式问题或数据问题需要归因。
+
+### 备注
+
+- 4 条命令原始输出已分别保存到 `temp/test-logs/*.log` 便于追溯，本次不纳入提交。
+- 全部命令均只使用 runner 默认配置，未额外传入任何 `TEST_DB_*` 环境变量。
