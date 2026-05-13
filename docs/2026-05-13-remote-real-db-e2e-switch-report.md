@@ -86,3 +86,56 @@ pnpm run test:e2e:admin:prompts:db
 
 - 远程模式当前通过连接串 host 自动识别；如果未来存在“本机地址但非 Docker”的特殊接法，需要显式设置 `TEST_DB_MODE=remote`。
 - 本轮验收覆盖了 `prompts` real-db 入口；其余 real-db runner 已接入同一跳过清理逻辑，但未逐一做远程实跑。
+
+## 2026-05-13 补充验收：剩余 real-db 入口远程实跑
+
+### 测试命令
+
+```powershell
+$env:TEST_DATABASE_URL='postgresql://app_user:ChangeMe_2026_Strong!@10.45.131.70:55432/prompt_management_test'
+$env:TEST_DB_ADMIN_URL='postgresql://app_user:ChangeMe_2026_Strong!@10.45.131.70:55432/app_db'
+pnpm run test:e2e:admin:db
+pnpm run test:e2e:admin:create-import:db
+pnpm run test:e2e:admin:category-management:db
+pnpm run test:e2e:detail:db
+```
+
+说明：
+
+- 用户需求里写的是 `test:e2e:admin:category:db`，仓库内实际可执行脚本名为 `test:e2e:admin:category-management:db`，本轮按实际脚本名执行。
+
+### 结果摘要
+
+- `pnpm run test:e2e:admin:db`
+  - 结果：失败，`management-flow.spec.ts` 为 `2 passed, 1 failed`
+  - 失败点：`await expect(rows).toHaveCount(2)` 实际拿到 `3`
+  - 归因：测试问题 / 测试数据问题
+  - 判断依据：远程 seed 摘要稳定为 `submissions=3`、`pendingSubmissions=3`，而用例仍硬编码假设管理页初始待审核数为 `2`
+
+- `pnpm run test:e2e:admin:create-import:db`
+  - 结果：失败，`create-import-real-db.spec.ts` 超时
+  - 失败点：访问 `/admin/create` 后被重定向到 `/login?redirect=%2Fadmin%2Fcreate`，`getByLabel("标题")` 一直不可用
+  - 归因：测试问题
+  - 判断依据：该 real-db 用例未注入 admin 登录 cookie，也未在 runner 中补登录态；失败发生在业务执行前，不是远程库切换失败
+
+- `pnpm run test:e2e:admin:category-management:db`
+  - 结果：失败，`category-management-real-db.spec.ts` 超时
+  - 失败点：创建页等待按钮 `提交创建` 超时
+  - 归因：测试问题
+  - 判断依据：当前页面实现 `apps/web/app/admin/create/page.jsx` 的提交按钮文案已是 `提交审核`，用例选择器仍使用旧文案 `提交创建`
+
+- `pnpm run test:e2e:detail:db`
+  - 结果：失败，`prompt-detail-real-db.spec.ts` 为 `1 failed`
+  - 失败点：候选提交后未出现 `提交成功`，页面实际提示 `提交失败：请先登录后再提交候选迭代`
+  - 归因：测试问题
+  - 判断依据：页面错误快照明确显示未登录态；失败原因为候选提交流程缺少登录前置，不是远程数据库或模式切换失败
+
+### 补充结论
+
+- 四个剩余入口都已完成远程测试库实跑。
+- 本轮未发现“远程模式切换错误导致 runner 无法准备数据库或误触发本机 Docker 清理”的证据。
+- 当前阻断点集中在用例前置与断言过期：
+  - admin 管理流：待审核数量假设与当前 seed 不一致
+  - create/import：缺少 admin 登录前置
+  - category-management：按钮文案断言过期
+  - detail：缺少员工登录前置
