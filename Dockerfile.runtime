@@ -1,0 +1,10 @@
+FROM node:20-bookworm-slim
+
+RUN corepack enable
+
+WORKDIR /workspace/app
+
+COPY docker/entrypoint.runtime.sh /usr/local/bin/entrypoint.runtime.sh
+RUN chmod +x /usr/local/bin/entrypoint.runtime.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.runtime.sh"]
