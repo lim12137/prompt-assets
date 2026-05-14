@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>提示词列表批量操作线框原型</title>
+  <style>
+    :root {
+      --bg: #f7f7f7;
+      --line: #2f2f2f;
+      --muted: #6b6b6b;
+      --paper: #ffffff;
+      --warn: #a11;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      background: repeating-linear-gradient(
+        45deg,
+        #f9f9f9,
+        #f9f9f9 12px,
+        #f4f4f4 12px,
+        #f4f4f4 24px
+      );
+      color: var(--line);
+    }
+    .page {
+      max-width: 1100px;
+      margin: 16px auto 120px;
+      padding: 0 12px;
+    }
+    .wire {
+      border: 2px solid var(--line);
+      background: var(--paper);
+      border-radius: 8px;
+      box-shadow: 3px 3px 0 #dcdcdc;
+    }
+    .header {
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .controls {
+      padding: 12px;
+      margin-bottom: 10px;
+      display: grid;
+      gap: 10px;
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .chip, .btn, .field {
+      border: 2px solid var(--line);
+      border-radius: 6px;
+      padding: 4px 10px;
+      background: #fff;
+      font-size: 14px;
+    }
+    .btn { cursor: default; }
+    .btn.active { background: #ececec; }
+    .chip { border-style: dashed; }
+    .table {
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    .thead, .item {
+      display: grid;
+      grid-template-columns: 44px 1.2fr 1fr 140px;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px dashed #8f8f8f;
+      align-items: start;
+    }
+    .thead { background: #f1f1f1; font-weight: 700; }
+    .item:last-child { border-bottom: none; }
+    .checkbox {
+      width: 20px; height: 20px; border: 2px solid var(--line); border-radius: 4px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700;
+    }
+    .checked { background: #e8e8e8; }
+    .title { font-weight: 700; margin-bottom: 4px; }
+    .meta { color: var(--muted); font-size: 12px; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tag {
+      border: 2px dashed var(--line);
+      border-radius: 20px;
+      padding: 2px 8px;
+      font-size: 12px;
+      background: #fafafa;
+    }
+    .tag.none { border-style: solid; color: var(--muted); }
+    .status { font-size: 12px; color: var(--muted); }
+    .bulk-bar {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      background: #fff;
+      border-top: 3px solid var(--line);
+      box-shadow: 0 -2px 0 #ddd;
+      padding: 10px 12px;
+    }
+    .bulk-inner {
+      max-width: 1100px; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    }
+    .confirm {
+      margin-top: 6px;
+      width: 100%;
+      border: 2px solid var(--warn);
+      background: #fff7f7;
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .warn { color: var(--warn); font-weight: 700; }
+    .muted { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="header wire">
+      <strong>线框原型：提示词列表批量操作（草图）</strong>
+      <div class="meta">目标：全选/反选、批量增加分类、批量删除分类、批量删除提示词（含风险提示与二次确认）</div>
+    </section>
+
+    <section class="controls wire">
+      <div class="row">
+        <span class="field">搜索框（关键字）</span>
+        <span class="chip">筛选：全部</span>
+        <span class="chip active">筛选：未分类</span>
+        <span class="chip">筛选：已发布</span>
+      </div>
+      <div class="row">
+        <span class="btn active">全选（当前筛选结果）</span>
+        <span class="btn">反选</span>
+        <span class="status">已勾选：3 / 7</span>
+      </div>
+    </section>
+
+    <section class="table wire">
+      <div class="thead">
+        <div>勾选</div>
+        <div>提示词标题</div>
+        <div>分类标签（平级多分类）</div>
+        <div>状态</div>
+      </div>
+
+      <article class="item">
+        <div><span class="checkbox checked">✓</span></div>
+        <div>
+          <div class="title">客服话术-退款安抚模板</div>
+          <div class="meta">ID: P-10231</div>
+        </div>
+        <div class="tags">
+          <span class="tag">客服</span>
+          <span class="tag">退款</span>
+          <span class="tag">情绪处理</span>
+        </div>
+        <div class="status">已发布</div>
+      </article>
+
+      <article class="item">
+        <div><span class="checkbox checked">✓</span></div>
+        <div>
+          <div class="title">周报自动总结提示词</div>
+          <div class="meta">ID: P-10232</div>
+        </div>
+        <div class="tags">
+          <span class="tag none">未分类</span>
+        </div>
+        <div class="status">草稿</div>
+      </article>
+
+      <article class="item">
+        <div><span class="checkbox"> </span></div>
+        <div>
+          <div class="title">新品卖点提炼模板</div>
+          <div class="meta">ID: P-10233</div>
+        </div>
+        <div class="tags">
+          <span class="tag">营销</span>
+          <span class="tag">商品</span>
+        </div>
+        <div class="status">已发布</div>
+      </article>
+
+      <article class="item">
+        <div><span class="checkbox checked">✓</span></div>
+        <div>
+          <div class="title">研发日报风险扫描助手</div>
+          <div class="meta">ID: P-10234</div>
+        </div>
+        <div class="tags">
+          <span class="tag">研发管理</span>
+          <span class="tag">风险识别</span>
+        </div>
+        <div class="status">草稿</div>
+      </article>
+    </section>
+  </main>
+
+  <aside class="bulk-bar">
+    <div class="bulk-inner">
+      <strong>批量操作条（固定底部）</strong>
+      <span class="muted">当前已选 3 条</span>
+      <span class="btn">批量增加分类 +</span>
+      <span class="field">输入/选择分类标签（可多选）</span>
+      <span class="btn">执行增加</span>
+      <span class="btn">批量删除分类 -</span>
+      <span class="field">输入/选择要移除的标签（可多选）</span>
+      <span class="btn">执行删除分类</span>
+      <span class="btn">批量删除提示词</span>
+
+      <div class="confirm">
+        <div class="warn">高风险操作确认区：你正在删除 3 条提示词，此操作不可恢复。</div>
+        <div>二次确认控件（线框占位）：</div>
+        <div class="row" style="margin-top: 6px;">
+          <span class="field">输入“删除3条”以确认</span>
+          <span class="btn">取消</span>
+          <span class="btn" style="border-color:#a11;color:#a11;">确认删除</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+</body>
+</html>

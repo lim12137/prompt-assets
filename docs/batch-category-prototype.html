@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>批量分类线框原型（平级分类）</title>
+  <style>
+    :root {
+      --bg: #f2f2f2;
+      --paper: #ffffff;
+      --line: #3a3a3a;
+      --soft-line: #9b9b9b;
+      --text: #1f1f1f;
+      --muted: #555;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .page {
+      padding: 14px;
+    }
+    .head {
+      margin-bottom: 10px;
+      padding: 10px;
+      border: 2px solid var(--line);
+      background: repeating-linear-gradient(
+        -45deg,
+        #fff,
+        #fff 8px,
+        #f7f7f7 8px,
+        #f7f7f7 16px
+      );
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .head strong {
+      font-size: 16px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .card {
+      background: var(--paper);
+      border: 2px solid var(--line);
+      min-height: 800px;
+    }
+    .card-title {
+      padding: 10px;
+      border-bottom: 2px solid var(--line);
+      background: #efefef;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .wire-box {
+      margin: 10px;
+      border: 2px solid var(--soft-line);
+      padding: 8px;
+      background: #fff;
+    }
+    .wire-title {
+      font-weight: 700;
+      font-size: 12px;
+      margin-bottom: 6px;
+      color: var(--muted);
+    }
+    .toolbar, .batchbar, .flow-note {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px;
+      border: 1px dashed var(--soft-line);
+      font-size: 12px;
+      margin-bottom: 8px;
+    }
+    .flow-note {
+      background: #fcfcfc;
+      color: var(--muted);
+      border-style: solid;
+    }
+    .pill {
+      border: 1px solid var(--line);
+      padding: 1px 6px;
+      background: #fff;
+    }
+    .arrow {
+      margin: 8px 10px;
+      padding: 7px 8px;
+      border: 1px solid var(--line);
+      background: #fafafa;
+      font-size: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      border: 1px solid var(--soft-line);
+    }
+    th, td {
+      border: 1px solid var(--soft-line);
+      padding: 7px 6px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f5f5f5;
+      font-weight: 600;
+    }
+    .row-checked { background: #f7f7f7; }
+    .tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .tag {
+      border: 1px solid var(--line);
+      padding: 1px 5px;
+      font-size: 12px;
+      background: #fff;
+    }
+    .meta, .note {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .note {
+      border: 1px dashed var(--soft-line);
+      padding: 6px;
+      margin: 8px 10px 10px;
+      background: #fcfcfc;
+    }
+    @media (max-width: 1100px) {
+      .grid { grid-template-columns: 1fr; }
+      .card { min-height: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="head">
+      <strong>批量分类线框图（低保真原型）</strong><br />
+      目标：只表达流程与信息结构，不是视觉成品。所有分类均为平级多标签，不再区分层级标签。
+    </div>
+
+    <div class="grid">
+      <section class="card">
+        <div class="card-title">方案 A：管理列表页直接勾选后操作（页内完成）</div>
+        <div class="wire-box">
+          <div class="wire-title">[线框区 1] 列表工具栏</div>
+          <div class="toolbar">
+            <span class="pill">筛选：全部</span>
+            <span class="pill">筛选：未分类（选中）</span>
+            <span class="pill">筛选：已分类</span>
+            <span class="pill">关键词输入框</span>
+            <span class="pill">查询按钮</span>
+          </div>
+          <div class="batchbar">
+            <span class="pill"><input type="checkbox" checked /> 已选 3 条</span>
+            <span class="pill">批量增加分类</span>
+            <span class="pill">批量删除分类</span>
+            <span class="meta">说明：不跳转，直接在列表上下文处理</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width:45px;">勾选</th>
+                <th style="width:220px;">卡片/标题</th>
+                <th>平级多分类标签</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="row-checked">
+                <td><input type="checkbox" checked /></td>
+                <td>电商客服话术优化</td>
+                <td><div class="tags"><span class="tag">客服</span><span class="tag">电商</span></div></td>
+              </tr>
+              <tr class="row-checked">
+                <td><input type="checkbox" checked /></td>
+                <td>短视频标题生成</td>
+                <td><div class="tags"><span class="tag">内容创作</span><span class="tag">营销</span><span class="tag">抖音</span></div></td>
+              </tr>
+              <tr class="row-checked">
+                <td><input type="checkbox" checked /></td>
+                <td>通用英文润色</td>
+                <td><div class="tags"><span class="tag">翻译</span></div></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" /></td>
+                <td>会议纪要总结</td>
+                <td><span class="meta">未分类</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="arrow">流程箭头：勾选卡片 -> 点击“批量增加/删除分类” -> 页内抽屉确认 -> 回写标签</div>
+        <div class="wire-box">
+          <div class="wire-title">[线框区 2] 页内抽屉（批量操作）</div>
+          <div class="flow-note">目标对象：已勾选 3 条</div>
+          <div class="flow-note">批量增加分类：<span class="tag">知识库</span> <span class="tag">效率工具</span></div>
+          <div class="flow-note">批量删除分类：<span class="tag">营销</span></div>
+          <div class="flow-note">确认按钮（应用后更新为平级多标签）</div>
+        </div>
+        <div class="note">注释：该方案突出“在管理列表直接完成”与“即时反馈”，不保留层级分类字段。</div>
+      </section>
+
+      <section class="card">
+        <div class="card-title">方案 B：单独的批量分类弹窗/页面（集中处理）</div>
+        <div class="wire-box">
+          <div class="wire-title">[线框区 1] 列表入口</div>
+          <div class="toolbar">
+            <span class="pill">筛选：未分类（选中）</span>
+            <span class="pill">查询</span>
+            <span class="pill">进入批量分类弹窗/页面</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width:45px;">勾选</th>
+                <th style="width:220px;">卡片/标题</th>
+                <th>当前平级分类标签</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="row-checked">
+                <td><input type="checkbox" checked /></td>
+                <td>法律文本提炼</td>
+                <td><span class="meta">未分类</span></td>
+              </tr>
+              <tr class="row-checked">
+                <td><input type="checkbox" checked /></td>
+                <td>小红书爆款拆解</td>
+                <td><div class="tags"><span class="tag">内容创作</span><span class="tag">运营</span></div></td>
+              </tr>
+              <tr>
+                <td><input type="checkbox" /></td>
+                <td>周报自动生成</td>
+                <td><div class="tags"><span class="tag">办公</span><span class="tag">效率工具</span></div></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="arrow">流程箭头：列表勾选 -> 打开独立弹窗/页面 -> 统一配置增加/删除分类 -> 提交后返回列表</div>
+        <div class="wire-box">
+          <div class="wire-title">[线框区 2] 独立弹窗/页面（批量分类）</div>
+          <div class="flow-note">已选记录：2 条（法律文本提炼、小红书爆款拆解）</div>
+          <div class="flow-note">批量增加分类：<span class="tag">专业咨询</span> <span class="tag">高价值</span></div>
+          <div class="flow-note">批量删除分类：<span class="tag">运营</span></div>
+          <div class="flow-note">预览区：展示每条记录最终“平级多分类标签”结果</div>
+          <div class="flow-note">底部操作：取消 / 确认提交</div>
+        </div>
+        <div class="note">注释：该方案将批量规则集中处理，适合复杂批量操作与提交前预览。</div>
+      </section>
+    </div>
+  </div>
+</body>
+</html>
