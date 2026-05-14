@@ -9,6 +9,7 @@ import {
   buildDatabaseUrl,
   buildExecutionPlan,
   buildPostgresImageRef,
+  buildRuntimeEnv,
   buildWebDevArgs,
   ensureLocalPostgresImageAvailable,
   resolveDbUpMode,
@@ -19,11 +20,11 @@ test("resolveLocalDebugConfig returns local debug defaults", () => {
   const config = resolveLocalDebugConfig({});
 
   assert.equal(config.composeFile.endsWith("docker-compose.local-debug.yml"), true);
-  assert.equal(config.databaseHost, "127.0.0.1");
+  assert.equal(config.databaseHost, "10.45.131.70");
   assert.equal(config.databasePort, "55432");
-  assert.equal(config.databaseName, "prompt_management");
-  assert.equal(config.databaseUser, "postgres");
-  assert.equal(config.databasePassword, "postgres");
+  assert.equal(config.databaseName, "app_db");
+  assert.equal(config.databaseUser, "app_user");
+  assert.equal(config.databasePassword, "ChangeMe_2026_Strong!");
   assert.equal(config.appBaseUrl, "http://127.0.0.1:3010");
   assert.equal(config.webHost, "127.0.0.1");
   assert.equal(config.webPort, "3010");
@@ -43,6 +44,32 @@ test("buildDatabaseUrl prefers resolved config values", () => {
     buildDatabaseUrl(config),
     "postgres://devuser:devpass@localhost:6543/prompt_assets_dev",
   );
+});
+
+test("buildRuntimeEnv injects DB source mode and remote DB defaults", () => {
+  const previous = process.env.UNIT_TEST_RUNTIME_ENV_MARKER;
+  process.env.UNIT_TEST_RUNTIME_ENV_MARKER = "kept";
+  try {
+    const config = resolveLocalDebugConfig({});
+    const runtimeEnv = buildRuntimeEnv(config);
+    assert.equal(runtimeEnv.UNIT_TEST_RUNTIME_ENV_MARKER, "kept");
+    assert.equal(runtimeEnv.PROMPT_REPOSITORY_DATA_SOURCE, "auto");
+    assert.equal(
+      runtimeEnv.DATABASE_URL,
+      "postgres://app_user:ChangeMe_2026_Strong!@10.45.131.70:55432/app_db",
+    );
+    assert.equal(runtimeEnv.POSTGRES_HOST, "10.45.131.70");
+    assert.equal(runtimeEnv.POSTGRES_PORT, "55432");
+    assert.equal(runtimeEnv.POSTGRES_DB, "app_db");
+    assert.equal(runtimeEnv.POSTGRES_USER, "app_user");
+    assert.equal(runtimeEnv.POSTGRES_PASSWORD, "ChangeMe_2026_Strong!");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.UNIT_TEST_RUNTIME_ENV_MARKER;
+    } else {
+      process.env.UNIT_TEST_RUNTIME_ENV_MARKER = previous;
+    }
+  }
 });
 
 test("buildExecutionPlan keeps dev mode persistent and restart friendly", () => {

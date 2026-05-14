@@ -10,11 +10,11 @@ const pnpmCommand = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
 const defaultConfig = {
   composeFile: path.resolve(workspaceRoot, "docker-compose.local-debug.yml"),
   containerName: "prompt-assets-local-db",
-  databaseHost: "127.0.0.1",
+  databaseHost: "10.45.131.70",
   databasePort: "55432",
-  databaseName: "prompt_management",
-  databaseUser: "postgres",
-  databasePassword: "postgres",
+  databaseName: "app_db",
+  databaseUser: "app_user",
+  databasePassword: "ChangeMe_2026_Strong!",
   appBaseUrl: "http://127.0.0.1:3010",
   webHost: "127.0.0.1",
   webPort: "3010",
@@ -334,11 +334,12 @@ export function resolveDbUpMode(
   return "compose-up-new-container";
 }
 
-function buildRuntimeEnv(config) {
+export function buildRuntimeEnv(config) {
   const databaseUrl = buildDatabaseUrl(config);
   return {
     ...process.env,
     DATABASE_URL: databaseUrl,
+    PROMPT_REPOSITORY_DATA_SOURCE: "auto",
     APP_BASE_URL: config.appBaseUrl,
     POSTGRES_HOST: config.databaseHost,
     POSTGRES_PORT: config.databasePort,
