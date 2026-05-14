@@ -848,6 +848,7 @@ let fixtureAuditLogs: AuditLogEntry[] = [];
 let fixtureCreatedPrompts = new Map<string, FixturePromptRecord>();
 let fixtureDeletedPrompts = new Set<string>();
 let promptVersionLikeTargetLookupCountForTests = 0;
+let promptVersionLikesCountReadCountForTests = 0;
 
 function getRuntimeDatabaseUrl(): string {
   const runtime = process.env.DATABASE_URL?.trim();
@@ -5224,6 +5225,7 @@ async function readPromptVersionLikesCount(
   client: SqlClient,
   promptVersionId: number,
 ): Promise<number> {
+  promptVersionLikesCountReadCountForTests += 1;
   const result = await client.query<DbPromptLikesCountRow>(
     `
       SELECT likes_count
@@ -5370,18 +5372,19 @@ async function likePromptVersionInDb(
       [target.versionId, userId],
     );
 
+    let likesCount = target.likesCount;
     if (inserted.rows.length > 0) {
-      await client.query(
+      const updated = await client.query<DbPromptLikesCountRow>(
         `
           UPDATE prompt_versions
           SET likes_count = likes_count + 1
-          WHERE id = $1;
+          WHERE id = $1
+          RETURNING likes_count;
         `,
         [target.versionId],
       );
+      likesCount = asNumber(updated.rows[0]?.likes_count);
     }
-
-    const likesCount = await readPromptVersionLikesCount(client, target.versionId);
     await writeAuditLog(client, {
       actorId: userId,
       action: "prompt.version.liked",
@@ -5429,18 +5432,19 @@ async function unlikePromptVersionInDb(
       [target.versionId, userId],
     );
 
+    let likesCount = target.likesCount;
     if (deleted.rows.length > 0) {
-      await client.query(
+      const updated = await client.query<DbPromptLikesCountRow>(
         `
           UPDATE prompt_versions
           SET likes_count = GREATEST(likes_count - 1, 0)
-          WHERE id = $1;
+          WHERE id = $1
+          RETURNING likes_count;
         `,
         [target.versionId],
       );
+      likesCount = asNumber(updated.rows[0]?.likes_count);
     }
-
-    const likesCount = await readPromptVersionLikesCount(client, target.versionId);
     await writeAuditLog(client, {
       actorId: userId,
       action: "prompt.version.unliked",
@@ -6677,6 +6681,14 @@ export function __resetPromptVersionLikeTargetLookupCountForTests(): void {
 
 export function __getPromptVersionLikeTargetLookupCountForTests(): number {
   return promptVersionLikeTargetLookupCountForTests;
+}
+
+export function __resetPromptVersionLikesCountReadCountForTests(): void {
+  promptVersionLikesCountReadCountForTests = 0;
+}
+
+export function __getPromptVersionLikesCountReadCountForTests(): number {
+  return promptVersionLikesCountReadCountForTests;
 }
 
 export async function likePrompt(

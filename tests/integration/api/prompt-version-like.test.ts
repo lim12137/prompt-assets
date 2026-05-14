@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 
 import { GET as getPromptDetail } from "../../../apps/web/app/api/prompts/[slug]/route.ts";
 import {
+  __getPromptVersionLikesCountReadCountForTests,
   __getPromptVersionLikeTargetLookupCountForTests,
   __resetPromptLikeFixtureStateForTests,
+  __resetPromptVersionLikesCountReadCountForTests,
   __resetPromptVersionLikeTargetLookupCountForTests,
 } from "../../../apps/web/lib/api/prompt-repository.ts";
 import { buildAuthCookie } from "./_auth-test-helpers.ts";
@@ -437,6 +439,7 @@ test("POST /like 单次请求在 DB 路径只定位一次目标版本", async (t
   process.env.LOGIN_TOKEN_SECRET = "test-secret";
   __resetPromptLikeFixtureStateForTests();
   __resetPromptVersionLikeTargetLookupCountForTests();
+  __resetPromptVersionLikesCountReadCountForTests();
 
   if (!(await isPgReachable(testDbUrl))) {
     t.skip(`测试库不可达，跳过: ${testDbUrl}`);
@@ -448,6 +451,7 @@ test("POST /like 单次请求在 DB 路径只定位一次目标版本", async (t
     try {
       await seedDatabase(testDbUrl, { reset: true });
       __resetPromptVersionLikeTargetLookupCountForTests();
+      __resetPromptVersionLikesCountReadCountForTests();
 
       const route = await loadRouteModule();
       const response = await route.POST(
@@ -467,6 +471,22 @@ test("POST /like 单次请求在 DB 路径只定位一次目标版本", async (t
       assert.equal(payload.versionNo, currentVersionNo);
       assert.equal(payload.liked, true);
       assert.equal(__getPromptVersionLikeTargetLookupCountForTests(), 1);
+      assert.equal(__getPromptVersionLikesCountReadCountForTests(), 0);
+
+      const unlikeResponse = await route.DELETE(
+        new Request(`http://localhost:3000/api/prompts/${slug}/versions/${currentVersionNo}/like`, {
+          method: "DELETE",
+          headers: {
+            cookie: buildAuthCookie({ uid: "u1@example.com", name: "u1", can_manage: false }),
+            "x-forwarded-for": "203.0.113.141",
+          },
+        }),
+        { params: Promise.resolve({ slug, versionNo: currentVersionNo }) },
+      );
+      const unlikePayload = (await unlikeResponse.json()) as VersionLikeResponse;
+      assert.equal(unlikeResponse.status, 200);
+      assert.equal(unlikePayload.liked, false);
+      assert.equal(__getPromptVersionLikesCountReadCountForTests(), 0);
     } finally {
       await seedDatabase(testDbUrl, { reset: true });
       await lockClient.query("SELECT pg_advisory_unlock($1);", [likeLookupCountLockKey]);
