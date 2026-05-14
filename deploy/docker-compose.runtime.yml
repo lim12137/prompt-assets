@@ -1,0 +1,15 @@
+services:
+  web:
+    image: ghcr.io/your-org/prompt-management-runtime:latest
+    restart: unless-stopped
+    env_file:
+      - /srv/prompt-management/env/.env
+    volumes:
+      - /srv/prompt-management/app:/workspace/app
+      - /srv/prompt-management/data:/workspace/data
+      - prompt-management-node-modules:/workspace/app/node_modules
+    ports:
+      - "3010:3010"
+
+volumes:
+  prompt-management-node-modules:
