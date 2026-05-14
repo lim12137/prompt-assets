@@ -6,6 +6,9 @@ const selectedPort = process.env.PLAYWRIGHT_WEB_PORT ?? String(fallbackPort);
 if (!process.env.PLAYWRIGHT_WEB_PORT) {
   process.env.PLAYWRIGHT_WEB_PORT = selectedPort;
 }
+if (!process.env.PROMPT_REPOSITORY_DATA_SOURCE) {
+  process.env.PROMPT_REPOSITORY_DATA_SOURCE = "fixture";
+}
 const port = Number(selectedPort);
 const distDir = process.env.PLAYWRIGHT_WEB_DIST ?? ".next-e2e";
 
