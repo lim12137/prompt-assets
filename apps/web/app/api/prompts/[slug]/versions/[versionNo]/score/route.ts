@@ -106,13 +106,13 @@ export async function POST(request: Request, context: RouteContext) {
     ip: getRequestIp(request),
     dateKey: getBusinessDateKey(),
   });
-  if (interaction === "not_found") {
+  if (interaction.result === "not_found") {
     return NextResponse.json({ error: "prompt version not found" }, { status: 404 });
   }
-  if (interaction === "limited") {
+  if (interaction.result === "limited") {
     return NextResponse.json({ error: "今日该卡片已操作：评分" }, { status: 429 });
   }
-  if (interaction === "missing_infrastructure") {
+  if (interaction.result === "missing_infrastructure") {
     return NextResponse.json(
       {
         error: "评分点赞限流基础设施未就绪",

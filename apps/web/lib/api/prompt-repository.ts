@@ -72,6 +72,14 @@ export type PromptVersionLikeMutationResult = {
   liked: boolean;
 };
 
+export type PromptVersionLikeTarget = {
+  promptId: number;
+  promptSlug: string;
+  versionId: number;
+  versionNo: string;
+  likesCount: number;
+};
+
 export type PromptVersionScoreMutationInput = {
   scene: string;
   traceId?: string;
@@ -839,6 +847,7 @@ let fixtureSubmissionIdSeed = fixtureSubmissions.length;
 let fixtureAuditLogs: AuditLogEntry[] = [];
 let fixtureCreatedPrompts = new Map<string, FixturePromptRecord>();
 let fixtureDeletedPrompts = new Set<string>();
+let promptVersionLikeTargetLookupCountForTests = 0;
 
 function getRuntimeDatabaseUrl(): string {
   const runtime = process.env.DATABASE_URL?.trim();
@@ -5138,10 +5147,13 @@ async function markPromptVersionDailyInteractionInDb(input: {
   action: PromptVersionInteractionAction;
   ip: string;
   dateKey: string;
-}): Promise<PromptVersionDailyInteractionResult> {
+}): Promise<{
+  result: PromptVersionDailyInteractionResult;
+  target?: PromptVersionLikeTarget;
+}> {
   return withPgClient(getRuntimeDatabaseUrl(), async (client) => {
     if (!(await hasPromptVersionDailyInteractionInfrastructure(client))) {
-      return "missing_infrastructure";
+      return { result: "missing_infrastructure" };
     }
     const target = await findPublishedPromptVersionLikeTarget(
       client,
@@ -5149,7 +5161,7 @@ async function markPromptVersionDailyInteractionInDb(input: {
       input.versionNo,
     );
     if (!target) {
-      return "not_found";
+      return { result: "not_found" };
     }
     const ipHash = hashIp(input.ip);
     const inserted = await client.query<DbPromptVersionDailyInteractionInsertRow>(
@@ -5163,7 +5175,10 @@ async function markPromptVersionDailyInteractionInDb(input: {
       `,
       [target.versionId, input.action, ipHash, input.dateKey],
     );
-    return inserted.rows.length > 0 ? "ok" : "limited";
+    return {
+      result: inserted.rows.length > 0 ? "ok" : "limited",
+      target,
+    };
   });
 }
 
@@ -5171,13 +5186,8 @@ async function findPublishedPromptVersionLikeTarget(
   client: SqlClient,
   slug: string,
   versionNo: string,
-): Promise<{
-  promptId: number;
-  promptSlug: string;
-  versionId: number;
-  versionNo: string;
-  likesCount: number;
-} | null> {
+): Promise<PromptVersionLikeTarget | null> {
+  promptVersionLikeTargetLookupCountForTests += 1;
   const result = await client.query<DbPromptVersionLikeTargetRow>(
     `
       SELECT
@@ -5335,13 +5345,16 @@ async function likePromptVersionInDb(
   slug: string,
   versionNo: string,
   userEmail: string,
+  existingTarget?: PromptVersionLikeTarget,
 ): Promise<PromptVersionLikeMutationResult | null> {
   return withPgClient(databaseUrl, async (client) => {
     if (!(await hasPromptVersionLikeInfrastructure(client))) {
       return likePromptVersionInFixtures(slug, versionNo, userEmail);
     }
 
-    const target = await findPublishedPromptVersionLikeTarget(client, slug, versionNo);
+    const target =
+      existingTarget ??
+      (await findPublishedPromptVersionLikeTarget(client, slug, versionNo));
     if (!target) {
       return null;
     }
@@ -6658,6 +6671,14 @@ export function __getAuditLogFixtureStateForTests(): AuditLogEntry[] {
   }));
 }
 
+export function __resetPromptVersionLikeTargetLookupCountForTests(): void {
+  promptVersionLikeTargetLookupCountForTests = 0;
+}
+
+export function __getPromptVersionLikeTargetLookupCountForTests(): number {
+  return promptVersionLikeTargetLookupCountForTests;
+}
+
 export async function likePrompt(
   slug: string,
   userEmail: string,
@@ -6694,6 +6715,7 @@ export async function likePromptVersion(
   slug: string,
   versionNo: string,
   userEmail: string,
+  existingTarget?: PromptVersionLikeTarget,
 ): Promise<PromptVersionLikeMutationResult | null> {
   const normalizedEmail = normalizeUserEmail(userEmail);
   const normalizedVersionNo = versionNo.trim();
@@ -6702,7 +6724,12 @@ export async function likePromptVersion(
   }
 
   if (await canReadFromDatabase()) {
-    return likePromptVersionInDb(slug, normalizedVersionNo, normalizedEmail);
+    return likePromptVersionInDb(
+      slug,
+      normalizedVersionNo,
+      normalizedEmail,
+      existingTarget,
+    );
   }
 
   return likePromptVersionInFixtures(slug, normalizedVersionNo, normalizedEmail);
@@ -6714,13 +6741,16 @@ export async function markPromptVersionDailyInteraction(input: {
   action: PromptVersionInteractionAction;
   ip: string;
   dateKey: string;
-}): Promise<PromptVersionDailyInteractionResult> {
+}): Promise<{
+  result: PromptVersionDailyInteractionResult;
+  target?: PromptVersionLikeTarget;
+}> {
   const normalizedSlug = input.slug.trim();
   const normalizedVersionNo = input.versionNo.trim();
   const normalizedIp = input.ip.trim() || "unknown";
   const normalizedDateKey = input.dateKey.trim();
   if (!normalizedSlug || !normalizedVersionNo || !normalizedDateKey) {
-    return "not_found";
+    return { result: "not_found" };
   }
 
   // Fail-closed: when DB is reachable in auto mode, always evaluate infra in DB path.
@@ -6738,13 +6768,15 @@ export async function markPromptVersionDailyInteraction(input: {
     });
   }
 
-  return markPromptVersionDailyInteractionInFixtures({
-    slug: normalizedSlug,
-    versionNo: normalizedVersionNo,
-    action: input.action,
-    ip: normalizedIp,
-    dateKey: normalizedDateKey,
-  });
+  return {
+    result: markPromptVersionDailyInteractionInFixtures({
+      slug: normalizedSlug,
+      versionNo: normalizedVersionNo,
+      action: input.action,
+      ip: normalizedIp,
+      dateKey: normalizedDateKey,
+    }),
+  };
 }
 
 export async function unlikePromptVersion(

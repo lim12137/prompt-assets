@@ -2,7 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { GET as getPromptDetail } from "../../../apps/web/app/api/prompts/[slug]/route.ts";
-import { __resetPromptLikeFixtureStateForTests } from "../../../apps/web/lib/api/prompt-repository.ts";
+import {
+  __getPromptVersionLikeTargetLookupCountForTests,
+  __resetPromptLikeFixtureStateForTests,
+  __resetPromptVersionLikeTargetLookupCountForTests,
+} from "../../../apps/web/lib/api/prompt-repository.ts";
 import { buildAuthCookie } from "./_auth-test-helpers.ts";
 import { isPgReachable, withPgClient } from "../../../packages/db/src/client.ts";
 import { seedDatabase } from "../../../packages/db/src/seed.ts";
@@ -45,6 +49,7 @@ const uxCandidateVersionNo = "v0003";
 const missingVersionNo = "v9999";
 const userEmail = "alice@example.com";
 const dailyInteractionInfraLockKey = 2026042901;
+const likeLookupCountLockKey = 2026051401;
 const testDbUrl =
   process.env.TEST_DATABASE_URL ??
   "postgres://postgres:postgres@127.0.0.1:55432/prompt_management_test";
@@ -422,6 +427,49 @@ test("POST /like 在缺少日频限流基础设施时应 fail-closed 返回 500"
       });
       await seedDatabase(testDbUrl, { reset: true });
       await lockClient.query("SELECT pg_advisory_unlock($1);", [dailyInteractionInfraLockKey]);
+    }
+  });
+});
+
+test("POST /like 单次请求在 DB 路径只定位一次目标版本", async (t) => {
+  process.env.DATABASE_URL = testDbUrl;
+  delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+  process.env.LOGIN_TOKEN_SECRET = "test-secret";
+  __resetPromptLikeFixtureStateForTests();
+  __resetPromptVersionLikeTargetLookupCountForTests();
+
+  if (!(await isPgReachable(testDbUrl))) {
+    t.skip(`测试库不可达，跳过: ${testDbUrl}`);
+    return;
+  }
+
+  await withPgClient(testDbUrl, async (lockClient) => {
+    await lockClient.query("SELECT pg_advisory_lock($1);", [likeLookupCountLockKey]);
+    try {
+      await seedDatabase(testDbUrl, { reset: true });
+      __resetPromptVersionLikeTargetLookupCountForTests();
+
+      const route = await loadRouteModule();
+      const response = await route.POST(
+        new Request(`http://localhost:3000/api/prompts/${slug}/versions/${currentVersionNo}/like`, {
+          method: "POST",
+          headers: {
+            cookie: buildAuthCookie({ uid: "u1@example.com", name: "u1", can_manage: false }),
+            "x-forwarded-for": "203.0.113.141",
+          },
+        }),
+        { params: Promise.resolve({ slug, versionNo: currentVersionNo }) },
+      );
+      const payload = (await response.json()) as VersionLikeResponse;
+
+      assert.equal(response.status, 200);
+      assert.equal(payload.slug, slug);
+      assert.equal(payload.versionNo, currentVersionNo);
+      assert.equal(payload.liked, true);
+      assert.equal(__getPromptVersionLikeTargetLookupCountForTests(), 1);
+    } finally {
+      await seedDatabase(testDbUrl, { reset: true });
+      await lockClient.query("SELECT pg_advisory_unlock($1);", [likeLookupCountLockKey]);
     }
   });
 });
