@@ -60,3 +60,93 @@ test("详情页官方卡支持版本级点赞", async ({ page }) => {
   await expect(officialCard.getByTestId("version-like-count")).toHaveText(`${initialLikeCount + 1} 赞`);
   await expect(officialCard.getByTestId("version-like-button")).toContainText("取消点赞");
 });
+
+test("详情页点赞在请求未返回前立即乐观更新，且 pending 时按钮禁用", async ({
+  page,
+}) => {
+  let resolveLikeRequest: (() => void) | null = null;
+  const likeRequestGate = new Promise<void>((resolve) => {
+    resolveLikeRequest = resolve;
+  });
+
+  await page.route("**/api/prompts/js-code-reviewer/versions/*/like", async (route) => {
+    await likeRequestGate;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        slug: "js-code-reviewer",
+        versionNo: "v0001",
+        likesCount: 2,
+        liked: true,
+      }),
+    });
+  });
+
+  const response = await page.goto("/prompts/js-code-reviewer");
+  expect(response?.status()).toBe(200);
+
+  const officialCard = page.getByTestId("official-card");
+  await expect(officialCard).toBeVisible();
+  const likeCountNode = officialCard.getByTestId("version-like-count");
+  const likeButton = officialCard.getByTestId("version-like-button");
+  const initialLikeText = await likeCountNode.innerText();
+  const initialLikeCount = Number.parseInt(initialLikeText, 10);
+  expect(Number.isFinite(initialLikeCount)).toBeTruthy();
+
+  const likeResponsePromise = page.waitForResponse(
+    (item) =>
+      item.request().method() === "POST" &&
+      item.url().includes("/api/prompts/js-code-reviewer/versions/v0001/like"),
+  );
+
+  await likeButton.click();
+
+  await expect(likeCountNode).toHaveText(`${initialLikeCount + 1} 赞`);
+  await expect(likeButton).toHaveAttribute("aria-pressed", "true");
+  await expect(likeButton).toBeDisabled();
+
+  resolveLikeRequest?.();
+
+  const likeResponse = await likeResponsePromise;
+  expect(likeResponse.status()).toBe(200);
+  await expect(likeCountNode).toHaveText("2 赞");
+  await expect(likeButton).toContainText("取消点赞");
+});
+
+test("详情页点赞请求失败时回滚乐观更新并展示错误", async ({ page }) => {
+  let resolveLikeRequest: (() => void) | null = null;
+  const likeRequestGate = new Promise<void>((resolve) => {
+    resolveLikeRequest = resolve;
+  });
+
+  await page.route("**/api/prompts/js-code-reviewer/versions/*/like", async (route) => {
+    await likeRequestGate;
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "boom" }),
+    });
+  });
+
+  const response = await page.goto("/prompts/js-code-reviewer");
+  expect(response?.status()).toBe(200);
+
+  const officialCard = page.getByTestId("official-card");
+  await expect(officialCard).toBeVisible();
+  const likeCountNode = officialCard.getByTestId("version-like-count");
+  const likeButton = officialCard.getByTestId("version-like-button");
+  const initialLikeText = await likeCountNode.innerText();
+  const initialLikeCount = Number.parseInt(initialLikeText, 10);
+  expect(Number.isFinite(initialLikeCount)).toBeTruthy();
+
+  await likeButton.click();
+
+  await expect(likeCountNode).toHaveText(`${initialLikeCount + 1} 赞`);
+  await expect(likeButton).toHaveAttribute("aria-pressed", "true");
+  resolveLikeRequest?.();
+  await expect(officialCard.getByText("点赞操作失败")).toBeVisible();
+  await expect(likeCountNode).toHaveText(`${initialLikeCount} 赞`);
+  await expect(likeButton).toHaveAttribute("aria-pressed", "false");
+  await expect(likeButton).toContainText("点赞");
+});

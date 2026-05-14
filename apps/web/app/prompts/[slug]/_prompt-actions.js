@@ -217,6 +217,7 @@ export function VersionLikeAction({
   const [liked, setLiked] = useState(Boolean(initialLiked));
   const [errorMessage, setErrorMessage] = useState("");
   const [isLikePending, startLikeTransition] = useTransition();
+  const [isLikeMutating, setIsLikeMutating] = useState(false);
   const [isScorePending, startScoreTransition] = useTransition();
   const [scoreStats, setScoreStats] = useState({
     totalScores: 0,
@@ -252,14 +253,35 @@ export function VersionLikeAction({
 
   const onToggleLike = () => {
     startLikeTransition(() => {
+      if (isLikeMutating) {
+        return;
+      }
+
+      const prevLiked = liked;
+      const prevLikesCount = likesCount;
+      const optimisticLiked = !prevLiked;
+      const optimisticLikesCount = Math.max(
+        0,
+        prevLikesCount + (optimisticLiked ? 1 : -1),
+      );
+
       setErrorMessage("");
-      void mutateVersionLike(slug, versionNo, liked)
+      setIsLikeMutating(true);
+      setLiked(optimisticLiked);
+      setLikesCount(optimisticLikesCount);
+
+      void mutateVersionLike(slug, versionNo, prevLiked)
         .then((payload) => {
           setLiked(Boolean(payload?.liked));
           setLikesCount(Number(payload?.likesCount ?? 0));
         })
         .catch((error) => {
+          setLiked(prevLiked);
+          setLikesCount(prevLikesCount);
           setErrorMessage(error instanceof Error ? error.message : "点赞失败，请稍后重试");
+        })
+        .finally(() => {
+          setIsLikeMutating(false);
         });
     });
   };
@@ -303,13 +325,13 @@ export function VersionLikeAction({
           type: "button",
           onClick: onToggleLike,
           "aria-pressed": liked,
-          disabled: isLikePending,
+          disabled: isLikePending || isLikeMutating,
           className: liked ? "pm-primary-button" : "pm-secondary-button",
           style: { display: "inline-flex", alignItems: "center", gap: "6px" },
           "data-testid": "version-like-button",
         },
         createElement(LikeIcon, { filled: liked }),
-        isLikePending ? "处理中..." : liked ? "取消点赞" : "点赞",
+        isLikeMutating || isLikePending ? "处理中..." : liked ? "取消点赞" : "点赞",
       ),
       createElement(
         "span",
