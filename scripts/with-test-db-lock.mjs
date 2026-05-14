@@ -123,7 +123,7 @@ export async function withTestDbLock(task, options = {}) {
       }
     } catch (error) {
       if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-        return;
+        // lock already cleaned by task-side cleanup, keep original task result
       }
     }
   }
