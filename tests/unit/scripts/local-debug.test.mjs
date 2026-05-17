@@ -91,8 +91,9 @@ test("buildRuntimeEnv preserves explicit fixture data source mode", () => {
 
 test("buildExecutionPlan keeps dev mode persistent and restart friendly", () => {
   const devPlan = buildExecutionPlan("dev");
-  assert.deepEqual(devPlan, ["db-up", "db-migrate", "web"]);
+  assert.deepEqual(devPlan, ["db-migrate", "web"]);
   assert.equal(devPlan.includes("db-seed"), false);
+  assert.equal(devPlan.includes("db-up"), false);
   assert.deepEqual(buildExecutionPlan("prepare"), ["db-up", "db-migrate", "db-seed"]);
   assert.deepEqual(buildExecutionPlan("restart-web"), ["stop-web", "web"]);
 });

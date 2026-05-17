@@ -109,7 +109,7 @@ export function buildDatabaseUrl(config) {
 export function buildExecutionPlan(action) {
   switch (action) {
     case "dev":
-      return ["db-up", "db-migrate", "web"];
+      return ["db-migrate", "web"];
     case "prepare":
       return ["db-up", "db-migrate", "db-seed"];
     case "restart-web":
