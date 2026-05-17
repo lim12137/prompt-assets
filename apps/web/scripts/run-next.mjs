@@ -6,9 +6,19 @@ import { loadWorkspaceEnv as loadWorkspaceEnvIntoProcess } from "../../../script
 import { runWithTrackedFilesGuard } from "./tracked-files-guard.mjs";
 
 const require = createRequire(import.meta.url);
+const envModulePath = new URL("../lib/env.ts", import.meta.url);
 
 function loadWorkspaceEnv() {
   return loadWorkspaceEnvIntoProcess({ cwd: process.cwd(), env: process.env });
+}
+
+async function validateAppEnv(env = process.env) {
+  const { parseAppEnv } = await import(envModulePath.href);
+  parseAppEnv(env);
+}
+
+export async function validateAppEnvForTest(env) {
+  await validateAppEnv(env);
 }
 
 function parseArgs(argv) {
@@ -518,6 +528,7 @@ export async function runNextCli(nextCliPath, command, forwarded, env, options =
 
 async function main() {
   loadWorkspaceEnv();
+  await validateAppEnv(process.env);
 
   const { command, forwarded, distDir } = parseArgs(process.argv.slice(2));
   const bindTarget = resolveBindTarget(command, forwarded);

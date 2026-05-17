@@ -1,5 +1,3 @@
-import { HOME_AI_TOOLS } from "./home-ai-tools.ts";
-
 function HomeAiToolIcon({ iconKey, accentColor }) {
   if (iconKey === "ceic") {
     return (
@@ -81,7 +79,7 @@ function HomeAiToolIcon({ iconKey, accentColor }) {
   );
 }
 
-export function HomeAiToolsSection() {
+export function HomeAiToolsSection({ tools }) {
   return (
     <section
       data-testid="home-ai-tools-section"
@@ -96,7 +94,7 @@ export function HomeAiToolsSection() {
       </div>
 
       <div className="pm-home-ai-tools__list">
-        {HOME_AI_TOOLS.map((tool) => (
+        {tools.map((tool) => (
           <a
             key={tool.name}
             data-testid="home-ai-tool-card"

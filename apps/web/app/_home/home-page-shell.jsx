@@ -361,7 +361,7 @@ function PromptListItem({ prompt, copyState, onCopy, router }) {
   );
 }
 
-export function HomePageShell({ prompts }) {
+export function HomePageShell({ prompts, homeAiTools }) {
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState("");
   const [keyword, setKeyword] = useState("");
@@ -537,7 +537,7 @@ export function HomePageShell({ prompts }) {
             </details>
           ) : null}
 
-          <HomeAiToolsSection />
+          <HomeAiToolsSection tools={homeAiTools} />
         </aside>
 
         <section
