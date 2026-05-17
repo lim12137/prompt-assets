@@ -15,6 +15,9 @@ WORKDIR /app
 
 RUN corepack enable
 
+ARG DATABASE_URL=postgres://build:build@127.0.0.1:5432/prompt_management_build
+ENV DATABASE_URL=${DATABASE_URL}
+
 COPY --from=deps /app ./
 
 COPY apps/web ./apps/web
