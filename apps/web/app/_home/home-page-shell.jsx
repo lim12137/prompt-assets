@@ -8,6 +8,7 @@ import {
   HOME_ACTION_ENTRIES,
   HOME_ACTION_STATUS_TEXT,
 } from "./home-actions.ts";
+import { HomeAiToolsSection } from "./home-ai-tools-section.jsx";
 
 const INTERACTIVE_SELECTOR =
   "a,button,input,textarea,select,summary,label,[role='button'],[data-interactive='true']";
@@ -535,6 +536,8 @@ export function HomePageShell({ prompts }) {
               </div>
             </details>
           ) : null}
+
+          <HomeAiToolsSection />
         </aside>
 
         <section
