@@ -72,8 +72,27 @@ test("buildRuntimeEnv injects DB source mode and remote DB defaults", () => {
   }
 });
 
+test("buildRuntimeEnv preserves explicit fixture data source mode", () => {
+  const previous = process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+  process.env.PROMPT_REPOSITORY_DATA_SOURCE = "fixture";
+  try {
+    const config = resolveLocalDebugConfig({});
+    const runtimeEnv = buildRuntimeEnv(config);
+
+    assert.equal(runtimeEnv.PROMPT_REPOSITORY_DATA_SOURCE, "fixture");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.PROMPT_REPOSITORY_DATA_SOURCE;
+    } else {
+      process.env.PROMPT_REPOSITORY_DATA_SOURCE = previous;
+    }
+  }
+});
+
 test("buildExecutionPlan keeps dev mode persistent and restart friendly", () => {
-  assert.deepEqual(buildExecutionPlan("dev"), ["db-up", "db-migrate", "db-seed", "web"]);
+  const devPlan = buildExecutionPlan("dev");
+  assert.deepEqual(devPlan, ["db-up", "db-migrate", "web"]);
+  assert.equal(devPlan.includes("db-seed"), false);
   assert.deepEqual(buildExecutionPlan("prepare"), ["db-up", "db-migrate", "db-seed"]);
   assert.deepEqual(buildExecutionPlan("restart-web"), ["stop-web", "web"]);
 });
