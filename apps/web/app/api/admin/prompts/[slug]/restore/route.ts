@@ -47,11 +47,25 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json(result.value, { status: 200 });
   }
 
-  const status = result.code === "forbidden" ? 403 : result.code === "not_found" ? 404 : 409;
+  const failedResult = result as {
+    ok: false;
+    code: "forbidden" | "not_found" | "conflict";
+    reason:
+      | "admin_role_required"
+      | "prompt_not_found"
+      | "prompt_status_transition_not_allowed";
+    message: string;
+  };
+  const status =
+    failedResult.code === "forbidden"
+      ? 403
+      : failedResult.code === "not_found"
+        ? 404
+        : 409;
   return NextResponse.json(
     {
-      error: result.message,
-      code: result.reason,
+      error: failedResult.message,
+      code: failedResult.reason,
     },
     { status },
   );

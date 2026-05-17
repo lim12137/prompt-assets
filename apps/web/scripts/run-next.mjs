@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import net from "node:net";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -6,15 +6,38 @@ import { loadWorkspaceEnv as loadWorkspaceEnvIntoProcess } from "../../../script
 import { runWithTrackedFilesGuard } from "./tracked-files-guard.mjs";
 
 const require = createRequire(import.meta.url);
-const envModulePath = new URL("../lib/env.ts", import.meta.url);
+const envModulePath = new URL("../lib/env-core.mjs", import.meta.url);
 
 function loadWorkspaceEnv() {
   return loadWorkspaceEnvIntoProcess({ cwd: process.cwd(), env: process.env });
 }
 
 async function validateAppEnv(env = process.env) {
-  const { parseAppEnv } = await import(envModulePath.href);
-  parseAppEnv(env);
+  const validation = spawnSync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "--input-type=module",
+      "-e",
+      `const { parseAppEnv } = await import(${JSON.stringify(envModulePath.href)}); parseAppEnv(process.env);`,
+    ],
+    {
+      env: {
+        ...process.env,
+        ...env,
+      },
+      encoding: "utf8",
+    },
+  );
+
+  if (validation.error) {
+    throw validation.error;
+  }
+  if (validation.status !== 0) {
+    throw new Error(
+      validation.stderr?.trim() || validation.stdout?.trim() || "[run-next] env validation failed",
+    );
+  }
 }
 
 export async function validateAppEnvForTest(env) {

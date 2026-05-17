@@ -56,11 +56,26 @@ export async function PATCH(request: Request) {
     return NextResponse.json(result.value, { status: 200 });
   }
 
-  const status = result.code === "forbidden" ? 403 : result.code === "not_found" ? 404 : 400;
+  const failedResult = result as {
+    ok: false;
+    code: "forbidden" | "not_found" | "bad_request";
+    reason:
+      | "admin_role_required"
+      | "prompt_not_found"
+      | "invalid_request"
+      | "category_not_found";
+    message: string;
+  };
+  const status =
+    failedResult.code === "forbidden"
+      ? 403
+      : failedResult.code === "not_found"
+        ? 404
+        : 400;
   return NextResponse.json(
     {
-      error: result.message,
-      code: result.reason,
+      error: failedResult.message,
+      code: failedResult.reason,
     },
     { status },
   );
