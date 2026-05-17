@@ -109,7 +109,7 @@ export function buildDatabaseUrl(config) {
 export function buildExecutionPlan(action) {
   switch (action) {
     case "dev":
-      return ["db-up", "db-migrate", "db-seed", "web"];
+      return ["db-up", "db-migrate", "web"];
     case "prepare":
       return ["db-up", "db-migrate", "db-seed"];
     case "restart-web":
@@ -336,10 +336,15 @@ export function resolveDbUpMode(
 
 export function buildRuntimeEnv(config) {
   const databaseUrl = buildDatabaseUrl(config);
+  const dataSourceMode =
+    typeof process.env.PROMPT_REPOSITORY_DATA_SOURCE === "string" &&
+    process.env.PROMPT_REPOSITORY_DATA_SOURCE.trim()
+      ? process.env.PROMPT_REPOSITORY_DATA_SOURCE
+      : "auto";
   return {
     ...process.env,
     DATABASE_URL: databaseUrl,
-    PROMPT_REPOSITORY_DATA_SOURCE: "auto",
+    PROMPT_REPOSITORY_DATA_SOURCE: dataSourceMode,
     APP_BASE_URL: config.appBaseUrl,
     POSTGRES_HOST: config.databaseHost,
     POSTGRES_PORT: config.databasePort,

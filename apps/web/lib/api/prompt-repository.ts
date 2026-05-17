@@ -1002,6 +1002,17 @@ function getRepositoryDataSourceMode(): "auto" | "fixture" {
   return "auto";
 }
 
+function assertFixtureFallbackAllowed(operation: string): void {
+  if (getRepositoryDataSourceMode() === "fixture") {
+    return;
+  }
+
+  throw new Error(
+    `${operation} requires a readable database in auto mode. ` +
+      `Refusing to fallback to fixture prompts because it can surface initial seeded data unexpectedly.`,
+  );
+}
+
 function normalizeSort(sort?: string): PromptSort {
   if (sort === "popular" || sort === "liked") {
     return sort;
@@ -7144,6 +7155,7 @@ export async function listPrompts(
   if (await canReadFromDatabase()) {
     return listPromptsFromDb(query);
   }
+  assertFixtureFallbackAllowed("listPrompts");
   return listPromptsFromFixtures(query);
 }
 
@@ -7153,6 +7165,7 @@ export async function listAdminSubmissions(
   if (await canReadFromDatabase()) {
     return listAdminSubmissionsFromDb(query);
   }
+  assertFixtureFallbackAllowed("listAdminSubmissions");
   return listAdminSubmissionsFromFixtures(query);
 }
 
@@ -7160,6 +7173,7 @@ export async function getPromptDetail(slug: string): Promise<PromptDetailDto | n
   if (await canReadFromDatabase()) {
     return getPromptDetailFromDb(slug);
   }
+  assertFixtureFallbackAllowed("getPromptDetail");
   return getPromptDetailFromFixtures(slug);
 }
 
@@ -7167,5 +7181,6 @@ export async function listPendingSubmissions(): Promise<PendingSubmissionListIte
   if (await canReadFromDatabase()) {
     return listPendingSubmissionsFromDb();
   }
+  assertFixtureFallbackAllowed("listPendingSubmissions");
   return listPendingSubmissionsFromFixtures();
 }
