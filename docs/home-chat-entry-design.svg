@@ -1,0 +1,144 @@
+<svg width="1440" height="1080" viewBox="0 0 1440 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="shadowSoft" x="0" y="0" width="1440" height="1080" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="6"/>
+      <feGaussianBlur stdDeviation="10"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.0901961 0 0 0 0 0.101961 0 0 0 0 0.12549 0 0 0 0.08 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+    </filter>
+    <style>
+      .title { font: 600 28px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #1F2937; }
+      .section { font: 600 18px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #1F2937; }
+      .body { font: 400 14px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #4B5563; }
+      .muted { font: 400 13px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #6B7280; }
+      .small { font: 500 12px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #6B7280; }
+      .button { font: 600 14px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    </style>
+  </defs>
+
+  <rect width="1440" height="1080" fill="#FFFFFF"/>
+  <rect x="0" y="0" width="1440" height="64" fill="#F8F8F8"/>
+  <rect x="72" y="88" width="1296" height="128" rx="14" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <rect x="82" y="98" width="1276" height="108" rx="10" fill="none" stroke="#D92D20" stroke-width="2" stroke-dasharray="10 8"/>
+  <text x="92" y="92" class="small" fill="#D92D20">顶部中间红框区域：新增 chat.ceic.com 入口示意</text>
+
+  <text x="112" y="138" class="title">公司提示词库</text>
+  <text x="112" y="166" class="muted">企业内部知识与提示词统一入口</text>
+
+  <g transform="translate(466 114)" filter="url(#shadowSoft)">
+    <rect width="508" height="76" rx="12" fill="#FFF8F7" stroke="#E5E7EB"/>
+    <rect x="18" y="18" width="40" height="40" rx="8" fill="#FDE8E7"/>
+    <path d="M31 31H45C47.2091 31 49 32.7909 49 35V41C49 43.2091 47.2091 45 45 45H31C28.7909 45 27 43.2091 27 41V35C27 32.7909 28.7909 31 31 31Z" stroke="#D92D20" stroke-width="1.8"/>
+    <path d="M38 27V35M38 35L34 32M38 35L42 32" stroke="#D92D20" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="74" y="33" class="section" style="font-size:16px;">AI 对话入口 chat.ceic.com</text>
+    <text x="74" y="54" class="body" style="font-size:13px;">进入企业 AI 对话工作台，支持即时问答、文稿润色与内容协作。</text>
+    <rect x="396" y="18" width="94" height="40" rx="8" fill="#D92D20"/>
+    <text x="443" y="43" text-anchor="middle" class="button" fill="#FFFFFF">立即进入</text>
+  </g>
+
+  <g transform="translate(1122 122)">
+    <rect width="72" height="36" rx="8" fill="#FFFFFF" stroke="#D1D5DB"/>
+    <text x="36" y="23" text-anchor="middle" class="button" fill="#374151">导入</text>
+  </g>
+  <g transform="translate(1206 122)">
+    <rect width="72" height="36" rx="8" fill="#FFFFFF" stroke="#D1D5DB"/>
+    <text x="36" y="23" text-anchor="middle" class="button" fill="#374151">管理</text>
+  </g>
+  <g transform="translate(1290 122)">
+    <rect width="56" height="36" rx="8" fill="#D92D20"/>
+    <text x="28" y="23" text-anchor="middle" class="button" fill="#FFFFFF">创建</text>
+  </g>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="72" y="240" width="256" height="764" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="96" y="280" class="section">分类导航</text>
+  <rect x="96" y="304" width="82" height="34" rx="17" fill="#D92D20"/>
+  <text x="137" y="326" text-anchor="middle" class="button" fill="#FFFFFF">全部</text>
+  <rect x="96" y="350" width="96" height="34" rx="17" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <text x="144" y="372" text-anchor="middle" class="button" fill="#374151">办公提效</text>
+  <rect x="96" y="396" width="96" height="34" rx="17" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <text x="144" y="418" text-anchor="middle" class="button" fill="#374151">报告生成</text>
+  <rect x="96" y="442" width="96" height="34" rx="17" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <text x="144" y="464" text-anchor="middle" class="button" fill="#374151">会议纪要</text>
+  <rect x="96" y="488" width="96" height="34" rx="17" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <text x="144" y="510" text-anchor="middle" class="button" fill="#374151">行业研究</text>
+
+  <line x1="96" y1="556" x2="304" y2="556" stroke="#F0F2F5"/>
+  <text x="96" y="586" class="muted">常用入口</text>
+  <rect x="96" y="608" width="208" height="92" rx="10" fill="#FAFAFA" stroke="#E5E7EB"/>
+  <text x="114" y="636" class="body">知识问答</text>
+  <text x="114" y="660" class="muted">统一入口，支持快速查询</text>
+  <rect x="114" y="674" width="120" height="12" rx="6" fill="#E5E7EB"/>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="352" y="240" width="1016" height="764" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="376" y="280" class="section">首页内容区</text>
+
+  <rect x="376" y="302" width="968" height="48" rx="10" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <circle cx="400" cy="326" r="7" stroke="#9CA3AF" stroke-width="2"/>
+  <path d="M405 331L411 337" stroke="#9CA3AF" stroke-width="2" stroke-linecap="round"/>
+  <text x="422" y="331" class="body" fill="#9CA3AF">搜索标题、标签或提示词说明</text>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="376" y="376" width="300" height="184" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="400" y="410" class="section" style="font-size:16px;">行业研究摘要助手</text>
+  <rect x="400" y="424" width="66" height="24" rx="12" fill="#FDE8E7"/>
+  <text x="433" y="440" text-anchor="middle" class="small" fill="#D92D20">行业研究</text>
+  <text x="400" y="480" class="body">面向企业内网场景，帮助整理报告要点、结论与行动建议。</text>
+  <rect x="400" y="506" width="82" height="32" rx="8" fill="#D92D20"/>
+  <text x="441" y="527" text-anchor="middle" class="button" fill="#FFFFFF">查看详情</text>
+  <rect x="492" y="506" width="68" height="32" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <text x="526" y="527" text-anchor="middle" class="button" fill="#374151">复制</text>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="708" y="376" width="300" height="184" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="732" y="410" class="section" style="font-size:16px;">周报写作助手</text>
+  <rect x="732" y="424" width="66" height="24" rx="12" fill="#FDE8E7"/>
+  <text x="765" y="440" text-anchor="middle" class="small" fill="#D92D20">办公提效</text>
+  <text x="732" y="480" class="body">统一周报口径，减少重复整理工作，支持快速生成结构化内容。</text>
+  <rect x="732" y="506" width="82" height="32" rx="8" fill="#D92D20"/>
+  <text x="773" y="527" text-anchor="middle" class="button" fill="#FFFFFF">查看详情</text>
+  <rect x="824" y="506" width="68" height="32" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <text x="858" y="527" text-anchor="middle" class="button" fill="#374151">复制</text>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="1040" y="376" width="304" height="184" rx="12" fill="#FFF8F7" stroke="#F3D2CE"/>
+  </g>
+  <text x="1064" y="408" class="small" fill="#D92D20">新增入口对应功能说明</text>
+  <text x="1064" y="434" class="section" style="font-size:16px;">chat.ceic.com 对话工作台</text>
+  <text x="1064" y="470" class="body">与首页提示词浏览形成分工：站内负责沉淀与检索，站外工作台负责实时对话与协作生成。</text>
+  <rect x="1064" y="506" width="132" height="32" rx="8" fill="#D92D20"/>
+  <text x="1130" y="527" text-anchor="middle" class="button" fill="#FFFFFF">打开工作台</text>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="376" y="590" width="968" height="140" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="400" y="628" class="section">设计说明</text>
+  <text x="400" y="656" class="body">1. 顶部入口放在页面中间，使用横向卡片承接标题、说明与按钮，避免与右侧原有操作按钮混淆。</text>
+  <text x="400" y="684" class="body">2. 整体沿用白底、浅灰描边、红色主按钮和简洁中文排版，保持企业内网页面稳重、清晰的视觉风格。</text>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="376" y="758" width="968" height="214" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="400" y="796" class="section">移动端示意</text>
+  <text x="400" y="824" class="body">移动端可将该入口卡片缩为上下两行，仍保留标题、说明和红色按钮，继续置于页面顶部首屏范围。</text>
+  <rect x="1060" y="786" width="232" height="150" rx="18" fill="#FAFAFA" stroke="#E5E7EB"/>
+  <rect x="1080" y="806" width="192" height="56" rx="12" fill="#FFF8F7" stroke="#E5E7EB"/>
+  <text x="1096" y="828" class="small" fill="#D92D20">AI 对话入口</text>
+  <text x="1096" y="846" class="small" fill="#374151">chat.ceic.com</text>
+  <rect x="1200" y="820" width="56" height="28" rx="8" fill="#D92D20"/>
+  <text x="1228" y="839" text-anchor="middle" class="small" fill="#FFFFFF">进入</text>
+  <rect x="1080" y="878" width="56" height="24" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <rect x="1144" y="878" width="56" height="24" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <rect x="1208" y="878" width="56" height="24" rx="12" fill="#D92D20"/>
+  <text x="1108" y="894" text-anchor="middle" class="small" fill="#374151">导入</text>
+  <text x="1172" y="894" text-anchor="middle" class="small" fill="#374151">管理</text>
+  <text x="1236" y="894" text-anchor="middle" class="small" fill="#FFFFFF">创建</text>
+</svg>

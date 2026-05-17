@@ -1,0 +1,217 @@
+<svg width="1440" height="1180" viewBox="0 0 1440 1180" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgSoft" x1="0" y1="0" x2="1440" y2="1180" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8F9FB"/>
+      <stop offset="1" stop-color="#F3F5F8"/>
+    </linearGradient>
+    <filter id="shadowSoft" x="0" y="0" width="1440" height="1180" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="8"/>
+      <feGaussianBlur stdDeviation="12"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.0666667 0 0 0 0 0.0941176 0 0 0 0 0.152941 0 0 0 0.08 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+    </filter>
+    <filter id="headerShadow" x="48" y="74" width="1344" height="160" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="6"/>
+      <feGaussianBlur stdDeviation="10"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0.0666667 0 0 0 0 0.0941176 0 0 0 0 0.152941 0 0 0 0.06 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+    </filter>
+    <style>
+      .title { font: 600 26px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #111827; letter-spacing: 0.6px; }
+      .subtle { font: 400 14px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #6B7280; }
+      .section { font: 600 16px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #111827; }
+      .tag { font: 600 14px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+      .small { font: 500 12px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+      .body { font: 400 14px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #374151; }
+      .toolTitle { font: 600 13px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #6B7280; letter-spacing: 0.4px; }
+      .toolItem { font: 400 13px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #4B5563; }
+      .toolMore { font: 400 12px 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; fill: #9CA3AF; }
+    </style>
+  </defs>
+
+  <rect width="1440" height="1180" fill="url(#bgSoft)"/>
+
+  <g filter="url(#headerShadow)">
+    <rect x="72" y="88" width="1296" height="112" rx="18" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+
+  <text x="112" y="136" class="title">公司提示词库</text>
+  <text x="112" y="162" class="subtle">收录提示词总数：128</text>
+  <text x="112" y="184" class="subtle">企业内部常用提示词的统一浏览与复用入口</text>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="72" y="228" width="260" height="876" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="96" y="266" class="section">分类</text>
+
+  <g transform="translate(96 290)">
+    <rect width="76" height="34" rx="17" fill="#C41E3A"/>
+    <text x="38" y="22" text-anchor="middle" class="tag" fill="#FFFFFF">全部</text>
+  </g>
+  <g transform="translate(96 336)">
+    <rect width="92" height="34" rx="17" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="46" y="22" text-anchor="middle" class="tag" fill="#1F2937">办公提效</text>
+  </g>
+  <g transform="translate(96 382)">
+    <rect width="92" height="34" rx="17" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="46" y="22" text-anchor="middle" class="tag" fill="#1F2937">会议纪要</text>
+  </g>
+  <g transform="translate(96 428)">
+    <rect width="92" height="34" rx="17" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="46" y="22" text-anchor="middle" class="tag" fill="#1F2937">报告生成</text>
+  </g>
+  <g transform="translate(96 474)">
+    <rect width="92" height="34" rx="17" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="46" y="22" text-anchor="middle" class="tag" fill="#1F2937">行业研究</text>
+  </g>
+  <g transform="translate(96 520)">
+    <rect width="92" height="34" rx="17" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="46" y="22" text-anchor="middle" class="tag" fill="#1F2937">写作助手</text>
+  </g>
+
+  <line x1="96" y1="592" x2="308" y2="592" stroke="#EEF1F4"/>
+
+  <text x="96" y="624" class="toolTitle">AI工具</text>
+  <text x="96" y="654" class="toolItem">CEIC Chat ↗</text>
+  <text x="96" y="684" class="toolItem">ChatGPT ↗</text>
+  <text x="96" y="714" class="toolItem">Claude ↗</text>
+  <text x="96" y="748" class="toolMore">更多...</text>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="352" y="228" width="1016" height="876" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="376" y="266" class="section">提示词列表</text>
+
+  <g transform="translate(376 292)">
+    <rect width="968" height="48" rx="10" fill="#FFFFFF" stroke="#E5E7EB" stroke-width="2"/>
+    <circle cx="22" cy="24" r="7" stroke="#9CA3AF" stroke-width="2"/>
+    <path d="M27 29L32 34" stroke="#9CA3AF" stroke-width="2" stroke-linecap="round"/>
+    <text x="44" y="30" class="body" fill="#9CA3AF">搜索标题或摘要关键词...</text>
+  </g>
+
+  <g transform="translate(1260 244)">
+    <rect width="36" height="36" rx="8" fill="#FCE7EB" stroke="#C41E3A"/>
+    <rect x="8" y="8" width="8" height="8" rx="1" stroke="#C41E3A" stroke-width="1.8"/>
+    <rect x="20" y="8" width="8" height="8" rx="1" stroke="#C41E3A" stroke-width="1.8"/>
+    <rect x="8" y="20" width="8" height="8" rx="1" stroke="#C41E3A" stroke-width="1.8"/>
+    <rect x="20" y="20" width="8" height="8" rx="1" stroke="#C41E3A" stroke-width="1.8"/>
+  </g>
+  <g transform="translate(1218 244)">
+    <rect width="36" height="36" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <path d="M10 12H26M10 18H26M10 24H26" stroke="#6B7280" stroke-width="1.8" stroke-linecap="round"/>
+  </g>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="376" y="364" width="300" height="186" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="400" y="398" class="section">行业研究提示词助手</text>
+  <g transform="translate(400 414)">
+    <rect width="66" height="24" rx="12" fill="#FCE7EB"/>
+    <text x="33" y="16" text-anchor="middle" class="small" fill="#C41E3A">报告生成</text>
+  </g>
+  <text x="400" y="470" class="body">适合输出结构化行业分析摘要、重点结论与追问建议。</text>
+  <text x="400" y="518" class="tag" fill="#C41E3A">查看详情 →</text>
+  <g transform="translate(590 500)">
+    <rect width="62" height="30" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="31" y="20" text-anchor="middle" class="small" fill="#1F2937">复制</text>
+  </g>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="696" y="364" width="300" height="186" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="720" y="398" class="section">周报总结模板助手</text>
+  <g transform="translate(720 414)">
+    <rect width="66" height="24" rx="12" fill="#FCE7EB"/>
+    <text x="33" y="16" text-anchor="middle" class="small" fill="#C41E3A">办公提效</text>
+  </g>
+  <text x="720" y="470" class="body">统一周报语言风格，压缩重复劳动，输出可直接复用的段落。</text>
+  <text x="720" y="518" class="tag" fill="#C41E3A">查看详情 →</text>
+  <g transform="translate(910 500)">
+    <rect width="62" height="30" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="31" y="20" text-anchor="middle" class="small" fill="#1F2937">复制</text>
+  </g>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="1016" y="364" width="328" height="186" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="1040" y="398" class="section">会议纪要整理助手</text>
+  <g transform="translate(1040 414)">
+    <rect width="66" height="24" rx="12" fill="#FCE7EB"/>
+    <text x="33" y="16" text-anchor="middle" class="small" fill="#C41E3A">会议纪要</text>
+  </g>
+  <text x="1040" y="470" class="body">将口语化会议记录整理为清晰结论、待办和后续跟进项。</text>
+  <text x="1040" y="518" class="tag" fill="#C41E3A">查看详情 →</text>
+  <g transform="translate(1230 500)">
+    <rect width="62" height="30" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="31" y="20" text-anchor="middle" class="small" fill="#1F2937">复制</text>
+  </g>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="376" y="570" width="300" height="186" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="400" y="604" class="section">市场观察速览助手</text>
+  <g transform="translate(400 620)">
+    <rect width="66" height="24" rx="12" fill="#FCE7EB"/>
+    <text x="33" y="16" text-anchor="middle" class="small" fill="#C41E3A">行业研究</text>
+  </g>
+  <text x="400" y="676" class="body">用于梳理市场变化、核心玩家动态和需要继续跟进的信号。</text>
+  <text x="400" y="724" class="tag" fill="#C41E3A">查看详情 →</text>
+  <g transform="translate(590 706)">
+    <rect width="62" height="30" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="31" y="20" text-anchor="middle" class="small" fill="#1F2937">复制</text>
+  </g>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="696" y="570" width="300" height="186" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="720" y="604" class="section">邮件润色助手</text>
+  <g transform="translate(720 620)">
+    <rect width="66" height="24" rx="12" fill="#FCE7EB"/>
+    <text x="33" y="16" text-anchor="middle" class="small" fill="#C41E3A">写作助手</text>
+  </g>
+  <text x="720" y="676" class="body">帮助统一商务表达语气，兼顾简洁、准确与礼貌边界。</text>
+  <text x="720" y="724" class="tag" fill="#C41E3A">查看详情 →</text>
+  <g transform="translate(910 706)">
+    <rect width="62" height="30" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="31" y="20" text-anchor="middle" class="small" fill="#1F2937">复制</text>
+  </g>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="1016" y="570" width="328" height="186" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="1040" y="604" class="section">数据口径解释助手</text>
+  <g transform="translate(1040 620)">
+    <rect width="66" height="24" rx="12" fill="#FCE7EB"/>
+    <text x="33" y="16" text-anchor="middle" class="small" fill="#C41E3A">办公提效</text>
+  </g>
+  <text x="1040" y="676" class="body">用于把复杂表格口径转成可直接沟通的说明与标准化答复。</text>
+  <text x="1040" y="724" class="tag" fill="#C41E3A">查看详情 →</text>
+  <g transform="translate(1230 706)">
+    <rect width="62" height="30" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+    <text x="31" y="20" text-anchor="middle" class="small" fill="#1F2937">复制</text>
+  </g>
+
+  <g filter="url(#shadowSoft)">
+    <rect x="376" y="776" width="968" height="292" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+  </g>
+  <text x="400" y="814" class="section">设计要点</text>
+  <text x="400" y="844" class="body">1. 页面主体继续保持原有“公司提示词库”的信息结构：页头、左侧分类、右侧搜索与内容卡片。</text>
+  <text x="400" y="872" class="body">2. 新增的 AI工具 区块只放在左侧分类下方，并压低层级，表现成轻文本清单，不做按钮组、不做大卡片。</text>
+  <text x="400" y="900" class="body">3. 每个工具链接单行呈现，搭配很小的外链提示符号 ↗，语义上更像配置项扩展，而不是新功能模块入口。</text>
+  <text x="400" y="928" class="body">4. 底部的“更多...”继续保持弱提示，暗示后续可扩展，但不抢占首页主任务“找提示词、看提示词、复制提示词”。</text>
+
+  <rect x="1036" y="810" width="254" height="206" rx="18" fill="#F8F9FB" stroke="#E5E7EB"/>
+  <text x="1060" y="844" class="toolTitle">移动端压缩示意</text>
+  <line x1="1060" y1="860" x2="1266" y2="860" stroke="#E5E7EB"/>
+  <text x="1060" y="888" class="toolItem">AI工具</text>
+  <text x="1060" y="914" class="toolItem">CEIC Chat ↗</text>
+  <text x="1060" y="940" class="toolItem">ChatGPT ↗</text>
+  <text x="1060" y="966" class="toolItem">Claude ↗</text>
+  <text x="1060" y="994" class="toolMore">更多...</text>
+</svg>
