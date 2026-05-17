@@ -19,6 +19,7 @@ COPY --from=deps /app ./
 
 COPY apps/web ./apps/web
 COPY packages ./packages
+COPY scripts ./scripts
 COPY tests/fixtures ./tests/fixtures
 
 RUN pnpm --filter @prompt-management/web build
