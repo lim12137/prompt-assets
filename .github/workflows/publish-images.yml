@@ -15,6 +15,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Set owner (lowercase)
         id: vars
         run: echo "owner_lc=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
@@ -31,11 +37,12 @@ jobs:
         with:
           context: .
           file: ./apps/web/Dockerfile
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/${{ steps.vars.outputs.owner_lc }}/prompt-assets-web:latest
 
-      - name: Mirror postgres 16-alpine to GHCR
+      - name: Copy postgres 16-alpine manifest list to GHCR
         run: |
-          docker pull postgres:16-alpine
-          docker tag postgres:16-alpine ghcr.io/${{ steps.vars.outputs.owner_lc }}/prompt-assets-postgres:16-alpine
-          docker push ghcr.io/${{ steps.vars.outputs.owner_lc }}/prompt-assets-postgres:16-alpine
+          docker buildx imagetools create \
+            --tag ghcr.io/${{ steps.vars.outputs.owner_lc }}/prompt-assets-postgres:16-alpine \
+            docker.io/library/postgres:16-alpine
