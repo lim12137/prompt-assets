@@ -2,6 +2,46 @@
 
 import { createElement, useState } from "react";
 
+function fallbackCopyText(text) {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-9999px";
+  textarea.style.left = "-9999px";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
+}
+
+export async function writeTextWithFallback(text) {
+  const clipboard = globalThis.navigator?.clipboard;
+  if (clipboard?.writeText) {
+    try {
+      await clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through to legacy copy path for embedded/insecure contexts.
+    }
+  }
+
+  return fallbackCopyText(text);
+}
+
 export function CopyCardButton({ content }) {
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -16,21 +56,14 @@ export function CopyCardButton({ content }) {
       return;
     }
 
-    const clipboard = globalThis.navigator?.clipboard;
-    if (!clipboard?.writeText) {
-      setErrorMessage("复制失败，请手动复制");
-      return;
-    }
-
-    void clipboard
-      .writeText(text)
-      .then(() => {
+    void writeTextWithFallback(text).then((copied) => {
+      if (copied) {
         setStatusMessage("复制成功");
         setTimeout(() => setStatusMessage(""), 2000);
-      })
-      .catch(() => {
-        setErrorMessage("复制失败，请稍后重试");
-      });
+        return;
+      }
+      setErrorMessage("复制失败，请稍后重试");
+    });
   };
 
   return createElement(

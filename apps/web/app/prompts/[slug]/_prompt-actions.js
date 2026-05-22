@@ -175,6 +175,46 @@ function Message({ type, children }) {
   }, children);
 }
 
+function fallbackCopyText(text) {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-9999px";
+  textarea.style.left = "-9999px";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
+}
+
+export async function writeTextWithFallback(text) {
+  const clipboard = globalThis.navigator?.clipboard;
+  if (clipboard?.writeText) {
+    try {
+      await clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through to legacy copy path for embedded/insecure contexts.
+    }
+  }
+
+  return fallbackCopyText(text);
+}
+
 function CopyIcon() {
   return createElement("svg", {
     width: "16", height: "16", viewBox: "0 0 24 24",
@@ -423,11 +463,14 @@ export function PromptActions({ slug, currentVersionContent }) {
     setCopyStatusMessage(""); setCopyErrorMessage("");
     const content = String(currentVersionContent ?? "");
     if (!content) { setCopyErrorMessage("复制失败，当前版本正文为空"); return; }
-    const clipboard = globalThis.navigator?.clipboard;
-    if (!clipboard?.writeText) { setCopyErrorMessage("复制失败，请手动复制"); return; }
-    void clipboard.writeText(content)
-      .then(() => { setCopyStatusMessage("复制成功：已复制当前版本正文"); })
-      .catch(() => { setCopyErrorMessage("复制失败，请稍后重试"); });
+    void writeTextWithFallback(content)
+      .then((copied) => {
+        if (copied) {
+          setCopyStatusMessage("复制成功：已复制当前版本正文");
+          return;
+        }
+        setCopyErrorMessage("复制失败，请稍后重试");
+      });
   };
 
   const onSubmitCandidate = () => {

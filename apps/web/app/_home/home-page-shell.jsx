@@ -199,6 +199,45 @@ function createCardKeyDownHandler(slug, router) {
   };
 }
 
+function fallbackCopyText(text) {
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-9999px";
+  textarea.style.left = "-9999px";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    textarea.remove();
+  }
+}
+
+export async function writeTextWithFallback(text) {
+  if (navigator?.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall back for browsers/embeds without clipboard permission.
+    }
+  }
+
+  return fallbackCopyText(text);
+}
+
 function CopyButton({ prompt, copyState, onCopy }) {
   const statusLabel = copyState === "success" ? "已复制" : copyState === "error" ? "复制失败" : "复制";
 
@@ -411,7 +450,10 @@ export function HomePageShell({ prompts, homeAiTools }) {
     }
 
     try {
-      await navigator.clipboard.writeText(text);
+      const copied = await writeTextWithFallback(text);
+      if (!copied) {
+        throw new Error("copy_failed");
+      }
       setCopyFeedback(prompt.slug, "success");
     } catch {
       setCopyFeedback(prompt.slug, "error");
