@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>有度一体化平台账号登录 - 高保真原型</title>
+    <style>
+      :root {
+        --bg: #eef3f8;
+        --bg-strong: #dfe8f2;
+        --surface: rgba(255, 255, 255, 0.92);
+        --surface-strong: #ffffff;
+        --text: #18212b;
+        --muted: #5f6b7a;
+        --line: rgba(24, 33, 43, 0.1);
+        --primary: #c32033;
+        --primary-hover: #a91a2b;
+        --primary-soft: rgba(195, 32, 51, 0.08);
+        --info: #1f5f95;
+        --success: #16794d;
+        --shadow: 0 18px 48px rgba(31, 54, 84, 0.14);
+        --radius-xl: 28px;
+        --radius-lg: 18px;
+        --radius-md: 14px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "HarmonyOS Sans SC", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(31, 95, 149, 0.15), transparent 28%),
+          radial-gradient(circle at right 20%, rgba(195, 32, 51, 0.1), transparent 24%),
+          linear-gradient(180deg, #f4f7fb 0%, var(--bg) 56%, #e9eff6 100%);
+      }
+
+      .page {
+        min-height: 100vh;
+        padding: 28px;
+        display: grid;
+        place-items: center;
+      }
+
+      .shell {
+        width: min(1180px, 100%);
+        display: grid;
+        grid-template-columns: 1.08fr 0.92fr;
+        border: 1px solid rgba(255, 255, 255, 0.75);
+        border-radius: 32px;
+        overflow: hidden;
+        background: linear-gradient(135deg, rgba(243, 247, 252, 0.88), rgba(255, 255, 255, 0.97));
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(12px);
+      }
+
+      .hero {
+        position: relative;
+        padding: 40px 40px 34px;
+        background:
+          linear-gradient(160deg, rgba(20, 54, 86, 0.96), rgba(28, 79, 119, 0.9)),
+          linear-gradient(135deg, #204764, #17374e);
+        color: #f7fbff;
+      }
+
+      .hero::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(135deg, transparent 0 58%, rgba(255, 255, 255, 0.08) 58% 62%, transparent 62% 100%);
+        pointer-events: none;
+      }
+
+      .hero-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 56px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
+      .brand-mark {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        font-size: 18px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08));
+        border: 1px solid rgba(255, 255, 255, 0.18);
+      }
+
+      .hero-badge {
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(255, 255, 255, 0.08);
+        font-size: 13px;
+        color: rgba(247, 251, 255, 0.88);
+      }
+
+      .hero h1 {
+        margin: 0;
+        font-size: clamp(32px, 5vw, 48px);
+        line-height: 1.12;
+        letter-spacing: 0.01em;
+      }
+
+      .hero-subtitle {
+        max-width: 560px;
+        margin: 18px 0 0;
+        font-size: 16px;
+        line-height: 1.75;
+        color: rgba(247, 251, 255, 0.78);
+      }
+
+      .hero-panels {
+        margin-top: 34px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .hero-panel {
+        position: relative;
+        padding: 18px 18px 18px 20px;
+        border-radius: var(--radius-lg);
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+      }
+
+      .hero-panel::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 16px;
+        bottom: 16px;
+        width: 3px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.55);
+      }
+
+      .hero-panel-title {
+        margin: 0 0 8px;
+        font-size: 14px;
+        color: rgba(247, 251, 255, 0.72);
+      }
+
+      .hero-panel-value {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .hero-grid {
+        margin-top: 28px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .hero-metric {
+        padding: 16px;
+        border-radius: var(--radius-md);
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .hero-metric strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 18px;
+      }
+
+      .hero-metric span {
+        font-size: 13px;
+        line-height: 1.6;
+        color: rgba(247, 251, 255, 0.72);
+      }
+
+      .login-wrap {
+        padding: 40px 36px 34px;
+        display: grid;
+        gap: 20px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.98)),
+          var(--surface-strong);
+      }
+
+      .login-head {
+        display: grid;
+        gap: 8px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--info);
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+      }
+
+      .login-head h2 {
+        margin: 0;
+        font-size: 30px;
+      }
+
+      .login-head p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .tabs {
+        display: inline-flex;
+        padding: 5px;
+        gap: 6px;
+        width: fit-content;
+        border-radius: 14px;
+        background: #f0f4f8;
+        border: 1px solid var(--line);
+      }
+
+      .tab {
+        padding: 10px 16px;
+        border-radius: 10px;
+        border: 0;
+        font: inherit;
+        color: var(--muted);
+        background: transparent;
+      }
+
+      .tab.active {
+        color: var(--text);
+        background: #ffffff;
+        box-shadow: 0 4px 12px rgba(24, 33, 43, 0.08);
+        font-weight: 700;
+      }
+
+      .card {
+        border-radius: 22px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        box-shadow: 0 12px 36px rgba(22, 36, 56, 0.08);
+      }
+
+      .form-card {
+        padding: 24px;
+      }
+
+      .banner {
+        margin-bottom: 18px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(31, 95, 149, 0.08), rgba(195, 32, 51, 0.06));
+        border: 1px solid rgba(31, 95, 149, 0.12);
+      }
+
+      .banner strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 14px;
+      }
+
+      .banner span {
+        font-size: 13px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .field-list {
+        display: grid;
+        gap: 16px;
+      }
+
+      .field {
+        display: grid;
+        gap: 8px;
+      }
+
+      .field-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .field label {
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .field small,
+      .field-row a {
+        color: var(--muted);
+        font-size: 12px;
+        text-decoration: none;
+      }
+
+      .field-row a:hover {
+        color: var(--primary);
+      }
+
+      .input-wrap {
+        position: relative;
+      }
+
+      .input-wrap span {
+        position: absolute;
+        left: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #7b8794;
+        font-size: 15px;
+      }
+
+      input {
+        width: 100%;
+        height: 50px;
+        padding: 0 14px 0 42px;
+        border-radius: 14px;
+        border: 1px solid #d4dde7;
+        background: #fbfdff;
+        font: inherit;
+        color: var(--text);
+        outline: none;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
+      }
+
+      input:focus {
+        border-color: rgba(31, 95, 149, 0.72);
+        box-shadow: 0 0 0 4px rgba(31, 95, 149, 0.12);
+        background: #ffffff;
+      }
+
+      .form-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-top: 4px;
+        font-size: 13px;
+      }
+
+      .remember {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+      }
+
+      .remember .dot {
+        width: 16px;
+        height: 16px;
+        border-radius: 5px;
+        border: 1px solid #c5d1dc;
+        background: linear-gradient(180deg, #ffffff, #f2f6fa);
+        position: relative;
+      }
+
+      .remember .dot::after {
+        content: "";
+        position: absolute;
+        inset: 3px;
+        border-radius: 3px;
+        background: var(--primary);
+      }
+
+      .submit {
+        margin-top: 18px;
+        width: 100%;
+        height: 52px;
+        border: 0;
+        border-radius: 14px;
+        background: linear-gradient(135deg, var(--primary), #d83a4d);
+        color: #ffffff;
+        font: inherit;
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        box-shadow: 0 14px 28px rgba(195, 32, 51, 0.24);
+      }
+
+      .submit:hover {
+        background: linear-gradient(135deg, var(--primary-hover), #c6283c);
+      }
+
+      .status {
+        margin-top: 14px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: rgba(22, 121, 77, 0.08);
+        color: var(--success);
+        font-size: 13px;
+      }
+
+      .status::before {
+        content: "";
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: currentColor;
+        box-shadow: 0 0 0 4px rgba(22, 121, 77, 0.12);
+      }
+
+      .help-card {
+        padding: 22px 24px;
+        display: grid;
+        gap: 16px;
+      }
+
+      .help-card h3 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .help-grid {
+        display: grid;
+        gap: 12px;
+      }
+
+      .help-item {
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: #f7fafc;
+        border: 1px solid #e1e8ef;
+      }
+
+      .help-item strong {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 14px;
+      }
+
+      .help-item p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.65;
+      }
+
+      .support {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #f9fbfe, #f3f7fb);
+        border: 1px dashed #cbd8e4;
+      }
+
+      .support strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 14px;
+      }
+
+      .support span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .support a {
+        color: var(--info);
+        font-weight: 700;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+
+      .footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      @media (max-width: 960px) {
+        .page {
+          padding: 16px;
+        }
+
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .hero,
+        .login-wrap {
+          padding: 26px 22px;
+        }
+
+        .hero-topbar {
+          margin-bottom: 32px;
+        }
+
+        .hero-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .shell {
+          border-radius: 24px;
+        }
+
+        .hero h1 {
+          font-size: 30px;
+        }
+
+        .login-head h2 {
+          font-size: 24px;
+        }
+
+        .tabs {
+          width: 100%;
+        }
+
+        .tab {
+          flex: 1 1 0;
+          text-align: center;
+        }
+
+        .form-card,
+        .help-card {
+          padding: 18px;
+        }
+
+        .form-meta,
+        .support,
+        .footer {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="shell" aria-label="有度一体化平台账号登录原型">
+        <aside class="hero">
+          <div class="hero-topbar">
+            <div class="brand">
+              <div class="brand-mark">YD</div>
+              <span>提示词资产管理门户</span>
+            </div>
+            <div class="hero-badge">企业内网访问</div>
+          </div>
+
+          <h1>有度一体化平台账号登录</h1>
+          <p class="hero-subtitle">
+            统一使用企业 OA 身份认证进入提示词管理后台。保留内部系统稳重感，同时补足品牌识别、登录说明和帮助触点，避免当前页面过于朴素。
+          </p>
+
+          <div class="hero-panels">
+            <div class="hero-panel">
+              <p class="hero-panel-title">当前访问系统</p>
+              <p class="hero-panel-value">提示词管理 / 管理后台</p>
+            </div>
+            <div class="hero-panel">
+              <p class="hero-panel-title">推荐登录方式</p>
+              <p class="hero-panel-value">账号密码登录</p>
+            </div>
+          </div>
+
+          <div class="hero-grid">
+            <div class="hero-metric">
+              <strong>统一身份</strong>
+              <span>复用有度一体化平台员工账号，减少系统间割裂。</span>
+            </div>
+            <div class="hero-metric">
+              <strong>权限隔离</strong>
+              <span>登录后仍按本系统会话与管理权限单独校验。</span>
+            </div>
+            <div class="hero-metric">
+              <strong>安全提示</strong>
+              <span>建议在公司网络或 VPN 环境下访问，避免公共设备保存密码。</span>
+            </div>
+          </div>
+        </aside>
+
+        <section class="login-wrap">
+          <header class="login-head">
+            <span class="eyebrow">AUTHENTICATION PORTAL</span>
+            <h2>欢迎登录</h2>
+            <p>请输入有度一体化平台账号与密码。登录成功后将回到原目标页面，并根据当前账号权限展示对应管理入口。</p>
+          </header>
+
+          <div class="tabs" aria-label="登录方式">
+            <button class="tab active" type="button">账号密码登录</button>
+            <button class="tab" type="button">统一登录说明</button>
+          </div>
+
+          <section class="card form-card">
+            <div class="banner">
+              <strong>当前登录方式：账号密码登录</strong>
+              <span>适用于员工访问管理后台、分类管理、导入与审核等需要身份校验的操作。</span>
+            </div>
+
+            <div class="field-list">
+              <div class="field">
+                <div class="field-row">
+                  <label for="username">账号</label>
+                  <small>通常为 OA 用户名</small>
+                </div>
+                <div class="input-wrap">
+                  <span>工</span>
+                  <input id="username" type="text" placeholder="请输入有度一体化平台账号" />
+                </div>
+              </div>
+
+              <div class="field">
+                <div class="field-row">
+                  <label for="password">密码</label>
+                  <a href="javascript:void(0)">忘记密码？</a>
+                </div>
+                <div class="input-wrap">
+                  <span>密</span>
+                  <input id="password" type="password" placeholder="请输入账号密码" />
+                </div>
+              </div>
+            </div>
+
+            <div class="form-meta">
+              <div class="remember">
+                <span class="dot" aria-hidden="true"></span>
+                <span>本机 8 小时内保持登录状态</span>
+              </div>
+              <span>将自动回跳至原访问页面</span>
+            </div>
+
+            <button class="submit" type="button">登录并进入系统</button>
+            <div class="status">登录环境检查正常，可提交认证请求。</div>
+          </section>
+
+          <section class="card help-card">
+            <h3>登录说明 / 帮助区</h3>
+            <div class="help-grid">
+              <div class="help-item">
+                <strong>登录说明</strong>
+                <p>请使用“有度一体化平台账号登录”。本页面仅负责身份认证入口，登录后仍按本系统权限策略控制管理能力。</p>
+              </div>
+              <div class="help-item">
+                <strong>常见问题</strong>
+                <p>若提示账号或密码错误，请先确认 OA 密码是否已更新；若已登录但无法进入后台，通常是当前账号未被授予管理权限。</p>
+              </div>
+              <div class="help-item">
+                <strong>安全建议</strong>
+                <p>离开工位请主动退出登录。请勿在公共电脑勾选记住状态，不要通过截图或聊天工具传播账号密码。</p>
+              </div>
+            </div>
+
+            <div class="support">
+              <div>
+                <strong>需要协助？</strong>
+                <span>联系信息化服务台 / 企业应用管理员</span>
+              </div>
+              <a href="javascript:void(0)">查看登录帮助文档</a>
+            </div>
+          </section>
+
+          <footer class="footer">
+            <span>Prototype Only · Desktop / Mobile Responsive</span>
+            <span>适配场景：有度一体化平台账号登录</span>
+          </footer>
+        </section>
+      </section>
+    </main>
+  </body>
+  </html>
