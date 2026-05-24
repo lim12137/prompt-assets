@@ -29,9 +29,9 @@
 - `pnpm-lock.yaml` 中虽出现 drizzle 对 sqlite 的可选 peer 提示，但项目实际 `packages/db/src/client.ts` 使用的是 `pg` / `node-postgres`
 - 结论：当前项目无可直接启用的 sqlite 备用启动方案。
 
-### 4. 未发现显式“跳过 migrate/seed”的独立启动脚本
+### 4. 未发现显式“跳过 migrate/seed”的独立启动脚本（当时）
 
-- `local-debug.mjs` 默认 `dev` 链路为 `db-up -> db-migrate -> db-seed -> web`
+- `local-debug.mjs` 当时默认 `dev` 链路为 `db-up -> db-migrate -> db-seed -> web`
 - 但 web 运行时仓储层自身具备 DB 不可达时的 fixture 回落能力
 - 结论：没有官方“skip migrate/seed”专用脚本；但对首页等读场景，fixture 模式可绕开真实迁移/seed 依赖。
 

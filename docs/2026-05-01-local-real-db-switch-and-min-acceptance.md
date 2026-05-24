@@ -2,8 +2,10 @@
 
 - 执行日期：2026-05-01
 - 执行人：Codex 子代理
-- 目标数据库：`postgres://postgres:postgres@127.0.0.1:55432/prompt_management`
+- 目标数据库（当时）：`postgres://postgres:postgres@127.0.0.1:55432/prompt_management`
 - 最终访问地址：`http://127.0.0.1:3010`
+
+> 这是 2026-05-01 的历史记录，基于当时的本机 Docker 真实库方案，不代表当前默认 `local:dev` 配置。
 
 ## 1. 背景判断
 

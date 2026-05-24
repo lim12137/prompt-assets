@@ -3,6 +3,12 @@
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+const LOGIN_FEATURES = [
+  { label: "提交改进版", icon: "spark" },
+  { label: "点赞和评分", icon: "star" },
+  { label: "进入管理页", icon: "shield" },
+];
+
 const styles = {
   page: {
     minHeight: "100vh",
@@ -13,11 +19,11 @@ const styles = {
       "radial-gradient(circle at top left, rgba(31, 95, 149, 0.15), transparent 28%), radial-gradient(circle at right 20%, rgba(195, 32, 51, 0.1), transparent 24%), linear-gradient(180deg, #f4f7fb 0%, #eef3f8 56%, #e9eff6 100%)",
   },
   shell: {
-    width: "min(1180px, 100%)",
+    width: "min(1080px, 100%)",
     display: "grid",
     gridTemplateColumns: "minmax(0, 1.08fr) minmax(320px, 0.92fr)",
     border: "1px solid rgba(255, 255, 255, 0.75)",
-    borderRadius: "32px",
+    borderRadius: "28px",
     overflow: "hidden",
     background: "linear-gradient(135deg, rgba(243, 247, 252, 0.88), rgba(255, 255, 255, 0.97))",
     boxShadow: "0 18px 48px rgba(31, 54, 84, 0.14)",
@@ -25,7 +31,7 @@ const styles = {
   },
   hero: {
     position: "relative",
-    padding: "40px 40px 34px",
+    padding: "30px 32px 26px",
     color: "#f7fbff",
     background:
       "linear-gradient(160deg, rgba(20, 54, 86, 0.96), rgba(28, 79, 119, 0.9)), linear-gradient(135deg, #204764, #17374e)",
@@ -56,144 +62,91 @@ const styles = {
     background: "linear-gradient(135deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.08))",
     border: "1px solid rgba(255, 255, 255, 0.18)",
   },
-  heroBadge: {
-    padding: "8px 12px",
-    borderRadius: "999px",
-    border: "1px solid rgba(255, 255, 255, 0.16)",
-    background: "rgba(255, 255, 255, 0.08)",
-    fontSize: "13px",
-    color: "rgba(247, 251, 255, 0.88)",
-  },
   heroHeading: {
     margin: 0,
-    fontSize: "clamp(32px, 5vw, 48px)",
+    fontSize: "clamp(28px, 4vw, 40px)",
     lineHeight: 1.12,
     letterSpacing: "0.01em",
   },
   heroSubtitle: {
-    margin: "18px 0 0",
+    margin: "14px 0 0",
     maxWidth: "560px",
-    fontSize: "16px",
-    lineHeight: 1.75,
+    fontSize: "15px",
+    lineHeight: 1.65,
     color: "rgba(247, 251, 255, 0.78)",
   },
-  heroPanels: {
-    display: "grid",
-    gap: "16px",
-  },
-  heroPanel: {
-    position: "relative",
-    padding: "18px 18px 18px 20px",
-    borderRadius: "18px",
-    background: "rgba(255, 255, 255, 0.08)",
-    border: "1px solid rgba(255, 255, 255, 0.12)",
-  },
-  heroPanelLine: {
-    position: "absolute",
-    left: 0,
-    top: "16px",
-    bottom: "16px",
-    width: "3px",
-    borderRadius: "999px",
-    background: "rgba(255, 255, 255, 0.55)",
-  },
-  heroPanelTitle: {
-    margin: "0 0 8px",
-    fontSize: "14px",
-    color: "rgba(247, 251, 255, 0.72)",
-  },
-  heroPanelValue: {
-    margin: 0,
-    fontSize: "18px",
-    fontWeight: 700,
-  },
-  heroGrid: {
+  heroFeatureGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-    gap: "14px",
+    gap: "12px",
+    marginTop: "14px",
   },
-  heroMetric: {
-    padding: "16px",
-    borderRadius: "14px",
-    background: "rgba(255, 255, 255, 0.08)",
-    border: "1px solid rgba(255, 255, 255, 0.1)",
+  heroFeatureCard: {
+    display: "grid",
+    justifyItems: "start",
+    gap: "10px",
+    padding: "14px",
+    borderRadius: "18px",
+    background: "linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06))",
+    border: "1px solid rgba(255, 255, 255, 0.14)",
+    minHeight: "92px",
+  },
+  heroFeatureIcon: {
+    width: "38px",
+    height: "38px",
+    borderRadius: "12px",
+    display: "grid",
+    placeItems: "center",
+    background: "rgba(255, 255, 255, 0.14)",
+    color: "#ffffff",
+    boxShadow: "inset 0 1px 0 rgba(255, 255, 255, 0.16)",
+  },
+  heroFeatureLabel: {
+    fontSize: "14px",
+    lineHeight: 1.4,
+    color: "rgba(247, 251, 255, 0.94)",
+    fontWeight: 600,
   },
   loginWrap: {
-    padding: "40px 36px 34px",
+    padding: "28px 28px 24px",
     display: "grid",
-    gap: "20px",
+    gap: "14px",
     background: "linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.98))",
   },
   loginHead: {
     display: "grid",
     gap: "8px",
   },
-  eyebrow: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "8px",
-    color: "#1f5f95",
-    fontSize: "13px",
-    fontWeight: 700,
-    letterSpacing: "0.04em",
-  },
   loginTitle: {
     margin: 0,
-    fontSize: "30px",
+    fontSize: "28px",
     color: "#18212b",
   },
   loginDescription: {
     margin: 0,
     color: "#5f6b7a",
     fontSize: "14px",
-    lineHeight: 1.7,
-  },
-  tabs: {
-    display: "inline-flex",
-    padding: "5px",
-    gap: "6px",
-    width: "fit-content",
-    borderRadius: "14px",
-    background: "#f0f4f8",
-    border: "1px solid rgba(24, 33, 43, 0.1)",
-  },
-  tabActive: {
-    padding: "10px 16px",
-    borderRadius: "10px",
-    border: 0,
-    font: "inherit",
-    color: "#18212b",
-    background: "#ffffff",
-    boxShadow: "0 4px 12px rgba(24, 33, 43, 0.08)",
-    fontWeight: 700,
-  },
-  tabMuted: {
-    padding: "10px 16px",
-    borderRadius: "10px",
-    border: 0,
-    font: "inherit",
-    color: "#5f6b7a",
-    background: "transparent",
+    lineHeight: 1.55,
   },
   card: {
-    borderRadius: "22px",
+    borderRadius: "18px",
     border: "1px solid rgba(24, 33, 43, 0.1)",
     background: "rgba(255, 255, 255, 0.92)",
     boxShadow: "0 12px 36px rgba(22, 36, 56, 0.08)",
   },
   formCard: {
-    padding: "24px",
+    padding: "18px",
   },
   banner: {
-    marginBottom: "18px",
-    padding: "14px 16px",
-    borderRadius: "16px",
+    marginBottom: "14px",
+    padding: "12px 14px",
+    borderRadius: "14px",
     background: "linear-gradient(135deg, rgba(31, 95, 149, 0.08), rgba(195, 32, 51, 0.06))",
     border: "1px solid rgba(31, 95, 149, 0.12)",
   },
   fieldList: {
     display: "grid",
-    gap: "16px",
+    gap: "12px",
   },
   field: {
     display: "grid",
@@ -207,7 +160,7 @@ const styles = {
     flexWrap: "wrap",
   },
   fieldLabel: {
-    fontSize: "14px",
+    fontSize: "13px",
     fontWeight: 700,
     color: "#18212b",
   },
@@ -228,9 +181,9 @@ const styles = {
   },
   input: {
     width: "100%",
-    height: "50px",
+    height: "46px",
     padding: "0 14px 0 42px",
-    borderRadius: "14px",
+    borderRadius: "12px",
     border: "1px solid #d4dde7",
     background: "#fbfdff",
     font: "inherit",
@@ -242,7 +195,7 @@ const styles = {
     justifyContent: "space-between",
     alignItems: "center",
     gap: "12px",
-    marginTop: "4px",
+    marginTop: "2px",
     fontSize: "13px",
     color: "#5f6b7a",
     flexWrap: "wrap",
@@ -268,9 +221,9 @@ const styles = {
     background: "#c32033",
   },
   submit: {
-    marginTop: "18px",
+    marginTop: "10px",
     width: "100%",
-    minHeight: "52px",
+    minHeight: "48px",
     border: 0,
     borderRadius: "14px",
     background: "linear-gradient(135deg, #c32033, #d83a4d)",
@@ -283,7 +236,7 @@ const styles = {
     cursor: "pointer",
   },
   status: {
-    marginTop: "14px",
+    marginTop: "10px",
     display: "flex",
     alignItems: "center",
     gap: "10px",
@@ -303,37 +256,6 @@ const styles = {
     boxShadow: "0 0 0 4px rgba(22, 121, 77, 0.12)",
     flexShrink: 0,
   },
-  helpCard: {
-    padding: "22px 24px",
-    display: "grid",
-    gap: "16px",
-  },
-  helpGrid: {
-    display: "grid",
-    gap: "12px",
-  },
-  helpItem: {
-    padding: "14px 16px",
-    borderRadius: "16px",
-    background: "#f7fafc",
-    border: "1px solid #e1e8ef",
-  },
-  support: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: "12px",
-    padding: "14px 16px",
-    borderRadius: "16px",
-    background: "linear-gradient(135deg, #f9fbfe, #f3f7fb)",
-    border: "1px dashed #cbd8e4",
-    flexWrap: "wrap",
-  },
-  supportLink: {
-    color: "#1f5f95",
-    fontWeight: 700,
-    textDecoration: "none",
-  },
   footer: {
     display: "flex",
     justifyContent: "space-between",
@@ -343,6 +265,31 @@ const styles = {
     flexWrap: "wrap",
   },
 };
+
+function FeatureIcon({ type }) {
+  if (type === "spark") {
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
+      </svg>
+    );
+  }
+
+  if (type === "star") {
+    return (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8-5.3-2.8-5.3 2.8 1-5.8-4.2-4.1 5.9-.9L12 3.5z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l7 3v5c0 4.6-2.8 8.8-7 10-4.2-1.2-7-5.4-7-10V6l7-3z" />
+      <path d="M9.5 12.5l1.7 1.7 3.3-3.7" />
+    </svg>
+  );
+}
 
 function LoginForm() {
   const router = useRouter();
@@ -391,82 +338,41 @@ function LoginForm() {
               <div style={styles.brandMark}>YD</div>
               <span>提示词资产管理门户</span>
             </div>
-            <div style={styles.heroBadge}>企业内网访问</div>
           </div>
 
           <div>
             <h1 style={styles.heroHeading}>有度一体化平台账号登录</h1>
             <p style={styles.heroSubtitle}>
-              统一使用企业 OA 身份认证进入提示词管理后台。保留内部系统稳重感，同时补足品牌识别、登录说明和帮助触点，避免当前页面过于朴素。
+              使用有度一体化平台账号登录，进入提示词管理后台。
             </p>
           </div>
-
-          <div style={styles.heroPanels}>
-            <div style={styles.heroPanel}>
-              <span aria-hidden="true" style={styles.heroPanelLine} />
-              <p style={styles.heroPanelTitle}>当前访问系统</p>
-              <p style={styles.heroPanelValue}>提示词管理 / 管理后台</p>
-            </div>
-            <div style={styles.heroPanel}>
-              <span aria-hidden="true" style={styles.heroPanelLine} />
-              <p style={styles.heroPanelTitle}>推荐登录方式</p>
-              <p style={styles.heroPanelValue}>账号密码登录</p>
-            </div>
-          </div>
-
-          <div style={styles.heroGrid}>
-            <div style={styles.heroMetric}>
-              <strong style={{ display: "block", marginBottom: "6px", fontSize: "18px" }}>
-                统一身份
-              </strong>
-              <span style={{ fontSize: "13px", lineHeight: 1.6, color: "rgba(247, 251, 255, 0.72)" }}>
-                复用有度一体化平台员工账号，减少系统间割裂。
-              </span>
-            </div>
-            <div style={styles.heroMetric}>
-              <strong style={{ display: "block", marginBottom: "6px", fontSize: "18px" }}>
-                权限隔离
-              </strong>
-              <span style={{ fontSize: "13px", lineHeight: 1.6, color: "rgba(247, 251, 255, 0.72)" }}>
-                登录后仍按本系统会话与管理权限单独校验。
-              </span>
-            </div>
-            <div style={styles.heroMetric}>
-              <strong style={{ display: "block", marginBottom: "6px", fontSize: "18px" }}>
-                安全提示
-              </strong>
-              <span style={{ fontSize: "13px", lineHeight: 1.6, color: "rgba(247, 251, 255, 0.72)" }}>
-                建议在公司网络或 VPN 环境下访问，避免公共设备保存密码。
-              </span>
-            </div>
+          <div style={styles.heroFeatureGrid}>
+            {LOGIN_FEATURES.map((item) => (
+              <div key={item.label} style={styles.heroFeatureCard}>
+                <div style={styles.heroFeatureIcon}>
+                  <FeatureIcon type={item.icon} />
+                </div>
+                <div style={styles.heroFeatureLabel}>{item.label}</div>
+              </div>
+            ))}
           </div>
         </aside>
 
         <section style={styles.loginWrap}>
           <header style={styles.loginHead}>
-            <span style={styles.eyebrow}>AUTHENTICATION PORTAL</span>
-            <h2 style={styles.loginTitle}>欢迎登录</h2>
+            <h2 style={styles.loginTitle}>登录</h2>
             <p style={styles.loginDescription}>
-              请输入有度一体化平台账号与密码。登录成功后将回到原目标页面，并根据当前账号权限展示对应管理入口。
+              请输入有度一体化平台账号与密码。
             </p>
           </header>
-
-          <div style={styles.tabs} aria-label="登录方式">
-            <button type="button" style={styles.tabActive}>
-              账号密码登录
-            </button>
-            <button type="button" style={styles.tabMuted} disabled aria-disabled="true">
-              统一登录说明
-            </button>
-          </div>
 
           <section style={{ ...styles.card, ...styles.formCard }}>
             <div style={styles.banner}>
               <strong style={{ display: "block", marginBottom: "4px", fontSize: "14px" }}>
-                当前登录方式：账号密码登录
+                账号密码登录
               </strong>
               <span style={{ fontSize: "13px", color: "#5f6b7a", lineHeight: 1.6 }}>
-                适用于员工访问管理后台、分类管理、导入与审核等需要身份校验的操作。
+                登录成功后将回到原目标页面。
               </span>
             </div>
 
@@ -553,53 +459,9 @@ function LoginForm() {
             </p>
           </section>
 
-          <section style={{ ...styles.card, ...styles.helpCard }}>
-            <h3 style={{ margin: 0, fontSize: "18px", color: "#18212b" }}>登录说明 / 帮助区</h3>
-            <div style={styles.helpGrid}>
-              <div style={styles.helpItem}>
-                <strong style={{ display: "block", marginBottom: "5px", fontSize: "14px" }}>
-                  登录说明
-                </strong>
-                <p style={{ margin: 0, color: "#5f6b7a", fontSize: "13px", lineHeight: 1.65 }}>
-                  请使用“有度一体化平台账号登录”。本页面仅负责身份认证入口，登录后仍按本系统权限策略控制管理能力。
-                </p>
-              </div>
-              <div style={styles.helpItem}>
-                <strong style={{ display: "block", marginBottom: "5px", fontSize: "14px" }}>
-                  常见问题
-                </strong>
-                <p style={{ margin: 0, color: "#5f6b7a", fontSize: "13px", lineHeight: 1.65 }}>
-                  若提示账号或密码错误，请先确认 OA 密码是否已更新；若已登录但无法进入后台，通常是当前账号未被授予管理权限。
-                </p>
-              </div>
-              <div style={styles.helpItem}>
-                <strong style={{ display: "block", marginBottom: "5px", fontSize: "14px" }}>
-                  安全建议
-                </strong>
-                <p style={{ margin: 0, color: "#5f6b7a", fontSize: "13px", lineHeight: 1.65 }}>
-                  离开工位请主动退出登录。请勿在公共电脑保存密码，不要通过截图或聊天工具传播账号密码。
-                </p>
-              </div>
-            </div>
-
-            <div style={styles.support}>
-              <div>
-                <strong style={{ display: "block", marginBottom: "4px", fontSize: "14px", color: "#18212b" }}>
-                  需要协助？
-                </strong>
-                <span style={{ color: "#5f6b7a", fontSize: "12px" }}>
-                  联系信息化服务台 / 企业应用管理员
-                </span>
-              </div>
-              <a href="#" style={styles.supportLink} onClick={(event) => event.preventDefault()}>
-                查看登录帮助文档
-              </a>
-            </div>
-          </section>
-
           <footer style={styles.footer}>
-            <span>Prototype Only · Desktop / Mobile Responsive</span>
-            <span>适配场景：有度一体化平台账号登录</span>
+            <span>有度一体化平台账号登录</span>
+            <span>桌面端 / 移动端自适应</span>
           </footer>
         </section>
       </section>

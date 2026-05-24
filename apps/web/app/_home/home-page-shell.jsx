@@ -400,7 +400,7 @@ function PromptListItem({ prompt, copyState, onCopy, router }) {
   );
 }
 
-export function HomePageShell({ prompts, homeAiTools }) {
+export function HomePageShell({ prompts, homeAiTools, loadNotice }) {
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState("");
   const [keyword, setKeyword] = useState("");
@@ -499,6 +499,22 @@ export function HomePageShell({ prompts, homeAiTools }) {
         </div>
         <HomeActionButtons />
       </header>
+
+      {loadNotice ? (
+        <div
+          role="status"
+          style={{
+            border: "1px solid #f59e0b",
+            borderRadius: "12px",
+            backgroundColor: "#fffbeb",
+            color: "#92400e",
+            padding: "12px 14px",
+            fontSize: "14px",
+          }}
+        >
+          {loadNotice}
+        </div>
+      ) : null}
 
       <div
         style={{
