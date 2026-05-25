@@ -3,13 +3,13 @@ import { PersistentAuthStatus } from "./_shared/auth-status.server.js";
 import { NavigationFeedback } from "./_shared/navigation-feedback.js";
 
 export const metadata = {
-  title: "Prompt Library",
-  description: "Prompt Library",
+  title: "提示词管理",
+  description: "提示词管理",
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body>
         <div className="pm-root-shell">
           <header className="pm-global-header" data-testid="global-auth-header">
