@@ -1,16 +1,7 @@
 import { HomePageShell } from "./_home/home-page-shell.jsx";
+import { resolveHomePagePromptLoadError } from "./home-page-load-state.ts";
 import { listPrompts } from "../lib/api/prompt-repository.ts";
 import { parseAppEnv } from "../lib/env.ts";
-
-function shouldRenderHomeFallback(error) {
-  const message = error instanceof Error ? error.message : String(error || "");
-  return (
-    message.includes("requires a readable database in auto mode") ||
-    message.includes("ECONNREFUSED") ||
-    message.includes("ETIMEDOUT") ||
-    message.includes("connect")
-  );
-}
 
 export default async function HomePage() {
   let prompts = [];
@@ -19,11 +10,11 @@ export default async function HomePage() {
   try {
     prompts = await listPrompts();
   } catch (error) {
-    if (!shouldRenderHomeFallback(error)) {
+    const loadState = resolveHomePagePromptLoadError(error);
+    if (loadState.shouldRethrow) {
       throw error;
     }
-    loadNotice = "首页当前无法读取真实数据库，已切换为空白调试态。";
-    console.error(error);
+    loadNotice = loadState.loadNotice;
   }
 
   const { homeAiTools } = parseAppEnv();
