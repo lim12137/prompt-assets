@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server.js";
 
-import { loadSsoConfig } from "../../../../lib/auth/sso/sso-config.ts";
+import { loadSsoConfig } from "../../../lib/auth/sso/sso-config.ts";
 import {
   rewriteSsoHtml,
   rewriteResponseHeaders,
   rewriteLocationHeader,
-} from "../../../../lib/auth/sso/proxy-html.ts";
-import { joinUrl } from "../../../../lib/auth/sso/url-helper.ts";
+} from "../../../lib/auth/sso/proxy-html.ts";
+import { joinUrl } from "../../../lib/auth/sso/url-helper.ts";
 
 /**
  * 同域代理 catch-all：把 /auth/* 代理到 SSO origin（playbook §6、§13.7）。
@@ -46,11 +46,9 @@ async function proxyRequest(
 
   const { path: pathSegments } = await context.params;
   const path = pathSegments && pathSegments.length > 0 ? `/${pathSegments.join("/")}` : "/";
-  // 保留 query string
   const requestUrl = new URL(request.url);
   const targetUrl = joinUrl(config.ssoOrigin, `/auth${path}`) + requestUrl.search;
 
-  // 转发请求头：透传必要的头，去掉 host（fetch 会自动设）
   const forwardHeaders: Record<string, string> = {};
   const passthrough = ["content-type", "accept", "cookie", "authorization"];
   for (const key of passthrough) {
@@ -60,12 +58,10 @@ async function proxyRequest(
     }
   }
 
-  // 转发 body（POST 时）
   const init: RequestInit = {
     method,
     headers: forwardHeaders,
     ...(method !== "GET" && method !== "HEAD" ? { body: await request.text() } : {}),
-    // 代理不跟随重定向，由本路由改写 Location 后返回给浏览器
     redirect: "manual",
   };
 
@@ -86,24 +82,17 @@ async function proxyRequest(
   return rewriteProxyResponse(upstreamResponse, config.ssoOrigin);
 }
 
-/**
- * 改写代理响应：
- * - 3xx 重定向：改写 Location 为同域相对路径
- * - text/html：HTML body 改写（nonce/fonts/forgotPassword）+ CSP
- * - 其它：透传（仅删 content-length 一致性）
- */
 async function rewriteProxyResponse(
   upstream: Response,
   ssoOrigin: string,
 ): Promise<Response> {
   const contentType = upstream.headers.get("content-type") ?? "";
 
-  // 3xx：改写 Location
   if (upstream.status >= 300 && upstream.status < 400) {
     const location = rewriteLocationHeader(upstream.headers.get("location"));
     const { headers } = rewriteResponseHeaders(upstream.headers, randomNonce());
     const response = NextResponse.redirect(location ?? "/", { status: upstream.status });
-    for (const [key, value] of Object.entries(headers)) {
+    for (const [key, value] of Object.entries(headers) as Array<[string, string]>) {
       response.headers.set(key, value);
     }
     if (location) {
@@ -112,7 +101,6 @@ async function rewriteProxyResponse(
     return response;
   }
 
-  // text/html：改写 body
   if (contentType.includes("text/html")) {
     const originalHtml = await upstream.text();
     const { html, nonce } = rewriteSsoHtml(originalHtml, ssoOrigin);
@@ -123,7 +111,6 @@ async function rewriteProxyResponse(
     });
   }
 
-  // 其它（JSON/静态资源）：透传，删 content-length（一致性；非必须但无害）
   const body = await upstream.arrayBuffer();
   const headers: Record<string, string> = {};
   for (const [key, value] of upstream.headers.entries()) {
@@ -131,7 +118,6 @@ async function rewriteProxyResponse(
       headers[key] = value;
     }
   }
-  // 重新计算 content-length
   headers["content-length"] = String(body.byteLength);
   return new Response(body, { status: upstream.status, headers });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 const LOGIN_FEATURES = [
@@ -235,6 +235,37 @@ const styles = {
     boxShadow: "0 14px 28px rgba(195, 32, 51, 0.24)",
     cursor: "pointer",
   },
+  ssoButton: {
+    width: "100%",
+    minHeight: "48px",
+    border: "1px solid rgba(31, 95, 149, 0.32)",
+    borderRadius: "14px",
+    background: "linear-gradient(135deg, #1f5f95, #2a72ad)",
+    color: "#ffffff",
+    font: "inherit",
+    fontSize: "16px",
+    fontWeight: 700,
+    letterSpacing: "0.02em",
+    boxShadow: "0 14px 28px rgba(31, 95, 149, 0.22)",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "10px",
+  },
+  divider: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+    margin: "14px 0 4px",
+    color: "#9aa6b2",
+    fontSize: "12px",
+  },
+  dividerLine: {
+    flex: 1,
+    height: "1px",
+    background: "rgba(24, 33, 43, 0.1)",
+  },
   status: {
     marginTop: "10px",
     display: "flex",
@@ -298,6 +329,58 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState("登录环境检查正常，可提交认证请求。");
+  // SSO 配置：是否启用、是否显示旧账号密码表单
+  const [ssoEnabled, setSsoEnabled] = useState(false);
+  const [legacyVisible, setLegacyVisible] = useState(false);
+  const [ssoStarting, setSsoStarting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/sso/config", { credentials: "same-origin" })
+      .then((res) => (res.ok ? res.json() : { ssoEnabled: false, legacyLoginVisible: false }))
+      .then((data) => {
+        if (cancelled) {
+          return;
+        }
+        setSsoEnabled(data.ssoEnabled === true);
+        // SSO 启用且未显式开 legacy 时，隐藏旧表单
+        setLegacyVisible(data.legacyLoginVisible === true || data.ssoEnabled !== true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLegacyVisible(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleSsoLogin() {
+    if (ssoStarting) {
+      return;
+    }
+    setSsoStarting(true);
+    try {
+      const returnTo = searchParams.get("redirect") ?? "/admin";
+      const response = await fetch("/api/auth/sso/start", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ returnTo }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || typeof payload.authorizeUrl !== "string") {
+        throw new Error(
+          typeof payload.error === "string" && payload.error ? payload.error : "无法发起统一认证登录",
+        );
+      }
+      // 跳转到同域 authorize（由 /auth/* 代理转发到 SSO）
+      window.location.href = payload.authorizeUrl;
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "统一认证登录失败");
+      setSsoStarting(false);
+    }
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -362,10 +445,39 @@ function LoginForm() {
           <header style={styles.loginHead}>
             <h2 style={styles.loginTitle}>登录</h2>
             <p style={styles.loginDescription}>
-              请输入有度一体化平台账号与密码。
+              {ssoEnabled ? "使用统一认证账号登录，进入提示词管理后台。" : "请输入有度一体化平台账号与密码。"}
             </p>
           </header>
 
+          {ssoEnabled ? (
+            <button
+              type="button"
+              onClick={handleSsoLogin}
+              disabled={ssoStarting}
+              aria-busy={ssoStarting}
+              style={{
+                ...styles.ssoButton,
+                opacity: ssoStarting ? 0.72 : 1,
+                cursor: ssoStarting ? "progress" : "pointer",
+              }}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M12 2l8 4v6c0 5-3.5 9.5-8 10-4.5-.5-8-5-8-10V6l8-4z" />
+                <path d="M9 12l2 2 4-4" />
+              </svg>
+              {ssoStarting ? "正在跳转..." : "统一认证登录"}
+            </button>
+          ) : null}
+
+          {ssoEnabled && legacyVisible ? (
+            <div style={styles.divider}>
+              <span style={styles.dividerLine} />
+              <span>或使用账号密码</span>
+              <span style={styles.dividerLine} />
+            </div>
+          ) : null}
+
+          {legacyVisible ? (
           <section style={{ ...styles.card, ...styles.formCard }}>
             <div style={styles.banner}>
               <strong style={{ display: "block", marginBottom: "4px", fontSize: "14px" }}>
@@ -447,20 +559,21 @@ function LoginForm() {
                 {submitting ? "正在登录..." : "登录并进入系统"}
               </button>
             </form>
-
-            <p
-              role="status"
-              aria-label="登录状态"
-              aria-live="polite"
-              style={styles.status}
-            >
-              <span aria-hidden="true" style={styles.statusDot} />
-              <span>{feedback}</span>
-            </p>
           </section>
+          ) : null}
+
+          <p
+            role="status"
+            aria-label="登录状态"
+            aria-live="polite"
+            style={styles.status}
+          >
+            <span aria-hidden="true" style={styles.statusDot} />
+            <span>{feedback}</span>
+          </p>
 
           <footer style={styles.footer}>
-            <span>有度一体化平台账号登录</span>
+            <span>{ssoEnabled ? "统一认证 / 账号密码登录" : "有度一体化平台账号登录"}</span>
             <span>桌面端 / 移动端自适应</span>
           </footer>
         </section>

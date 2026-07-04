@@ -242,10 +242,10 @@ export async function fetchJwks(
     }
     try {
       const publicKey = createPublicKey({
-        key: { kty: "RSA", n: key.n, e: key.e } as NodeJS.JsonWebKey,
+        key: { kty: "RSA", n: key.n, e: key.e } as { kty: "RSA"; n: string; e: string },
         format: "jwk",
       });
-      const pem = publicKey.export({ type: "spki", format: "pem" });
+      const pem = publicKey.export({ type: "spki", format: "pem" }) as string | Buffer;
       const kid = key.kid ?? "default";
       result[kid] = typeof pem === "string" ? pem : pem.toString("utf8");
     } catch {
