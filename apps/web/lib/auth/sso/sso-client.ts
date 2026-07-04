@@ -14,6 +14,7 @@ import { buildClientBasicAuth } from "./sso-config.ts";
  */
 
 export type TokenExchangeResult = {
+  ok: true;
   access_token: string;
   token_type?: string;
   expires_in?: number;
@@ -106,7 +107,7 @@ export async function exchangeCodeForToken(
     };
   }
 
-  const json = (await response.json().catch(() => null)) as TokenExchangeResult | null;
+  const json = (await response.json().catch(() => null)) as Omit<TokenExchangeResult, "ok"> | null;
   if (!json || typeof json.access_token !== "string") {
     return {
       ok: false,
@@ -114,7 +115,7 @@ export async function exchangeCodeForToken(
       message: "token response missing access_token",
     };
   }
-  return json;
+  return { ok: true, ...json };
 }
 
 /**

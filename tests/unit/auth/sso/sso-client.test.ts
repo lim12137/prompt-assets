@@ -82,8 +82,8 @@ test("exchangeCodeForToken: 成功返回 token 集合，请求带 Basic Auth + c
     codeVerifier: "verifier-xyz",
     options: { config, fetchImpl: fetchMock as unknown as typeof fetch },
   });
-  assert.equal(result.ok !== false, true);
-  if (result.ok !== false) {
+  assert.equal(result.ok, true);
+  if (result.ok) {
     assert.equal(result.access_token, "at-123");
     assert.equal(result.refresh_token, "rt-456");
     assert.ok(typeof result.id_token === "string");
