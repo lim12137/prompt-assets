@@ -19,6 +19,7 @@ import {
 import { mapSsoUserToSystemUser, MissingUserAccountError } from "../../../../../lib/auth/sso/user-mapper.ts";
 import { joinUrl, appendQuery } from "../../../../../lib/auth/sso/url-helper.ts";
 import { saveSsoTokensForSession } from "../../../../../lib/auth/sso/session-token-store.ts";
+import { getSsoSessionCookieName } from "../../../../../lib/auth/sso/cookies.ts";
 
 /**
  * GET /api/auth/sso/callback?code=...&state=...
@@ -163,8 +164,4 @@ function redirectToFailure(config: { frontendBaseUrl: string } | null, error: st
 
 function buildSessionIdCookie(sessionId: string): string {
   return `${getSsoSessionCookieName()}=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=7200`;
-}
-
-export function getSsoSessionCookieName(): string {
-  return "sso_session_id";
 }
