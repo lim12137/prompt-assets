@@ -6,3 +6,9 @@ playwright-report/
 .DS_Store
 *.log
 coverage/
+
+# 环境变量文件（含密钥，不入库；.env.example 例外）
+.env
+.env.local
+.env.*.local
+!.env.example
