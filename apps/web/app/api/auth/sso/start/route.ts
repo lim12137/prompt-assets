@@ -63,7 +63,9 @@ export async function POST(request: Request) {
     response_type: "code",
     client_id: config.clientId,
     redirect_uri: config.redirectUri,
-    scope: config.scope,
+    // scope 用空格分隔的字符串（OAuth2 标准），不用数组展开成多同名参数
+    // 多数 SSO 平台（含本平台）只认 scope=openid%20profile，不认 scope=openid&scope=profile
+    scope: config.scope.join(" "),
     state,
     nonce,
     code_challenge: codeChallenge,

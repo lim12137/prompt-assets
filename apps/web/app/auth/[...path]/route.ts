@@ -79,8 +79,18 @@ async function proxyRequest(
     );
   }
 
-  // 浏览器访问本应用域的 origin（用于把 SSO 相对 Location 拼成同域绝对 URL）
-  const requestOrigin = requestUrl.origin;
+  // 浏览器访问本应用域的 origin（用于把 SSO 相对 Location 拼成同域绝对 URL）。
+  // 不能用 requestUrl.origin——当 dev server 用 --hostname 0.0.0.0 启动时，
+  // request.url 的 host 会是 0.0.0.0 而不是浏览器真实访问的 host。
+  // 从 Host 头（或反代后的 x-forwarded-host）取浏览器真实访问的地址。
+  const host =
+    request.headers.get("x-forwarded-host") ||
+    request.headers.get("host") ||
+    requestUrl.host;
+  // 归一化 protocol：确保带冒号（x-forwarded-proto 可能是 "http" 或 "https"，不带冒号）
+  const rawProto = request.headers.get("x-forwarded-proto") || requestUrl.protocol;
+  const proto = rawProto.endsWith(":") ? rawProto : `${rawProto}:`;
+  const requestOrigin = `${proto}//${host}`;
   return rewriteProxyResponse(upstreamResponse, config.ssoOrigin, requestOrigin);
 }
 
