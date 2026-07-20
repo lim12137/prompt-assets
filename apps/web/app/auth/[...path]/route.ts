@@ -79,25 +79,30 @@ async function proxyRequest(
     );
   }
 
-  return rewriteProxyResponse(upstreamResponse, config.ssoOrigin);
+  // 浏览器访问本应用域的 origin（用于把 SSO 相对 Location 拼成同域绝对 URL）
+  const requestOrigin = requestUrl.origin;
+  return rewriteProxyResponse(upstreamResponse, config.ssoOrigin, requestOrigin);
 }
 
 async function rewriteProxyResponse(
   upstream: Response,
   ssoOrigin: string,
+  requestOrigin: string,
 ): Promise<Response> {
   const contentType = upstream.headers.get("content-type") ?? "";
 
   if (upstream.status >= 300 && upstream.status < 400) {
-    const location = rewriteLocationHeader(upstream.headers.get("location"));
+    const relativeLocation = rewriteLocationHeader(upstream.headers.get("location"));
     const { headers } = rewriteResponseHeaders(upstream.headers, randomNonce());
-    const response = NextResponse.redirect(location ?? "/", { status: upstream.status });
+    // NextResponse.redirect 需要绝对 URL；用浏览器访问的应用域 origin 拼同域绝对地址
+    const absoluteLocation = relativeLocation
+      ? `${requestOrigin}${relativeLocation}`
+      : `${requestOrigin}/`;
+    const response = NextResponse.redirect(absoluteLocation, { status: upstream.status });
     for (const [key, value] of Object.entries(headers) as Array<[string, string]>) {
       response.headers.set(key, value);
     }
-    if (location) {
-      response.headers.set("location", location);
-    }
+    response.headers.set("location", absoluteLocation);
     return response;
   }
 
