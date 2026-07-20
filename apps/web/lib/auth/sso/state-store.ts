@@ -88,7 +88,17 @@ export function createMemoryStateStore(): SsoStateStore {
 }
 
 // 单例：路由代码通过 getDefaultStateStore() 访问，便于测试替换。
-let defaultStore: SsoStateStore = createMemoryStateStore();
+// 用 globalThis 持久化——Next.js dev 热重载会重新执行模块，但不会重置 globalThis，
+// 这样 start 存的 state 在 callback（可能由不同模块实例处理）时仍然存在。
+const GLOBAL_STATE_STORE_KEY = "__ssoStateStore";
+type GlobalWithStateStore = typeof globalThis & { [GLOBAL_STATE_STORE_KEY]?: SsoStateStore };
+
+function getGlobal(): GlobalWithStateStore {
+  return globalThis as GlobalWithStateStore;
+}
+
+let defaultStore: SsoStateStore = getGlobal()[GLOBAL_STATE_STORE_KEY] ?? createMemoryStateStore();
+getGlobal()[GLOBAL_STATE_STORE_KEY] = defaultStore;
 
 /**
  * 获取默认 store（路由代码用这个）。
@@ -103,6 +113,7 @@ export function getDefaultStateStore(): SsoStateStore {
  */
 export function __setDefaultStateStoreForTests(store: SsoStateStore | null): void {
   defaultStore = store ?? createMemoryStateStore();
+  getGlobal()[GLOBAL_STATE_STORE_KEY] = defaultStore;
 }
 
 /**

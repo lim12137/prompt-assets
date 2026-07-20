@@ -51,7 +51,17 @@ export function createMemorySessionTokenStore(): SessionTokenStore {
   };
 }
 
-let defaultStore: SessionTokenStore = createMemorySessionTokenStore();
+// 用 globalThis 持久化——同 state-store，避免 dev 热重载丢失数据
+const GLOBAL_TOKEN_STORE_KEY = "__ssoSessionTokenStore";
+type GlobalWithTokenStore = typeof globalThis & { [GLOBAL_TOKEN_STORE_KEY]?: SessionTokenStore };
+
+function getGlobal(): GlobalWithTokenStore {
+  return globalThis as GlobalWithTokenStore;
+}
+
+let defaultStore: SessionTokenStore =
+  getGlobal()[GLOBAL_TOKEN_STORE_KEY] ?? createMemorySessionTokenStore();
+getGlobal()[GLOBAL_TOKEN_STORE_KEY] = defaultStore;
 
 export function getDefaultSessionTokenStore(): SessionTokenStore {
   return defaultStore;
@@ -59,6 +69,7 @@ export function getDefaultSessionTokenStore(): SessionTokenStore {
 
 export function __setDefaultSessionTokenStoreForTests(store: SessionTokenStore | null): void {
   defaultStore = store ?? createMemorySessionTokenStore();
+  getGlobal()[GLOBAL_TOKEN_STORE_KEY] = defaultStore;
 }
 
 export function __resetDefaultSessionTokenStoreForTests(): void {

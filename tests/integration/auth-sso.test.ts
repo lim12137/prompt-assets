@@ -136,8 +136,8 @@ test("start: 成功返回 authorizeUrl，含 state/nonce/PKCE 参数", async () 
   assert.ok(params.get("state"));
   assert.ok(params.get("nonce"));
   assert.ok(params.get("code_challenge"));
-  // scope 是数组，展开为多个同名参数（openid & profile）
-  assert.deepEqual(params.getAll("scope"), ["openid", "profile"]);
+  // scope 用空格分隔的字符串（OAuth2 标准），不用多同名参数
+  assert.equal(params.get("scope"), "openid profile");
 });
 
 test("start: returnTo 安全过滤（拒绝 javascript:）", async () => {
