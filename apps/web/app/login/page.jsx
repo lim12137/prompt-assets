@@ -414,7 +414,7 @@ function LoginForm() {
 
   return (
     <main style={styles.page}>
-      <section style={styles.shell} aria-label="有度一体化平台账号登录">
+      <section style={styles.shell} aria-label="统一认证账号登录">
         <aside style={styles.hero}>
           <div style={styles.heroTopbar}>
             <div style={styles.brand}>
@@ -424,9 +424,9 @@ function LoginForm() {
           </div>
 
           <div>
-            <h1 style={styles.heroHeading}>有度一体化平台账号登录</h1>
+            <h1 style={styles.heroHeading}>统一认证账号登录</h1>
             <p style={styles.heroSubtitle}>
-              使用有度一体化平台账号登录，进入提示词管理后台。
+              使用统一认证账号登录，进入提示词管理后台。
             </p>
           </div>
           <div style={styles.heroFeatureGrid}>
@@ -445,7 +445,7 @@ function LoginForm() {
           <header style={styles.loginHead}>
             <h2 style={styles.loginTitle}>登录</h2>
             <p style={styles.loginDescription}>
-              {ssoEnabled ? "使用统一认证账号登录，进入提示词管理后台。" : "请输入有度一体化平台账号与密码。"}
+              {ssoEnabled ? "使用统一认证账号登录，进入提示词管理后台。" : "请输入统一认证账号与密码。"}
             </p>
           </header>
 
@@ -504,7 +504,7 @@ function LoginForm() {
                     id="username"
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
-                    placeholder="请输入有度一体化平台账号"
+                    placeholder="请输入统一认证账号"
                     autoComplete="username"
                     required
                     style={styles.input}
@@ -573,7 +573,7 @@ function LoginForm() {
           </p>
 
           <footer style={styles.footer}>
-            <span>{ssoEnabled ? "统一认证 / 账号密码登录" : "有度一体化平台账号登录"}</span>
+            <span>{ssoEnabled ? "统一认证 / 账号密码登录" : "统一认证账号登录"}</span>
             <span>桌面端 / 移动端自适应</span>
           </footer>
         </section>
@@ -581,22 +581,22 @@ function LoginForm() {
 
       <style jsx>{`
         @media (max-width: 960px) {
-          section[aria-label="有度一体化平台账号登录"] {
+          section[aria-label="统一认证账号登录"] {
             grid-template-columns: 1fr !important;
           }
 
-          section[aria-label="有度一体化平台账号登录"] aside,
-          section[aria-label="有度一体化平台账号登录"] > section {
+          section[aria-label="统一认证账号登录"] aside,
+          section[aria-label="统一认证账号登录"] > section {
             padding: 26px 22px !important;
           }
 
-          section[aria-label="有度一体化平台账号登录"] aside > div:last-child {
+          section[aria-label="统一认证账号登录"] aside > div:last-child {
             grid-template-columns: 1fr !important;
           }
         }
 
         @media (max-width: 560px) {
-          section[aria-label="有度一体化平台账号登录"] {
+          section[aria-label="统一认证账号登录"] {
             border-radius: 24px !important;
           }
         }
