@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { createAdminLoginToken } from "../auth-helpers";
 
-test("登录页展示有度一体化平台账号登录并保留 redirect 登录回跳", async ({ page }) => {
+test("登录页展示统一认证入口并保留 redirect 登录回跳", async ({ page }) => {
   const token = createAdminLoginToken("e2e-login-page");
   test.skip(!token, "未配置 LOGIN_TOKEN_SECRET，无法生成登录 token。");
 
@@ -35,15 +35,23 @@ test("登录页展示有度一体化平台账号登录并保留 redirect 登录�
     });
   });
 
+  // 测试旧账号密码表单可见场景（SSO 关闭或显式开启 legacy）
+  await page.route("**/api/auth/sso/config", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ssoEnabled: false, legacyLoginVisible: true }),
+    });
+  });
+
   await page.goto("/login?redirect=%2Fadmin%2Fcreate");
 
-  await expect(page.getByRole("heading", { level: 1, name: "有度一体化平台账号登录" })).toBeVisible();
-  await expect(page.getByText("请输入有度一体化平台账号与密码")).toBeVisible();
-  await expect(page.getByRole("button", { name: "账号密码登录" })).toBeVisible();
-  await expect(page.getByPlaceholder("请输入有度一体化平台账号")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "统一认证账号登录" })).toBeVisible();
+  await expect(page.getByText("请输入统一认证账号与密码")).toBeVisible();
+  await expect(page.getByPlaceholder("请输入统一认证账号")).toBeVisible();
   await expect(page.getByPlaceholder("请输入账号密码")).toBeVisible();
 
-  await page.getByPlaceholder("请输入有度一体化平台账号").fill("e2e-user");
+  await page.getByPlaceholder("请输入统一认证账号").fill("e2e-user");
   await page.getByPlaceholder("请输入账号密码").fill("e2e-pass");
   await page.getByRole("button", { name: "登录并进入系统" }).click();
 
