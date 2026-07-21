@@ -3,7 +3,7 @@ import { resolveLoginRedirectTarget } from "../../lib/auth/login-redirect.ts";
 import { buildLoginHref } from "../../lib/auth/login-link.ts";
 import { LogoutButton } from "./logout-button.js";
 
-export function AuthStatusContent({ user, currentPath, ssoEnabled = false }) {
+export function AuthStatusContent({ user, currentPath }) {
   const loginHref = buildLoginHref(currentPath);
   if (!user) {
     return (
@@ -24,7 +24,7 @@ export function AuthStatusContent({ user, currentPath, ssoEnabled = false }) {
       <span className="pm-auth-user-id" title={identity}>
         {identity}
       </span>
-      <LogoutButton loginHref={loginHref} ssoEnabled={ssoEnabled} />
+      <LogoutButton loginHref={loginHref} />
     </div>
   );
 }
